@@ -86,6 +86,26 @@ final class WireIntegrationTests: XCTestCase {
         try await client.checkLiveness(timeout: 0.2)
         _ = try await slow.value
         XCTAssertTrue(client.connected)
+        var tracker = VoiceDelegationTracker()
+        var spoken: [VoiceTaskResult] = []
+        client.onEvent = { event in
+            if event["type"].string == "message.complete", let result = tracker.complete(event["payload"]) { spoken.append(result) }
+        }
+        let before = try await client.request("fixture.prompt_count", [:])["accepted"].number
+        for id in ["A", "B"] {
+            tracker.begin(id, clientTurnID: "queued-\(id)")
+            let queued = try await VoiceSubmission.submit(["session_id": .string("runtime"), "profile": .string("writer"), "text": .string("queued \(id)"), "queued": .bool(true), "surface": .string("voice-live"), "client_turn_id": .string("queued-\(id)")]) { try await client.request($0, $1) }
+            XCTAssertEqual(queued["status"].string, "queued")
+            XCTAssertNil(queued["user_row_id"].number)
+            XCTAssertNil(tracker.accept(queued, delegationID: id))
+            XCTAssertTrue(tracker.hasTurnIdentity)
+        }
+        _ = try await client.request("fixture.finish_queued", [:])
+        XCTAssertEqual(spoken, [VoiceTaskResult(delegationID: "B", text: "B result")])
+        let legacy = try await VoiceSubmission.submit(["session_id": .string("runtime"), "profile": .string("writer"), "text": .string("legacy immediate"), "client_turn_id": .string("legacy")]) { try await client.request($0, $1) }
+        XCTAssertEqual(legacy["user_row_id"].number, 2)
+        let after = try await client.request("fixture.prompt_count", [:])["accepted"].number
+        XCTAssertEqual(after, (before ?? 0) + 3) // Two queued turns + one legacy turn; rejection never dispatched.
         client.disconnect()
         try await client.connect()
         let resumed = try await CanonicalChat.open(profile: "writer") { try await client.request($0, $1) }

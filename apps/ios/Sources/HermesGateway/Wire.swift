@@ -70,7 +70,16 @@ public struct GatewayEndpoint: Codable, Identifiable, Equatable, Sendable {
 
 public enum GatewayError: LocalizedError {
     case message(String)
-    public var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
+    case rpc(code: Int, message: String)
+    public var errorDescription: String? {
+        switch self { case .message(let text), .rpc(_, let text): return text }
+    }
+    public var rejectsClientTurnID: Bool {
+        if case .rpc(let code, let message) = self {
+            return code == 4000 && message.hasPrefix("invalid params for prompt.submit: client_turn_id:")
+        }
+        return false
+    }
 }
 
 public struct Bot: Identifiable, Hashable {

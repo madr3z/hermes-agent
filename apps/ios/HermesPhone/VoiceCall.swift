@@ -171,26 +171,27 @@ import WebRTC
             guard !prompt.isEmpty else { self.error = "No spoken request was available to delegate."; return }
             let supersedesOwnTask = delegation.currentID != nil
             delegation.begin(id)
+            let clientTurnID = delegation.clientTurnID!
             do {
                 if supersedesOwnTask { _ = try await client.request("session.interrupt", owner()) }
                 // The interrupt ACK is cooperative; the old run thread still owns the slot.
                 let deadline = Date().addingTimeInterval(60)
                 while true {
-                    guard delegation.currentID == id else { return }
+                    guard delegation.currentID == id, delegation.clientTurnID == clientTurnID else { return }
                     let snapshot = try await client.request("session.activate", owner())
                     if !snapshot["running"].bool { break }
                     guard Date() < deadline else { throw GatewayError.message("The previous task has not settled. Follow its state in Bot Chat.") }
                     try await Task.sleep(for: .milliseconds(200))
                 }
-                guard delegation.currentID == id else { return }
-                let result = try await client.request("prompt.submit", owner(["text": .string(prompt), "surface": .string("voice-live"), "voice_context": .string(context), "queued": .bool(true)]))
-                if let completed = delegation.accept(result, delegationID: id) { speak(completed) }
-                else if delegation.currentID == id && !delegation.hasTurnReceipt {
-                    error = "The gateway accepted this task without a turn receipt. Follow its result in Bot Chat; it cannot be safely attributed to this spoken request."
+                guard delegation.currentID == id, delegation.clientTurnID == clientTurnID else { return }
+                let result = try await VoiceSubmission.submit(owner(["text": .string(prompt), "surface": .string("voice-live"), "voice_context": .string(context), "queued": .bool(true), "client_turn_id": .string(clientTurnID)])) { try await client.request($0, $1) }
+                if let completed = delegation.accept(result, delegationID: id, clientTurnID: clientTurnID) { speak(completed) }
+                else if delegation.currentID == id && delegation.clientTurnID == clientTurnID && !delegation.hasTurnIdentity {
+                    error = "This gateway accepted the task without turn correlation. Update the gateway to hear queued task results; follow this result in Bot Chat."
                     delegation.cancel()
                 }
             } catch {
-                if delegation.currentID == id { self.error = error.localizedDescription; delegation.cancel() }
+                if delegation.currentID == id && delegation.clientTurnID == clientTurnID { self.error = error.localizedDescription; delegation.cancel() }
             }
         case "session.closed": stop()
         case "error": error = event["error"]["message"].string ?? "GPT Live reported an error."

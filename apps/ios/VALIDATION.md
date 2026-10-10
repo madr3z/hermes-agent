@@ -1,4 +1,4 @@
-# Native iPhone validation — 10 October 2026
+# Native iPhone validation — 10–11 October 2026
 
 Checkout: `/Users/madrez/.codex/worktrees/hermes-iphone/hermes-agent`
 Branch: `codex/hermes-iphone`
@@ -7,7 +7,7 @@ Minimum deployment: iOS 17.0
 
 ## Passed
 
-- `swift test --package-path apps/ios --scratch-path /private/tmp/hermes-iphone-build/swift-tests`: **12 tests executed, 0 failures**, including the TLS/text-WebSocket integration fixture (6.198 seconds, final run at 23:42 BST). This is a macOS-hosted native transport test, not a real gateway/model acceptance run.
+- `swift test --package-path apps/ios --scratch-path /private/tmp/hermes-iphone-build/swift-tests`: **14 tests executed, 0 failures**, including the TLS/text-WebSocket integration fixture (final correlation run passed at 23:58 BST on 10 October). This is a macOS-hosted native transport test, not a real gateway/model acceptance run.
 - Simulator compilation and link succeeded for arm64 and x86_64. A missing embedded-framework runpath was corrected; installation and runtime launch succeeded, and the native roster screen was visually verified. The final reviewed source compiled and linked successfully at 23:45 BST.
 - WebRTC M154 source revision and binary SHA-256 match the pinned package. The framework supplies native simulator and device slices. Xcode's stalled download was recovered by populating its standard SwiftPM artifact cache with the independently checksum-verified exact artifact; no shipped dependency or TLS policy changed.
 
@@ -24,7 +24,9 @@ Covered behaviors: profile-qualified canonical registry lookup, compression-tip 
 | Phone error response races capable Desktop approval | Unsupported server requests remain unanswered. The wire fixture attaches a second client and verifies its delayed approval response wins. |
 | Interrupted voice task A completes during task B | `VoiceDelegationTracker` requires the active delegation's persisted user-row receipt. `testSupersededSpokenTaskNeverSpeaksUnderNewDelegation` and `testVoiceCompletionBeforeSubmitAcknowledgementKeepsItsIdentity` cover stale results, late ACKs and early completions. |
 
-Voice submission without a persisted user-row receipt (queued/compute-isolated paths) is a known contract limitation: the task remains visible in Bot Chat, and the phone reports that it cannot attribute its spoken result. It never guesses from generic completion events.
+The follow-up adds `client_turn_id` end-to-end matching on mobile, coordinated with the integration owner's backend extension. The real TLS/WebSocket fixture queues A then B without row receipts and sends late A, unrelated, missing-token, exact B and duplicate B completions; only B is returned for speech. It also verifies legacy validation fallback dispatches exactly once. Unit tests cover completion before ACK, a reused provider delegation ID across calls, and no retries after timeout, unrelated errors or accepted queue ACKs.
+
+Older backends retain the immediate persisted-row fallback. Queued/isolated execution on an older backend without correlation stays visibly unsupported; results are never guessed from text or timing. The follow-up simulator and unsigned device builds both pass (`build-correlation.log`, `device-build-correlation.log`), as do all 11 repository checks (`check-correlation.log`). The wire fixture does not establish a full real backend/model integration run.
 
 ## Native build evidence
 

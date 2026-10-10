@@ -88,7 +88,7 @@ import Foundation
     private func receive(_ frame: JSON) {
         if frame["method"].string == "event" { onEvent?(frame["params"]); return }
         if let id = frame["id"].string, let continuation = pending.removeValue(forKey: id) {
-            if let error = frame["error"]["message"].string { continuation.resume(throwing: GatewayError.message(error)) }
+            if let error = frame["error"]["message"].string { continuation.resume(throwing: GatewayError.rpc(code: Int(frame["error"]["code"].number ?? 0), message: error)) }
             else { continuation.resume(returning: frame["result"]) }
         }
         // This client never advertises server_requests. On a shared transport, silence

@@ -81,8 +81,13 @@ class Handler(BaseHTTPRequestHandler):
                         self.server.question_answer = request.get("result", request.get("error"))
                 continue
             method, params = request["method"], request["params"]
+            if method == "prompt.submit" and params.get("text") == "legacy immediate" and "client_turn_id" in params:
+                self.send({"jsonrpc": "2.0", "id": request["id"], "error": {"code": 4000, "message": "invalid params for prompt.submit: client_turn_id: Extra inputs are not permitted"}})
+                continue
             handlers = {
                 "fixture.shared_question": self.shared_question,
+                "fixture.finish_queued": self.finish_queued,
+                "fixture.prompt_count": lambda _: {"accepted": self.server.prompt_count},
                 "fixture.question_result": lambda _: {"answer": self.server.question_answer},
                 "profiles.list": lambda _: {"profiles": [{"name": "writer", "display_name": "Writer"}]},
                 "session.list": self.session_list,
@@ -105,7 +110,7 @@ class Handler(BaseHTTPRequestHandler):
                 time.sleep(max(0, slow_until - time.monotonic()))
             result = handler(params)
             self.send({"jsonrpc": "2.0", "id": request["id"], "result": result})
-            if method == "prompt.submit":
+            if method == "prompt.submit" and result["status"] != "queued":
                 for seq, kind, payload in [(1, "message.start", {}), (2, "message.delta", {"text": "Real wire "}), (3, "message.delta", {"text": "stream"}), (4, "message.complete", {"text": "Real wire stream"})]:
                     self.send({"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": "runtime", "seq": seq, "payload": payload}})
 
@@ -129,7 +134,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def prompt_submit(self, params):
         assert params["session_id"] == "runtime" and params["profile"] == "writer"
-        return {"status": "streaming", "user_row_id": 2}
+        self.server.prompt_count += 1
+        token = params.get("client_turn_id")
+        if params["text"].startswith("queued "):
+            assert params["queued"] is True and params["surface"] == "voice-live" and token
+            self.server.queued_turns.append(token)
+            return {"status": "queued", "client_turn_id": token}
+        return {"status": "streaming", "user_row_id": 2, **({"client_turn_id": token} if token else {})}
+
+    def finish_queued(self, _):
+        first, second = self.server.queued_turns
+        completions = [(first, "late A"), ("unrelated", "typed task"), (None, "uncorrelated result"), (second, "B result"), (second, "duplicate B")]
+        for token, text in completions:
+            payload = {"status": "complete", "text": text, "persisted_turn": {"user_row_id": 100}}
+            if token:
+                payload["client_turn_id"] = token
+            self.send({"jsonrpc": "2.0", "method": "event", "params": {"type": "message.complete", "session_id": "runtime", "payload": payload}})
+        return {"ok": True}
 
 
 with tempfile.TemporaryDirectory(prefix="hermes-phone-wire-") as directory:
@@ -139,6 +160,8 @@ with tempfile.TemporaryDirectory(prefix="hermes-phone-wire-") as directory:
     server.clients = []
     server.clients_lock = threading.Lock()
     server.question_answer = None
+    server.prompt_count = 0
+    server.queued_turns = []
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
     server.socket = context.wrap_socket(server.socket, server_side=True)

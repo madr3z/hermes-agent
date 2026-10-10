@@ -73,6 +73,43 @@ final class GatewayTests: XCTestCase {
         XCTAssertNil(tracker.accept(.object(["user_row_id": .number(10)]), delegationID: "A"))
         XCTAssertEqual(tracker.accept(.object(["user_row_id": .number(20)]), delegationID: "B"), VoiceTaskResult(delegationID: "B", text: "fast B"))
     }
+    func testCorrelatedVoiceCompletionCanPrecedeAckAndRejectsMissingOrForeignToken() {
+        var tracker = VoiceDelegationTracker()
+        tracker.begin("A", clientTurnID: "token-A")
+        tracker.begin("B", clientTurnID: "token-B")
+        XCTAssertNil(tracker.accept(.object(["status": .string("queued"), "client_turn_id": .string("token-B")]), delegationID: "B"))
+        XCTAssertTrue(tracker.hasTurnIdentity)
+        func completion(_ token: String?) -> JSON {
+            var fields: [String: JSON] = ["status": .string("complete"), "text": .string("answer"), "persisted_turn": .object(["user_row_id": .number(20)])]
+            if let token { fields["client_turn_id"] = .string(token) }
+            return .object(fields)
+        }
+        XCTAssertNil(tracker.complete(completion("token-A")))
+        XCTAssertNil(tracker.complete(completion(nil)))
+        XCTAssertEqual(tracker.complete(completion("token-B")), VoiceTaskResult(delegationID: "B", text: "answer"))
+        tracker.begin("C", clientTurnID: "token-C")
+        XCTAssertEqual(tracker.complete(completion("token-C")), VoiceTaskResult(delegationID: "C", text: "answer"))
+        XCTAssertNil(tracker.accept(.object(["client_turn_id": .string("token-C")]), delegationID: "C"))
+        tracker.begin("C", clientTurnID: "next-call-C")
+        XCTAssertNil(tracker.accept(.object(["user_row_id": .number(30)]), delegationID: "C", clientTurnID: "token-C"))
+        XCTAssertFalse(tracker.hasTurnIdentity)
+        XCTAssertNil(tracker.complete(completion("token-C")))
+    }
+    @MainActor func testVoiceSubmissionNeverRetriesUncertainOrAcceptedCalls() async {
+        for error in [GatewayError.message("request timed out"), .rpc(code: 4000, message: "invalid params for prompt.submit: text: invalid"), .rpc(code: 4009, message: "session busy")] {
+            var calls = 0
+            do {
+                _ = try await VoiceSubmission.submit(["client_turn_id": .string("token")]) { _, _ in calls += 1; throw error }
+                XCTFail("Expected submission error")
+            } catch { XCTAssertEqual(calls, 1) }
+        }
+        var calls = 0
+        do {
+            let result = try await VoiceSubmission.submit(["client_turn_id": .string("token")]) { _, _ in calls += 1; return .object(["status": .string("queued")]) }
+            XCTAssertEqual(result["status"].string, "queued")
+            XCTAssertEqual(calls, 1)
+        } catch { XCTFail(error.localizedDescription) }
+    }
     @MainActor func testCanonicalResumeUsesCompressionTipAndOwnerWithoutCreating() async throws {
         var calls: [(String, [String: JSON])] = []
         let result = try await CanonicalChat.open(profile: "writer") { method, params in
