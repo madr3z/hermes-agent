@@ -660,6 +660,7 @@ export interface SessionInfo {
 }
 
 export type TimelineDisplayMetadata =
+  | { voice_message_id: string; call_id: string; start_ms: number; end_ms: number }
   | { model: string; provider?: string }
   | {
       delegation_id: string

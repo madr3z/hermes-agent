@@ -38,6 +38,8 @@ export type ChatMessage = {
   timestamp?: number
   completedAt?: number
   pending?: boolean
+  /** Spoken display history; never an agent reply awaiting read-aloud or regeneration. */
+  voiceTranscript?: boolean
   error?: string
   /** Structured layer descriptor for a failed turn (parsed error_surface).
    *  Drives the error card's layer label + actions; absent on older

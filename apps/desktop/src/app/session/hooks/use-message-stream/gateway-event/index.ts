@@ -26,6 +26,7 @@ import { handleSessionInfoEvent } from './session-info'
 import { handleStatusEvent } from './status'
 import { handleToolEvent } from './tools'
 import type { GatewayEventContext, GatewayEventDeps, GatewayEventHandler } from './types'
+import { handleVoiceLiveEvent } from './voice-live'
 
 export type { GatewayEventDeps } from './types'
 
@@ -82,6 +83,7 @@ const PROVIDER_WAIT_SUPERSEDING_EVENT_TYPES = new Set([
 // whether it did, so dispatch stops at the first taker.
 const HANDLERS: GatewayEventHandler[] = [
   handleLifecycleEvent,
+  handleVoiceLiveEvent,
   handleFreeTierEvent,
   handleSessionInfoEvent,
   handleControlEvent,

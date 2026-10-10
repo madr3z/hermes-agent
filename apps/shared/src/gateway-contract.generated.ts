@@ -3000,6 +3000,52 @@ export interface WakeFeedResult {
   reason?: string | null
   fed: boolean
 }
+export interface VoiceLiveTranscriptParams {
+  session_id: string
+  profile?: string | null
+  call_id: string
+  event_id: string
+  utterance_id: string
+  speaker: 'user' | 'assistant'
+  text: string
+  start_ms: number
+  end_ms: number
+}
+export interface VoiceLiveTranscriptResult {
+  message: TranscriptMessage
+}
+/** One transcript row as the gateway PROJECTS it for renderers (``session_history._project_history``): ``text``, display-only ``timestamp`` / ``display_kind`` / ``display_metadata``, the durable ``row_id`` rewind targets, and for tool rows raw ``content``, ``tool_call_id``, ``name``, ``context`` and ``args``. Assistant detail sidecars (``reasoning``, …) ride as extra keys. */
+export interface TranscriptMessage {
+  role: string
+  text?: string | null
+  content?: unknown | null
+  tool_call_id?: string | null
+  timestamp?: number | null
+  row_id?: number | null
+  display_kind?: string | null
+  display_metadata?: unknown | null
+  name?: string | null
+  context?: string | null
+  args?: Record<string, unknown> | null
+  labels?: ToolLabel[] | null
+  reasoning?: string | null
+  [key: string]: unknown
+}
+/** ``tools.tool_labels.ToolLabel`` — what one call executed through the tool_search bridge is, in words. Clients render ``text`` (or ``app``/``action`` in their own columns) and never parse the tool name themselves. */
+export interface ToolLabel {
+  kind: ToolLabelKind
+  app: string
+  action: string
+  emoji: string
+  text: string
+  name: string
+  preview?: string
+}
+/** Which surface one inner call of a bridged ``tool_call`` runs on. */
+export type ToolLabelKind = 'connector' | 'mcp' | 'tool'
+export interface VoiceLiveTranscriptListResult {
+  messages: TranscriptMessage[]
+}
 export interface SessionCreateParams {
   profile?: string | null
   cols?: number | null
@@ -3035,35 +3081,6 @@ export interface SessionCreateResult {
   messages: TranscriptMessage[]
   info: SessionLiveInfo
 }
-/** One transcript row as the gateway PROJECTS it for renderers (``session_history._project_history``): ``text``, display-only ``timestamp`` / ``display_kind`` / ``display_metadata``, the durable ``row_id`` rewind targets, and for tool rows raw ``content``, ``tool_call_id``, ``name``, ``context`` and ``args``. Assistant detail sidecars (``reasoning``, …) ride as extra keys. */
-export interface TranscriptMessage {
-  role: string
-  text?: string | null
-  content?: unknown | null
-  tool_call_id?: string | null
-  timestamp?: number | null
-  row_id?: number | null
-  display_kind?: string | null
-  display_metadata?: unknown | null
-  name?: string | null
-  context?: string | null
-  args?: Record<string, unknown> | null
-  labels?: ToolLabel[] | null
-  reasoning?: string | null
-  [key: string]: unknown
-}
-/** ``tools.tool_labels.ToolLabel`` — what one call executed through the tool_search bridge is, in words. Clients render ``text`` (or ``app``/``action`` in their own columns) and never parse the tool name themselves. */
-export interface ToolLabel {
-  kind: ToolLabelKind
-  app: string
-  action: string
-  emoji: string
-  text: string
-  name: string
-  preview?: string
-}
-/** Which surface one inner call of a bridged ``tool_call`` runs on. */
-export type ToolLabelKind = 'connector' | 'mcp' | 'tool'
 export interface SessionBranchStoredParams {
   profile?: string | null
   parent_session_id: string
@@ -4996,6 +5013,9 @@ export interface PetHatchProgressPayload {
 }
 /** ``change_watcher._CHANGE_WATCHES`` payload fn — ``{}`` for every watch except pet.changed. */
 export type ChangeSignalPayload = Record<string, unknown>
+export interface VoiceLiveTranscriptPayload {
+  message: TranscriptMessage
+}
 export type ConnectorErrorReason = 'INVALID_PARAMS' | 'NOT_OWNER' | 'UNSUPPORTED_RUNTIME' | 'CONNECTOR_REQUEST_FAILED' | 'INVALID_CONNECTOR_RESPONSE' | 'UNKNOWN_TARGET' | 'LINK_STILL_VALID' | 'REISSUE_REFUSED' | 'UNKNOWN_OPERATION' | 'INVALID_ANSWER' | 'NEEDS_NOUS_AUTH' | 'CONNECTOR_NOT_FOUND' | 'TOOLS_UNAVAILABLE' | 'CONNECTORS_UNAVAILABLE' | 'CATALOG_UNAVAILABLE' | 'ACCOUNTS_UNAVAILABLE' | 'CONNECTION_NOT_FOUND' | 'POLICY_UNAVAILABLE' | 'POLICY_CONFLICT' | 'FORBIDDEN_SCOPE' | 'ORG_REQUIRED' | 'ORG_ACCESS_DENIED' | 'INVALID_POLICY'
 
 // ── Client→server methods ──
@@ -5492,6 +5512,10 @@ export interface RpcMethods {
   'vault.unlock': { params: VaultUnlockParams; result: VaultUnlockResult }
   /** Best known verification evidence for a cwd/session; read-only, never runs checks. */
   'verification.status': { params: VerificationStatusParams; result: VerificationStatusResult }
+  /** Idempotently persist received spoken text for display; never submits a model turn. */
+  'voice.live.transcript.append': { params: VoiceLiveTranscriptParams; result: VoiceLiveTranscriptResult }
+  /** Read the live session's durable spoken display history, including its compression lineage. */
+  'voice.live.transcript.list': { params: SessionParams; result: VoiceLiveTranscriptListResult }
   /** VAD-bounded push-to-talk; the transcript arrives as a voice.transcript event. */
   'voice.record': { params: VoiceRecordParams; result: VoiceRecordResult }
   /** /voice parity: report, flip voice mode on/off, or toggle speech output. */
@@ -5761,6 +5785,8 @@ export const RPC_METHODS = [
   'vault.sources',
   'vault.unlock',
   'verification.status',
+  'voice.live.transcript.append',
+  'voice.live.transcript.list',
   'voice.record',
   'voice.toggle',
   'voice.tts',
@@ -5968,6 +5994,8 @@ export interface BackendGatewayEventMap {
   'tool.start': ToolStartPayload
   /** Barge-in: the spoken interjection interrupted the turn; no payload. */
   'voice.interrupted': Record<string, never>
+  /** A committed spoken display message; replace by display_metadata.voice_message_id. */
+  'voice.live.transcript': VoiceLiveTranscriptPayload
   /** Live STT text so far while the user is still speaking. */
   'voice.partial': VoicePartialPayload
   /** Voice recorder state changed. */
@@ -6052,6 +6080,7 @@ export const GATEWAY_EVENT_TYPES = [
   'tool.output_risk',
   'tool.start',
   'voice.interrupted',
+  'voice.live.transcript',
   'voice.partial',
   'voice.status',
   'voice.transcript',

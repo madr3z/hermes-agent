@@ -59,6 +59,8 @@ import {
 import type { SessionProfileRoute } from '@/store/session-request-router'
 import { runtimeSessionOwner, sessionTileOwnerRoute } from '@/store/session-states'
 
+import { withAppendedText } from './append-text'
+
 // Re-exported for the many session-actions/tile call sites that already import
 // it from here; the canonical definition lives in @/store/session.
 export { sessionMatchesStoredId }
@@ -74,22 +76,6 @@ import {
   persistedTurnsEquivalent,
   transcriptRowIds
 } from './pending-turn-identity'
-
-function withAppendedText(message: ChatMessage, suffix: string): ChatMessage {
-  let appended = false
-
-  const parts = message.parts.map(part => {
-    if (part.type !== 'text' || appended) {
-      return part
-    }
-
-    appended = true
-
-    return { ...part, text: `${part.text}${suffix}` }
-  })
-
-  return appended ? { ...message, parts } : message
-}
 
 /** Reasoning / tool-call parts that the gateway inflight dump cannot express. */
 function hasStructuralParts(message: ChatMessage): boolean {
@@ -234,6 +220,7 @@ const COMPARED_FIELDS = [
   'rowId',
   'persistedTurn',
   'durableComplete',
+  'voiceTranscript',
   'recovered',
   'asyncResult',
   'asyncResultKind',

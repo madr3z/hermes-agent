@@ -63,7 +63,7 @@ const UNSCOPED_STREAM_END_EVENT_TYPES = new Set(['error', 'message.complete'])
  * answer; it then reappeared only after a transcript refetch (manual refresh).
  */
 export function gatewayEventRequiresSessionId(eventType: string | undefined): boolean {
-  return eventType?.startsWith('subagent.') ?? false
+  return eventType === 'voice.live.transcript' || (eventType?.startsWith('subagent.') ?? false)
 }
 
 export interface GatewayEventSessionRouteInput {

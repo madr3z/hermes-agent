@@ -29,6 +29,7 @@ import {
 } from '@/lib/generated-images'
 import { isTodoToolName, nextTodosFromToolEvent, parseTodoRevision } from '@/lib/todos'
 import { turnDoneNotificationBody } from '@/lib/turn-done-notification-body'
+import { suppressVoiceEchoes } from '@/lib/voice-live-transcript'
 import type { ScopedServerRequest } from '@/store/gateway'
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import { isDiskFullErrorMessage, notifyError } from '@/store/notifications'
@@ -1074,7 +1075,7 @@ export function useMessageStream({
 
         return {
           ...state,
-          messages: nextMessages,
+          messages: suppressVoiceEchoes(nextMessages),
           adoptedRunningTurn: false,
           heartbeatSettledStreamId: null,
           streamId: null,

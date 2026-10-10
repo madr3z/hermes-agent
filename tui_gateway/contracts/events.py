@@ -18,7 +18,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from .base import JsonValue, Payload, WireEnum
-from .common import MessageReaction, SessionLiveInfo, SubagentStatus, ToolLabel, ToolLabelKind, Usage
+from .common import MessageReaction, SessionLiveInfo, SubagentStatus, ToolLabel, ToolLabelKind, TranscriptMessage, Usage
 from .config_free_tier_control import FreeTierChallengePayload, SessionControlSnapshot
 from .registry import event
 
@@ -764,3 +764,11 @@ __all__ = [
     "TurnStatus", "VoicePartialPayload", "VoiceStatusPayload",
     "VoiceTranscriptPayload", "WakeDetectedPayload",
 ]
+
+
+class VoiceLiveTranscriptPayload(Payload):
+    message: TranscriptMessage
+
+
+event("voice.live.transcript", VoiceLiveTranscriptPayload,
+      doc="A committed spoken display message; replace by display_metadata.voice_message_id.")

@@ -162,7 +162,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
     scope = MAIN_SUBMIT_SCOPE
   } = deps
 
-  return useCallback(
+  const submit = useCallback(
     async (rawText: string, options?: SubmitTextOptions) => {
       const usingComposerAttachments = !options?.attachments
 
@@ -1097,5 +1097,23 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       syncAttachmentsForSubmit,
       updateSessionState
     ]
+  )
+
+  return useCallback(
+    async (rawText: string, options?: SubmitTextOptions) => {
+      if (options?.prepareVoiceSession) {
+        const id = activeSessionIdRef.current ?? (await createBackendSessionForSend())
+
+        if (!id) {
+          return false
+        }
+        options.prepareVoiceSession(id)
+
+        return true
+      }
+
+      return submit(rawText, options)
+    },
+    [submit, activeSessionIdRef, createBackendSessionForSend]
   )
 }

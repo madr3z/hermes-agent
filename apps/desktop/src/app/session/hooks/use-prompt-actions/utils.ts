@@ -731,6 +731,8 @@ export interface SubmitTextOptions {
   /** With `surface: 'voice-live'`: the recent spoken exchange, appended to the
    *  model-bound note by the gateway (never persisted, never rendered). */
   voiceContext?: string
+  /** Allocate the chat for a voice call without submitting a prompt. */
+  prepareVoiceSession?: (runtimeId: string) => void
   /** A spoken turn from the chained voice conversation: the gateway runs it on
    *  `auxiliary.voice_chat` (the session model when that slot is on auto). */
   voiceTurn?: boolean

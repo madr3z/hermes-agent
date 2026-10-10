@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { en } from '@/i18n/en'
 import { chunkForCommentary, toLiveHistory, type VoiceLiveHandlers } from '@/lib/voice-live'
+import { LiveTranscriptWriter } from '@/lib/voice-live-transcript'
 import { $notifications, clearNotifications } from '@/store/notifications'
 
 import { delegationPrompt, useVoiceLiveConversation } from './use-voice-live-conversation'
@@ -162,5 +163,48 @@ describe('GPT-Live delegation → Hermes turn', () => {
     expect(history.at(-1)?.content[0]?.text).toBe('turn 39')
     expect(history[0]?.role).toBe('user')
     expect(history.find(m => m.role === 'assistant')?.content[0]?.type).toBe('output_text')
+  })
+})
+
+describe('live spoken persistence', () => {
+  afterEach(cleanup)
+  it('commits both speakers before delegating once and flushes the received tail at call end', async () => {
+    const write = vi.fn(async (_fragment: unknown) => ({}))
+    const submit = vi.fn()
+    const writer = new LiveTranscriptWriter('call', write, vi.fn())
+
+    const hook = renderHook(() =>
+      useVoiceLiveConversation({
+        busy: false,
+        enabled: true,
+        consumePendingResponse: vi.fn(),
+        onSubmit: submit,
+        pendingResponse: () => null,
+        seedHistory: () => [],
+        prepareTranscript: async () => writer
+      })
+    )
+
+    transport.failure = null
+    await act(async () => {
+      await hook.result.current.start()
+    })
+    const h = transport.handlers.at(-1)!
+    const user = { eventId: 'user', speaker: 'user' as const, text: 'Check it', startMs: 0, endMs: 100 }
+    await act(async () => {
+      h.onTranscript?.(user)
+      h.onTranscript?.({ eventId: 'assistant', speaker: 'assistant', text: 'I will check.', startMs: 101, endMs: 200 })
+      h.onDelegation('work', [user])
+      await writer.flush()
+    })
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(submit).toHaveBeenCalledWith('Check it', 'User: Check it', true)
+    await act(async () => {
+      h.onTranscript?.({ eventId: 'tail', speaker: 'assistant', text: 'Partial', startMs: 201, endMs: 250 })
+      await hook.result.current.end()
+      await writer.flush()
+    })
+    expect(write.mock.calls.at(-1)?.[0]).toMatchObject({ text: 'Partial' })
+    expect(submit).toHaveBeenCalledTimes(1)
   })
 })

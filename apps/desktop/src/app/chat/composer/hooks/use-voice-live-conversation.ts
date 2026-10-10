@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useI18n } from '@/i18n'
 import { sanitizeTextForSpeech } from '@/lib/speech-text'
 import { type LiveHistoryMessage, type LiveTranscriptFragment, VoiceLiveSession } from '@/lib/voice-live'
+import type { LiveTranscriptWriter } from '@/lib/voice-live-transcript'
 import { isVoiceStopCommand } from '@/lib/voice-stop-word'
 import { notify, notifyError } from '@/store/notifications'
 
@@ -33,7 +34,8 @@ interface VoiceLiveConversationOptions {
   onStopWord?: () => void
   /** Submit a Hermes turn: `text` is the user's last words (the bubble and the
    *  persisted row), `voiceContext` the recent spoken exchange for the model. */
-  onSubmit: (text: string, voiceContext: string) => Promise<void> | void
+  onSubmit: (text: string, voiceContext: string, transcriptPersisted?: boolean) => Promise<void> | void
+  prepareTranscript?: () => Promise<LiveTranscriptWriter>
   pendingResponse: () => PendingVoiceResponse | null
   consumePendingResponse: () => void
   /** Text turns to seed the live model with when the session opens. */
@@ -112,7 +114,8 @@ export function useVoiceLiveConversation({
   consumePendingResponse,
   seedHistory,
   activeToolLabel,
-  beforeMicOpen
+  beforeMicOpen,
+  prepareTranscript
 }: VoiceLiveConversationOptions) {
   const { t } = useI18n()
   const voiceCopy = t.notifications.voice
@@ -123,6 +126,7 @@ export function useVoiceLiveConversation({
   // restart the feed loop, and a ref write alone does not re-render.
   const [activeDelegation, setActiveDelegation] = useState<null | string>(null)
   const sessionRef = useRef<null | VoiceLiveSession>(null)
+  const transcriptRef = useRef<LiveTranscriptWriter | null>(null)
   // The scope's session owner (a Bot's own connection + profile) picks the
   // GPT-Live backend and voice; a ref keeps the long-lived start closures
   // reading the current value.
@@ -158,7 +162,8 @@ export function useVoiceLiveConversation({
     onSubmit,
     pendingResponse,
     consumePendingResponse,
-    seedHistory
+    seedHistory,
+    prepareTranscript
   })
 
   latest.current = {
@@ -170,7 +175,8 @@ export function useVoiceLiveConversation({
     onSubmit,
     pendingResponse,
     consumePendingResponse,
-    seedHistory
+    seedHistory,
+    prepareTranscript
   }
 
   // eslint-disable-next-line no-restricted-syntax -- legitimate non-atom ref write (see eslint rule comment)
@@ -221,6 +227,8 @@ export function useVoiceLiveConversation({
     spokenLengthRef.current = 0
     speakingRef.current = false
     session?.close()
+    void transcriptRef.current?.flush()
+    transcriptRef.current = null
     setMuted(false)
     setLevel(0)
     setStatus('idle')
@@ -246,12 +254,34 @@ export function useVoiceLiveConversation({
       return
     }
 
+    let transcript: LiveTranscriptWriter | undefined
+
+    try {
+      transcript = await latest.current.prepareTranscript?.()
+    } catch (error) {
+      startingRef.current = false
+      notifyError(error, voiceCopy.couldNotStartSession)
+      latest.current.onFatalError?.()
+
+      return
+    }
+
+    if (!enabledRef.current || startEpochRef.current !== epoch) {
+      startingRef.current = false
+
+      return
+    }
+
+    transcriptRef.current = transcript ?? null
+
     const session = new VoiceLiveSession(
       {
         // The voice model answers a bare "stop" itself (it just goes quiet) and
         // never delegates it, so the spoken stop phrase is judged on the user
         // transcript once the utterance settles.
         onTranscript: fragment => {
+          transcript?.append(fragment)
+
           if (fragment.speaker !== 'user') {
             return
           }
@@ -274,6 +304,8 @@ export function useVoiceLiveConversation({
           }, UTTERANCE_SETTLE_MS)
         },
         onClosed: (reason, usageSeconds) => {
+          void transcript?.flush()
+
           if (sessionRef.current !== session) {
             return
           }
@@ -320,7 +352,14 @@ export function useVoiceLiveConversation({
           submittedAtRef.current = Date.now()
           latest.current.consumePendingResponse()
           refreshStatus()
-          void Promise.resolve(latest.current.onSubmit(prompt, voiceContext)).catch(error => {
+          void (async () => {
+            const persisted = transcript ? await transcript.flush() : false
+
+            if (sessionRef.current !== session || delegationRef.current !== delegationId) {
+              return
+            }
+            await latest.current.onSubmit(prompt, voiceContext, persisted)
+          })().catch(error => {
             notifyError(error, voiceCopy.liveDelegationFailed)
             session.speak(delegationId, 'Sorry, I could not reach Hermes for that request.')
             setDelegation(null)

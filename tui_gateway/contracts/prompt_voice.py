@@ -7,10 +7,12 @@ and voice / wake-word control (``methods_voice.py``).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from .base import JsonValue, Params, Result, WireEnum
-from .common import OpenModel, PendingApproval, SessionParams
+from .common import OpenModel, PendingApproval, SessionParams, TranscriptMessage
 from .registry import method
 
 # ── prompt.submit ─────────────────────────────────────────────────────────────────────────────
@@ -536,3 +538,27 @@ class WakeFeedResult(WakeOwnerResult):
 
 method("wake.feed", params=WakeFeedParams, result=WakeFeedResult,
        doc="Push client-captured PCM into the armed detector (mic-less remote backends).")
+
+
+class VoiceLiveTranscriptParams(SessionParams):
+    call_id: str = Field(min_length=1, max_length=200)
+    event_id: str = Field(min_length=1, max_length=200)
+    utterance_id: str = Field(min_length=1, max_length=200)
+    speaker: Literal["user", "assistant"]
+    text: str = Field(min_length=1, max_length=16000)
+    start_ms: float = Field(ge=0)
+    end_ms: float = Field(ge=0)
+
+
+class VoiceLiveTranscriptResult(Result):
+    message: TranscriptMessage
+
+
+class VoiceLiveTranscriptListResult(Result):
+    messages: list[TranscriptMessage]
+
+
+method("voice.live.transcript.append", params=VoiceLiveTranscriptParams, result=VoiceLiveTranscriptResult,
+       doc="Idempotently persist received spoken text for display; never submits a model turn.")
+method("voice.live.transcript.list", params=SessionParams, result=VoiceLiveTranscriptListResult,
+       doc="Read the live session's durable spoken display history, including its compression lineage.")

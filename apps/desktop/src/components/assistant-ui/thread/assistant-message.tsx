@@ -1057,7 +1057,7 @@ const AssistantActionBar: FC<MessageActionProps & { durationS?: number }> = ({
         data-slot="aui_msg-actions"
       >
         <MessageHoverTime className="mr-1 px-0.5" />
-        {onBranchInNewChat && (
+        {onBranchInNewChat && !messageId.startsWith('voice:') && (
           <TooltipIconButton
             onClick={() => {
               triggerHaptic('selection')
@@ -1084,17 +1084,19 @@ const AssistantActionBar: FC<MessageActionProps & { durationS?: number }> = ({
           getText={getMessageText}
           messageId={messageId}
         />
-        <ActionBarPrimitive.Reload asChild>
-          <TooltipIconButton
-            onClick={() => {
-              triggerHaptic('submit')
-              recordAction(DESKTOP_BUTTON_ACTIONS.messageRetry, 'click')
-            }}
-            tooltip={copy.refresh}
-          >
-            <RefreshCwIcon className="size-3.5" />
-          </TooltipIconButton>
-        </ActionBarPrimitive.Reload>
+        {!messageId.startsWith('voice:') && (
+          <ActionBarPrimitive.Reload asChild>
+            <TooltipIconButton
+              onClick={() => {
+                triggerHaptic('submit')
+                recordAction(DESKTOP_BUTTON_ACTIONS.messageRetry, 'click')
+              }}
+              tooltip={copy.refresh}
+            >
+              <RefreshCwIcon className="size-3.5" />
+            </TooltipIconButton>
+          </ActionBarPrimitive.Reload>
+        )}
       </ActionBarPrimitive.Root>
       {/* ONE slot, Slack-style: the picker trigger and the landed reaction are
           the same element, so reacting never shifts layout. Empty → ☺, hidden

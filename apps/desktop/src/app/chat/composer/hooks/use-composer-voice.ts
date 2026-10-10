@@ -21,6 +21,7 @@ import { $gateway } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
 import { $voiceLiveStatus, refreshVoiceLiveStatus, selectedVoiceChatMode } from '@/store/voice-live'
 import { $autoSpeakReplies, $voiceStopPhrase, setAutoSpeakReplies } from '@/store/voice-prefs'
+import { createVoiceTranscriptWriter, recoverVoiceTranscripts } from '@/store/voice-transcript-writer'
 import { resumeWakeAfterVoice } from '@/store/wake-word'
 
 import { pinFloatingComposerCapture } from '../floating-target'
@@ -73,7 +74,8 @@ export function useComposerVoice({
 }: UseComposerVoiceArgs) {
   const { t } = useI18n()
   // A tile's composer speaks ITS transcript, not the primary chat's.
-  const { $messages } = useComposerScope()
+  const { $messages, connectionId, profile } = useComposerScope()
+  const voiceOwnerRef = useRef({ sessionId, connectionId, profile })
 
   // Wake the voice loop once when a pending reply first becomes speakable,
   // without re-rendering the composer for every streamed token. The live
@@ -81,7 +83,9 @@ export function useComposerVoice({
   const $pendingVoiceReplyId = useMemo(
     () =>
       computed($messages, messages => {
-        const last = messages.findLast(message => message.role === 'assistant' && !message.hidden)
+        const last = messages.findLast(
+          message => message.role === 'assistant' && !message.hidden && !message.voiceTranscript
+        )
 
         // Runs on every streamed flush: test the parts in place instead of
         // joining the whole reply into a string just to check it is non-blank.
@@ -128,8 +132,8 @@ export function useComposerVoice({
 
   /** Auto-speak selector: the latest unspoken reply only — a backlog collapses to the newest. */
   const pendingResponse = () => {
-    const messages = $messages.get()
-    const last = messages.findLast(m => m.role === 'assistant' && !m.hidden)
+    const messages = $messages.get().filter(message => !message.voiceTranscript)
+    const last = messages.findLast(m => m.role === 'assistant' && !m.hidden && !m.voiceTranscript)
     const spoken = resolveSpokenReply(sessionId, messages)
 
     if (!last || last.id === spoken?.id) {
@@ -156,14 +160,14 @@ export function useComposerVoice({
    * bubble happens to be last. See `collectUnspokenTurnSpeech`.
    */
   const pendingTurnResponse = () => {
-    const messages = $messages.get()
+    const messages = $messages.get().filter(message => !message.voiceTranscript)
 
     return collectUnspokenTurnSpeech(messages, resolveSpokenReply(sessionId, messages)?.id ?? null)
   }
 
   const consumePendingResponse = () => {
-    const messages = $messages.get()
-    const last = messages.findLast(m => m.role === 'assistant' && !m.hidden)
+    const messages = $messages.get().filter(message => !message.voiceTranscript)
+    const last = messages.findLast(m => m.role === 'assistant' && !m.hidden && !m.voiceTranscript)
 
     if (last) {
       markAssistantIdSpoken(sessionId, messages, last.id)
@@ -183,11 +187,15 @@ export function useComposerVoice({
 
   /** A GPT-Live delegation → Hermes turn. The bubble and the persisted row are
    *  what the user said; the transcript window rides the model input only. */
-  const submitLiveDelegation = async (text: string, voiceContext: string) => {
+  const submitLiveDelegation = async (text: string, voiceContext: string, transcriptPersisted?: boolean) => {
     triggerHaptic('submit')
     resetBrowseState(sessionId)
     clearDraft()
-    await onSubmit(text, { surface: 'voice-live', voiceContext })
+    await onSubmit(text, {
+      surface: 'voice-live',
+      voiceContext,
+      ...(transcriptPersisted ? { displayKind: 'hidden' } : {})
+    })
   }
 
   /** Recent text turns of this chat, as GPT-Live startup history. */
@@ -201,7 +209,7 @@ export function useComposerVoice({
 
   /** The tool Hermes is running right now, for quiet progress in the voice. */
   const activeToolLabel = () => {
-    const last = $messages.get().findLast(m => m.role === 'assistant' && !m.hidden)
+    const last = $messages.get().findLast(m => m.role === 'assistant' && !m.hidden && !m.voiceTranscript)
     const running = last?.parts.findLast(part => part.type === 'tool-call' && part.result === undefined)
 
     return running && running.type === 'tool-call' ? running.toolName : null
@@ -248,8 +256,60 @@ export function useComposerVoice({
     onStopWord: () => setVoiceConversationActive(false),
     onSubmit: submitLiveDelegation,
     pendingResponse: pendingTurnResponse,
-    seedHistory: seedLiveHistory
+    seedHistory: seedLiveHistory,
+    prepareTranscript: async () => {
+      let runtimeId = sessionId ?? null
+
+      if (!runtimeId) {
+        await onSubmit('', {
+          prepareVoiceSession: id => {
+            runtimeId = id
+          }
+        })
+      }
+
+      if (!runtimeId) {
+        throw new Error('Could not prepare voice chat')
+      }
+
+      return createVoiceTranscriptWriter(runtimeId, error => notifyError(error, t.notifications.voice.liveError))
+    }
   })
+
+  useEffect(() => {
+    if (!sessionId) {
+      return
+    }
+
+    const recover = () =>
+      recoverVoiceTranscripts(sessionId, error => notifyError(error, t.notifications.voice.liveError))
+
+    recover()
+    window.addEventListener('online', recover)
+    // A gateway restart need not trigger the browser's online event.
+    const retry = window.setInterval(recover, 5000)
+
+    return () => {
+      window.clearInterval(retry)
+      window.removeEventListener('online', recover)
+    }
+  }, [sessionId, t.notifications.voice.liveError])
+
+  const endLiveConversation = liveConversation.end
+  // eslint-disable-next-line no-restricted-syntax -- compares the previous composer owner to close its call; not an atom mirror
+  useEffect(() => {
+    const previous = voiceOwnerRef.current
+    voiceOwnerRef.current = { sessionId, connectionId, profile }
+
+    if (
+      (previous.sessionId && previous.sessionId !== sessionId) ||
+      previous.connectionId !== connectionId ||
+      previous.profile !== profile
+    ) {
+      void endLiveConversation()
+      setVoiceConversationActive(false)
+    }
+  }, [sessionId, connectionId, profile, endLiveConversation])
 
   const conversation = liveEngineActive ? liveConversation : chainedConversation
 

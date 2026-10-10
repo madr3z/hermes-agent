@@ -50,6 +50,7 @@ interface LiveServerEvent {
 }
 
 export interface LiveTranscriptFragment {
+  eventId?: string
   speaker: 'assistant' | 'user'
   text: string
   startMs: number
@@ -226,6 +227,8 @@ export class VoiceLiveSession {
   private started = false
   private eventCounter = 0
   private transcript: LiveTranscriptFragment[] = []
+  private receivedEvents = new Set<string>()
+  private receivedDelegations = new Set<string>()
   private speakingProbe: null | number = null
   private analyser: null | AnalyserNode = null
   private audioContext: null | AudioContext = null
@@ -377,12 +380,48 @@ export class VoiceLiveSession {
     }
   }
 
-  private handleEvent(raw: string): void {
+  private receiveTranscript(event: LiveServerEvent): void {
+    const fragment: LiveTranscriptFragment = {
+      eventId: event.event_id ?? this.nextEventId('transcript'),
+      endMs: event.end_ms ?? 0,
+      speaker: event.type === 'session.input_transcript.delta' ? 'user' : 'assistant',
+      startMs: event.start_ms ?? 0,
+      text: event.delta ?? ''
+    }
+
+    this.transcript.push(fragment)
+
+    if (this.transcript.length > 2_000) {
+      this.transcript.splice(0, this.transcript.length - 1_500)
+    }
+
+    this.handlers.onTranscript?.(fragment)
+  }
+
+  private readEvent(raw: string): LiveServerEvent | null {
     let event: LiveServerEvent
 
     try {
       event = JSON.parse(raw) as LiveServerEvent
     } catch {
+      return null
+    }
+
+    if (this.finalized || (event.event_id && this.receivedEvents.has(event.event_id))) {
+      return null
+    }
+
+    if (event.event_id) {
+      this.receivedEvents.add(event.event_id)
+    }
+
+    return event
+  }
+
+  private handleEvent(raw: string): void {
+    const event = this.readEvent(raw)
+
+    if (!event) {
       return
     }
 
@@ -395,20 +434,7 @@ export class VoiceLiveSession {
 
       case 'session.input_transcript.delta':
       case 'session.output_transcript.delta': {
-        const fragment: LiveTranscriptFragment = {
-          endMs: event.end_ms ?? 0,
-          speaker: event.type === 'session.input_transcript.delta' ? 'user' : 'assistant',
-          startMs: event.start_ms ?? 0,
-          text: event.delta ?? ''
-        }
-
-        this.transcript.push(fragment)
-
-        if (this.transcript.length > 2_000) {
-          this.transcript.splice(0, this.transcript.length - 1_500)
-        }
-
-        this.handlers.onTranscript?.(fragment)
+        this.receiveTranscript(event)
 
         return
       }
@@ -416,7 +442,8 @@ export class VoiceLiveSession {
       case 'session.delegation.created': {
         const id = event.delegation?.id
 
-        if (id) {
+        if (id && !this.receivedDelegations.has(id)) {
+          this.receivedDelegations.add(id)
           this.activeDelegationId = id
           this.handlers.onDelegation(id, this.contextWindow())
         }

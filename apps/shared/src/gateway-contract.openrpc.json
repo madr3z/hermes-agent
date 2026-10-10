@@ -4471,6 +4471,42 @@
       }
     },
     {
+      "name": "voice.live.transcript.append",
+      "summary": "Idempotently persist received spoken text for display; never submits a model turn.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/VoiceLiveTranscriptParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/VoiceLiveTranscriptResult"
+        }
+      }
+    },
+    {
+      "name": "voice.live.transcript.list",
+      "summary": "Read the live session's durable spoken display history, including its compression lineage.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SessionParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/VoiceLiveTranscriptListResult"
+        }
+      }
+    },
+    {
       "name": "voice.record",
       "summary": "VAD-bounded push-to-talk; the transcript arrives as a voice.transcript event.",
       "params": [
@@ -38938,6 +38974,124 @@
         "title": "VerificationStatusResult",
         "type": "object"
       },
+      "VoiceLiveTranscriptListResult": {
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "VoiceLiveTranscriptListResult",
+        "type": "object"
+      },
+      "VoiceLiveTranscriptParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "call_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "event_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "utterance_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Utterance Id",
+            "type": "string"
+          },
+          "speaker": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Speaker",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 16000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "start_ms": {
+            "minimum": 0,
+            "title": "Start Ms",
+            "type": "number"
+          },
+          "end_ms": {
+            "minimum": 0,
+            "title": "End Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "session_id",
+          "call_id",
+          "event_id",
+          "utterance_id",
+          "speaker",
+          "text",
+          "start_ms",
+          "end_ms"
+        ],
+        "title": "VoiceLiveTranscriptParams",
+        "type": "object"
+      },
+      "VoiceLiveTranscriptPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/TranscriptMessage"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "VoiceLiveTranscriptPayload",
+        "type": "object"
+      },
+      "VoiceLiveTranscriptResult": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/TranscriptMessage"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "VoiceLiveTranscriptResult",
+        "type": "object"
+      },
       "VoicePartialPayload": {
         "additionalProperties": false,
         "description": "``methods_voice`` voice.record ``on_partial`` \u2014 live STT text so far (``stt.streaming``).",
@@ -41165,6 +41319,18 @@
           "schema": {
             "type": "object",
             "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "voice.live.transcript",
+      "summary": "A committed spoken display message; replace by display_metadata.voice_message_id.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/VoiceLiveTranscriptPayload"
           }
         }
       ]

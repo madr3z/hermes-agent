@@ -744,17 +744,21 @@ async def get_session_messages(
         # prefetch only shows the child continuation's messages after a
         # compression rotation, hiding the pre-compaction transcript
         # (#51058).
+        from hermes_state_voice import voice_messages
         return sid, _limit, db.get_messages(
             sid, limit=_limit, offset=offset, latest=latest_page,
-            include_compacted=include_compacted, include_ancestors=True)
+            include_compacted=include_compacted, include_ancestors=True), voice_messages(db, sid)
 
     result = await asyncio.to_thread(_with_db, profile, _read, read_only=True)
     if result is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-    sid, _limit, messages = result
+    sid, _limit, messages, speech = result
     projected_messages = await asyncio.to_thread(
         _project_for_display, messages, home=_history_profile_home(profile),
         inline_images=inline_images)
+    if speech:
+        from hermes_state_voice import interleave_voice_messages
+        projected_messages = interleave_voice_messages(projected_messages, speech)
     return {
         "session_id": sid,
         # The same stamp list rows carry, so the Desktop keys a page under the
@@ -764,7 +768,7 @@ async def get_session_messages(
         "pagination": {
             "limit": _limit, "offset": offset,
             "order": order or ("latest" if limit is None else "oldest"),
-            "returned": len(projected_messages)}}
+            "returned": len(messages)}}
 
 
 def _timeline_session_id(db, session_id: str, owner: str) -> str:

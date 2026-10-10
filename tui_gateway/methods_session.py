@@ -683,8 +683,7 @@ class _Resume:
         return self.db.get_messages_as_conversation(self.target, repair_alternation=repair, include_row_ids=True)
 
     def messages(self, display: list) -> list:
-        return [] if self.omit_messages else _history_to_messages(
-            display, profile_home=self.profile_home, image_urls=self.inline_images)
+        return _voice_resume_messages(self, display)
 
     def read_history(self) -> tuple:
         """One lineage SELECT, two projections: model-fed copy alternation-repaired (healed once

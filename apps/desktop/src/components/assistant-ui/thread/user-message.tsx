@@ -368,7 +368,7 @@ export const UserMessage: FC<{
   // Watch windows spectate a subagent run driven elsewhere — prompts can't be
   // edited, restored, or stopped from here. The bubble stays a button that
   // toggles the 2-line clamp so long prompts are still fully readable.
-  const readOnly = isWatchWindow()
+  const readOnly = userMessageReadOnly(messageId)
   const [expanded, setExpanded] = useState(false)
   const clampActive = !(readOnly && expanded)
 
@@ -630,4 +630,9 @@ export const UserMessage: FC<{
       </StickyHumanMessageContainer>
     </MessagePrimitive.Root>
   )
+}
+
+// Spoken rows have no model-history row to rewind or edit.
+function userMessageReadOnly(messageId: string): boolean {
+  return isWatchWindow() || messageId.startsWith('voice:')
 }

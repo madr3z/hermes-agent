@@ -5,6 +5,7 @@ import { extractImageRefs } from '@/lib/embedded-images'
 import { parseErrorSurface } from '@/lib/error-surface'
 import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { isTodoToolName } from '@/lib/todos'
+import { forEachTranscriptMessage, suppressVoiceEchoes } from '@/lib/voice-live-transcript'
 import type { MessageReaction, SessionMessage } from '@/types/hermes'
 
 import {
@@ -402,15 +403,37 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
     clearPendingTools()
   }
 
-  messages.forEach((message, index) => {
-    if (message.role === 'assistant') {
-      nearestAssistant = message
-    } else if (message.role === 'user' || message.role === 'system') {
-      nearestAssistant = null
-    }
+  forEachTranscriptMessage(
+    messages,
+    (message, index) => {
+      if (message.role === 'assistant') {
+        nearestAssistant = message
+      } else if (message.role === 'user' || message.role === 'system') {
+        nearestAssistant = null
+      }
 
-    if (message.role === 'tool') {
-      if (isTodoToolName(message.tool_name) && !pairedTodoResult(message)) {
+      if (message.role === 'tool') {
+        if (isTodoToolName(message.tool_name) && !pairedTodoResult(message)) {
+          pendingToolParts = [...pendingToolParts, storedToolMessagePart(message, index)]
+          pendingToolTimestamp ??= message.timestamp
+          pendingToolRows += 1
+
+          return
+        }
+
+        const updatedPendingToolParts = applyStoredToolResultToParts(pendingToolParts, message)
+
+        if (updatedPendingToolParts) {
+          pendingToolParts = updatedPendingToolParts
+          pendingToolRows += 1
+
+          return
+        }
+
+        if (applyStoredToolResult(result, message)) {
+          return
+        }
+
         pendingToolParts = [...pendingToolParts, storedToolMessagePart(message, index)]
         pendingToolTimestamp ??= message.timestamp
         pendingToolRows += 1
@@ -418,202 +441,190 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
         return
       }
 
-      const updatedPendingToolParts = applyStoredToolResultToParts(pendingToolParts, message)
+      const content =
+        message.display_content !== undefined
+          ? message.display_content
+          : message.content || message.text || message.context || message.name
 
-      if (updatedPendingToolParts) {
-        pendingToolParts = updatedPendingToolParts
+      const rawDisplayContent = transcriptContent(
+        message.display_kind,
+        message.role,
+        timelineDisplayContent(message, displayContentForMessage(message.role, content))
+      )
+
+      const displayRole = isMachineNotice(message.display_kind) ? 'system' : message.role
+
+      // Persisted user turns carry `@image:<path>` directive lines inline in
+      // the text (see tui_gateway/server.py's persist-time rewrite). The
+      // read-only bubble clamps its body to ~2 lines, and a large inline image
+      // thumbnail pushes any caption text below the clamp's visible area — so
+      // pull image refs out into `attachmentRefs` (same shape the local
+      // optimistic composer already uses) and render them via the dedicated
+      // attachments row below the bubble instead. The leading `@file:` block
+      // (attached files, large pastes) moves there too, for the same parity.
+      const imageRefExtraction =
+        displayRole === 'user' && rawDisplayContent ? extractImageRefs(rawDisplayContent) : null
+
+      const fileRefExtraction = imageRefExtraction ? splitLeadingAttachmentRefs(imageRefExtraction.cleanedText) : null
+      const displayContent = fileRefExtraction ? fileRefExtraction.text : rawDisplayContent
+      const liftedRefs = [...(fileRefExtraction?.refs ?? []), ...(imageRefExtraction?.refs ?? [])]
+      const extractedAttachmentRefs = liftedRefs.length ? liftedRefs : undefined
+
+      const parts: ChatMessagePart[] = []
+      const rowId = message.row_id ?? (typeof message.id === 'number' ? message.id : undefined)
+      const sourceHasTools = Array.isArray(message.tool_calls) && message.tool_calls.length > 0
+      const durableComplete = sourceHasTools ? false : rowId !== undefined ? true : undefined
+
+      const codexText =
+        displayRole === 'assistant' && message.display_kind !== 'hidden' ? codexMessageItemText(message) : null
+
+      const commentary = codexText?.commentary ?? []
+
+      const rawReasoning =
+        message.reasoning || message.reasoning_content || reasoningTextFromDetails(message.reasoning_details)
+
+      const reasoning = message.display_reasoning !== undefined ? message.display_reasoning : rawReasoning
+
+      if (reasoning && message.role === 'assistant') {
+        parts.push(reasoningPart(reasoning, message.timestamp))
+      }
+
+      const reply = message.display_content !== undefined ? displayContent : displayContent || codexText?.reply
+      // Some providers also persist the joined commentary as canonical content.
+      // Keep that authoritative copy once, without treating unrelated final text
+      // as a reason to discard the earlier public messages.
+      const normalized = (value: string) => renderMediaTags(value).replace(/\s+/g, ' ').trim()
+
+      const commentaryIsReply = Boolean(
+        reply && commentary.length && normalized(commentary.join('\n\n')) === normalized(reply)
+      )
+
+      if (!commentaryIsReply) {
+        parts.push(...commentary.map(text => assistantTextPart(text, message.timestamp)))
+      }
+
+      if (reply) {
+        parts.push(
+          displayRole === 'assistant' ? assistantTextPart(reply, message.timestamp) : textPart(reply, message.timestamp)
+        )
+      }
+
+      if (message.role === 'assistant' && Array.isArray(message.tool_calls)) {
+        parts.push(
+          ...message.tool_calls.map((call, callIndex) =>
+            toolPartFromStoredCall(call, callIndex, message.timestamp, message.tool_call_labels)
+          )
+        )
+      }
+
+      if (rowId !== undefined) {
+        for (const part of parts) {
+          if (part.type === 'text') {
+            part.sourceRowId = rowId
+          }
+        }
+      }
+
+      if (!parts.length && !extractedAttachmentRefs?.length) {
+        if (message.role !== 'assistant') {
+          flushPendingTools(index)
+          activeAssistantIndex = null
+        }
+
+        return
+      }
+
+      const isToolOnlyAssistant =
+        message.role === 'assistant' && parts.length > 0 && parts.every(part => part.type === 'tool-call')
+
+      if (isToolOnlyAssistant) {
+        pendingToolParts = [...pendingToolParts, ...parts]
+        pendingToolTimestamp ??= message.timestamp
         pendingToolRows += 1
 
         return
       }
 
-      if (applyStoredToolResult(result, message)) {
-        return
-      }
+      let pendingAbsorbedRows = 0
 
-      pendingToolParts = [...pendingToolParts, storedToolMessagePart(message, index)]
-      pendingToolTimestamp ??= message.timestamp
-      pendingToolRows += 1
+      if (message.role === 'assistant') {
+        if (pendingToolParts.length) {
+          if (!appendPartsToActiveAssistant(pendingToolParts, message.timestamp ?? pendingToolTimestamp)) {
+            parts.unshift(...pendingToolParts)
+            pendingAbsorbedRows = pendingToolRows
+          }
 
-      return
-    }
-
-    const content =
-      message.display_content !== undefined
-        ? message.display_content
-        : message.content || message.text || message.context || message.name
-
-    const rawDisplayContent = transcriptContent(
-      message.display_kind,
-      message.role,
-      timelineDisplayContent(message, displayContentForMessage(message.role, content))
-    )
-
-    const displayRole = isMachineNotice(message.display_kind) ? 'system' : message.role
-
-    // Persisted user turns carry `@image:<path>` directive lines inline in
-    // the text (see tui_gateway/server.py's persist-time rewrite). The
-    // read-only bubble clamps its body to ~2 lines, and a large inline image
-    // thumbnail pushes any caption text below the clamp's visible area — so
-    // pull image refs out into `attachmentRefs` (same shape the local
-    // optimistic composer already uses) and render them via the dedicated
-    // attachments row below the bubble instead. The leading `@file:` block
-    // (attached files, large pastes) moves there too, for the same parity.
-    const imageRefExtraction = displayRole === 'user' && rawDisplayContent ? extractImageRefs(rawDisplayContent) : null
-    const fileRefExtraction = imageRefExtraction ? splitLeadingAttachmentRefs(imageRefExtraction.cleanedText) : null
-    const displayContent = fileRefExtraction ? fileRefExtraction.text : rawDisplayContent
-    const liftedRefs = [...(fileRefExtraction?.refs ?? []), ...(imageRefExtraction?.refs ?? [])]
-    const extractedAttachmentRefs = liftedRefs.length ? liftedRefs : undefined
-
-    const parts: ChatMessagePart[] = []
-    const rowId = message.row_id ?? (typeof message.id === 'number' ? message.id : undefined)
-    const sourceHasTools = Array.isArray(message.tool_calls) && message.tool_calls.length > 0
-    const durableComplete = sourceHasTools ? false : rowId !== undefined ? true : undefined
-
-    const codexText =
-      displayRole === 'assistant' && message.display_kind !== 'hidden' ? codexMessageItemText(message) : null
-
-    const commentary = codexText?.commentary ?? []
-
-    const rawReasoning =
-      message.reasoning || message.reasoning_content || reasoningTextFromDetails(message.reasoning_details)
-
-    const reasoning = message.display_reasoning !== undefined ? message.display_reasoning : rawReasoning
-
-    if (reasoning && message.role === 'assistant') {
-      parts.push(reasoningPart(reasoning, message.timestamp))
-    }
-
-    const reply = message.display_content !== undefined ? displayContent : displayContent || codexText?.reply
-    // Some providers also persist the joined commentary as canonical content.
-    // Keep that authoritative copy once, without treating unrelated final text
-    // as a reason to discard the earlier public messages.
-    const normalized = (value: string) => renderMediaTags(value).replace(/\s+/g, ' ').trim()
-
-    const commentaryIsReply = Boolean(
-      reply && commentary.length && normalized(commentary.join('\n\n')) === normalized(reply)
-    )
-
-    if (!commentaryIsReply) {
-      parts.push(...commentary.map(text => assistantTextPart(text, message.timestamp)))
-    }
-
-    if (reply) {
-      parts.push(
-        displayRole === 'assistant' ? assistantTextPart(reply, message.timestamp) : textPart(reply, message.timestamp)
-      )
-    }
-
-    if (message.role === 'assistant' && Array.isArray(message.tool_calls)) {
-      parts.push(
-        ...message.tool_calls.map((call, callIndex) =>
-          toolPartFromStoredCall(call, callIndex, message.timestamp, message.tool_call_labels)
-        )
-      )
-    }
-
-    if (rowId !== undefined) {
-      for (const part of parts) {
-        if (part.type === 'text') {
-          part.sourceRowId = rowId
+          clearPendingTools()
         }
-      }
-    }
 
-    if (!parts.length && !extractedAttachmentRefs?.length) {
-      if (message.role !== 'assistant') {
+        const activeAssistant =
+          activeAssistantIndex !== null && result[activeAssistantIndex]?.role === 'assistant'
+            ? result[activeAssistantIndex]
+            : null
+
+        const currentHasToolCall = parts.some(part => part.type === 'tool-call')
+        const activeHasToolCall = Boolean(activeAssistant?.parts.some(part => part.type === 'tool-call'))
+
+        if (activeAssistant && (currentHasToolCall || activeHasToolCall)) {
+          activeAssistant.parts = [...activeAssistant.parts, ...parts]
+          activeAssistant.durableComplete = durableComplete
+          activeAssistant.timestamp = earliestTimestamp(
+            activeAssistant.timestamp,
+            message.timestamp,
+            ...parts.map(part => part.timestamp)
+          )
+          absorbRows(activeAssistant, 1)
+
+          return
+        }
+      } else {
         flushPendingTools(index)
-        activeAssistantIndex = null
       }
 
-      return
-    }
+      const failure = message.display_kind === 'failed_turn' ? failedTurnError(message.display_metadata) : null
 
-    const isToolOnlyAssistant =
-      message.role === 'assistant' && parts.length > 0 && parts.every(part => part.type === 'tool-call')
-
-    if (isToolOnlyAssistant) {
-      pendingToolParts = [...pendingToolParts, ...parts]
-      pendingToolTimestamp ??= message.timestamp
-      pendingToolRows += 1
-
-      return
-    }
-
-    let pendingAbsorbedRows = 0
-
-    if (message.role === 'assistant') {
-      if (pendingToolParts.length) {
-        if (!appendPartsToActiveAssistant(pendingToolParts, message.timestamp ?? pendingToolTimestamp)) {
-          parts.unshift(...pendingToolParts)
-          pendingAbsorbedRows = pendingToolRows
-        }
-
-        clearPendingTools()
+      if (failure) {
+        // Stands for no backend row of its own; the boundary row below counts itself.
+        result.push({
+          id: `${message.timestamp || Date.now()}-${index}-failed-turn-error`,
+          role: 'assistant',
+          parts: [],
+          pending: false,
+          serverRowSpan: 0,
+          ...failure,
+          ...(message.timestamp ? { timestamp: message.timestamp } : {})
+        })
       }
 
-      const activeAssistant =
-        activeAssistantIndex !== null && result[activeAssistantIndex]?.role === 'assistant'
-          ? result[activeAssistantIndex]
-          : null
-
-      const currentHasToolCall = parts.some(part => part.type === 'tool-call')
-      const activeHasToolCall = Boolean(activeAssistant?.parts.some(part => part.type === 'tool-call'))
-
-      if (activeAssistant && (currentHasToolCall || activeHasToolCall)) {
-        activeAssistant.parts = [...activeAssistant.parts, ...parts]
-        activeAssistant.durableComplete = durableComplete
-        activeAssistant.timestamp = earliestTimestamp(
-          activeAssistant.timestamp,
-          message.timestamp,
-          ...parts.map(part => part.timestamp)
-        )
-        absorbRows(activeAssistant, 1)
-
-        return
-      }
-    } else {
-      flushPendingTools(index)
-    }
-
-    const failure = message.display_kind === 'failed_turn' ? failedTurnError(message.display_metadata) : null
-
-    if (failure) {
-      // Stands for no backend row of its own; the boundary row below counts itself.
+      const reactions = messageReactions(message.display_metadata)
+      // Gateway resume names the durable row id `row_id`; the REST transcript
+      // prefetch ships the same messages.id as a numeric `id`. Either one lets
+      // reactions address this exact row later.
       result.push({
-        id: `${message.timestamp || Date.now()}-${index}-failed-turn-error`,
-        role: 'assistant',
-        parts: [],
-        pending: false,
-        serverRowSpan: 0,
-        ...failure,
-        ...(message.timestamp ? { timestamp: message.timestamp } : {})
+        id: `${message.timestamp || Date.now()}-${index}-${displayRole}`,
+        role: displayRole,
+        parts,
+        ...(message.role === 'assistant' && durableComplete !== undefined ? { durableComplete } : {}),
+        ...(message.display_kind === 'async_delegation_complete' || message.display_kind === 'process_complete'
+          ? { asyncResult: asyncResultBody(displayContentForMessage(message.role, message.content || content)) }
+          : {}),
+        ...(message.display_kind === 'process_complete' ? { asyncResultKind: 'process' as const } : {}),
+        timestamp: earliestTimestamp(message.timestamp, ...parts.map(part => part.timestamp)),
+        ...(rowId !== undefined ? { rowId } : {}),
+        ...(pendingAbsorbedRows > 0 ? { serverRowSpan: pendingAbsorbedRows + 1 } : {}),
+        ...(reactions.length ? { reactions } : {}),
+        ...(message.role === 'assistant' && messageInterrupted(message.display_metadata) ? { interrupted: true } : {}),
+        ...(extractedAttachmentRefs ? { attachmentRefs: extractedAttachmentRefs } : {})
       })
+
+      activeAssistantIndex = message.role === 'assistant' ? result.length - 1 : null
+    },
+    (spoken, index) => {
+      flushPendingTools(index)
+      activeAssistantIndex = null
+      result.push(spoken)
     }
-
-    const reactions = messageReactions(message.display_metadata)
-    // Gateway resume names the durable row id `row_id`; the REST transcript
-    // prefetch ships the same messages.id as a numeric `id`. Either one lets
-    // reactions address this exact row later.
-    result.push({
-      id: `${message.timestamp || Date.now()}-${index}-${displayRole}`,
-      role: displayRole,
-      parts,
-      ...(message.role === 'assistant' && durableComplete !== undefined ? { durableComplete } : {}),
-      ...(message.display_kind === 'async_delegation_complete' || message.display_kind === 'process_complete'
-        ? { asyncResult: asyncResultBody(displayContentForMessage(message.role, message.content || content)) }
-        : {}),
-      ...(message.display_kind === 'process_complete' ? { asyncResultKind: 'process' as const } : {}),
-      timestamp: earliestTimestamp(message.timestamp, ...parts.map(part => part.timestamp)),
-      ...(rowId !== undefined ? { rowId } : {}),
-      ...(pendingAbsorbedRows > 0 ? { serverRowSpan: pendingAbsorbedRows + 1 } : {}),
-      ...(reactions.length ? { reactions } : {}),
-      ...(message.role === 'assistant' && messageInterrupted(message.display_metadata) ? { interrupted: true } : {}),
-      ...(extractedAttachmentRefs ? { attachmentRefs: extractedAttachmentRefs } : {})
-    })
-
-    activeAssistantIndex = message.role === 'assistant' ? result.length - 1 : null
-  })
+  )
   flushPendingTools(messages.length)
 
   const withoutGeneratedImageEchoes = result.map(message =>
@@ -623,7 +634,7 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
   )
 
   return withUniqueToolCallIds(
-    withoutGeneratedImageEchoes.filter(
+    suppressVoiceEchoes(withoutGeneratedImageEchoes).filter(
       m =>
         chatMessageText(m).trim() || m.parts.some(part => part.type !== 'text') || m.attachmentRefs?.length || m.error
     )
