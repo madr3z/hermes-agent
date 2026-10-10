@@ -3194,7 +3194,7 @@ def _live_session_payload(
                        ("pending_connection", _pending_connection_request_payload(sid))):
         if value:
             payload[key] = value
-    return _attach_todo_state(payload, session)
+    return _attach_todo_state(_voice_live_payload(session, payload), session)
 
 
 def _main_runtime_from_agent(agent) -> dict | None:

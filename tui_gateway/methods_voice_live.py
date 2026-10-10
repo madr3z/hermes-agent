@@ -56,5 +56,23 @@ def _voice_resume_messages(context, display):
     return merge_voice_messages(context.db, context.target, messages)
 
 
+
+def _voice_live_payload(session, payload):
+    """Warm activate/resume and deferred hydration share the cold-resume speech overlay."""
+    from hermes_state_voice import merge_voice_messages
+    with _session_db(session) as db:
+        if db is None or not session.get('session_key'):
+            return payload
+        key = db.resolve_resume_session_id(session['session_key'])
+        if payload.get('messages_omitted'):
+            stored = db.get_session(key)
+            if stored:
+                payload['message_count'] = max(payload['message_count'], stored['message_count'])
+        else:
+            payload['messages'] = merge_voice_messages(db, key, payload['messages'])
+            payload['message_count'] = len(payload['messages'])
+    return payload
+
+
 def register(server):
     bind_module(globals(), server, skip=('_',))

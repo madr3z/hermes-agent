@@ -1,4 +1,5 @@
 import { type ChatMessage, chatMessageText, withUniqueToolCallIdsWithinMessage } from '@/lib/chat-messages'
+import { isModelTurnRole } from '@/lib/voice-live-transcript'
 
 export interface DuplicateFinalCollapse {
   /** The surviving bubble replaces the removed stream id at completion. */
@@ -34,7 +35,7 @@ export function collapseDuplicateFinalAfterToolInterim(
   }
 
   const priorIndex = messages.findLastIndex(
-    (message, index) => index < streamIndex && (!message.hidden || message.role === 'user')
+    (message, index) => index < streamIndex && !message.voiceTranscript && (!message.hidden || message.role === 'user')
   )
 
   const prior = messages[priorIndex]
@@ -114,7 +115,7 @@ export function identicalInterimSiblingIndex(
 
     const message = messages[index]
 
-    if (message.role !== 'assistant' || message.hidden || message.interim !== true) {
+    if (!isModelTurnRole(message, 'assistant') || message.hidden || message.interim !== true) {
       continue
     }
 

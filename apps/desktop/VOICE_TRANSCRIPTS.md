@@ -88,3 +88,20 @@ No pilot deployment is part of this change.
   run passed 10 checks and identified code-health findings subsequently fixed;
   a full rerun timed out after 900 seconds in unchanged check_bash_shebangs.py.
   No claim of full CI, packaged desktop build, deployment or live acceptance.
+
+## Independent review follow-up
+
+The review follow-up makes ordinary-row pagination use pagination.returned, so a
+repeated speech overlay neither skips ordinary rows nor arms endless backfill for
+a speech-only conversation. Stable speech IDs deduplicate the repeated overlay.
+Model-turn completion/interim/error boundaries and assistant candidates exclude
+display-only speech. Warm resume and session.activate merge the same speech
+projection, and deferred hydration retains a nonzero stored count for speech-only
+sessions.
+
+Validation after these changes: the prescribed Python runner passes 7 tests,
+including warm/deferred hydration; its optional precompile also completed with
+PYTHON_CPU_COUNT=1. Renderer typechecking, changed-file ESLint and code health pass.
+The focused Desktop review set covers transcript-voice-pagination.test.ts,
+transcript-tail.test.ts, use-message-stream/voice-live-transcript.test.tsx and
+completion-boundaries.test.tsx. No live-acceptance or deployment claim is added.

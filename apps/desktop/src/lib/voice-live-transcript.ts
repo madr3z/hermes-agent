@@ -80,6 +80,7 @@ export function suppressVoiceEchoes(messages: ChatMessage[]): ChatMessage[] {
     if (!message.voiceTranscript || message.role !== 'assistant') {
       return message
     }
+
     const text = normalized(message)
     const hidden = Boolean(text && answers.get(segment)?.has(text))
 
@@ -128,11 +129,13 @@ export class LiveTranscriptWriter {
     if (!fragment.text) {
       return
     }
+
     const eventId = fragment.eventId ?? `fragment-${++this.sequence}`
 
     if (this.seen.has(eventId)) {
       return
     }
+
     this.seen.add(eventId)
 
     if (!this.previous || this.previous.speaker !== fragment.speaker || fragment.startMs - this.previous.endMs > 1500) {
@@ -211,4 +214,13 @@ export function forEachTranscriptMessage(
       spoken(voice, index)
     }
   })
+}
+
+/** Speech is display history, never a prompt/answer boundary in a delegated model turn. */
+export function isModelTurnRole(message: ChatMessage | undefined, role: 'user' | 'assistant'): boolean {
+  return message?.role === role && !message.voiceTranscript
+}
+
+export function isVisibleModelMessage(message: ChatMessage): boolean {
+  return !message.hidden && !message.voiceTranscript
 }

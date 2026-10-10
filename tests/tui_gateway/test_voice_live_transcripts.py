@@ -89,3 +89,25 @@ def test_resume_display_includes_spoken_only_chat_without_feeding_the_agent(tmp_
     ctx = SimpleNamespace(omit_messages=False, profile_home=str(tmp_path), inline_images=False, db=db, target='bot')
     assert server._voice_resume_messages(ctx, display)[0]['text'] == 'Hello'
     db.close()
+
+
+def test_warm_payload_and_deferred_hydration_include_spoken_only_history(tmp_path, monkeypatch):
+    from tui_gateway import server
+    db = SessionDB(db_path=tmp_path / 'state.db')
+    db.create_session('bot', 'desktop')
+    append_voice_fragment(db, 'bot', fragment())
+    db.close()
+    session = dict(session_key='bot', profile_home=str(tmp_path), history=[],
+                   history_lock=threading.Lock(), source='desktop', created_at=1)
+    monkeypatch.setattr(server, '_fallback_session_info', lambda session: {})
+    monkeypatch.setattr(server, '_attach_todo_state', lambda payload, session: payload)
+    monkeypatch.setattr(server, '_sessions', {'runtime': session})
+    warm = server._live_session_payload('runtime', session)
+    assert warm['messages'][0]['text'] == 'Hello'
+    assert warm['message_count'] == 1
+    deferred = server._live_session_payload('runtime', session, omit_messages=True)
+    assert deferred['messages'] == []
+    assert deferred['messages_omitted'] is True
+    assert deferred['message_count'] == 1
+    assert server._live_session_payload('runtime', session)['messages'] == warm['messages']
+    assert session['history'] == []

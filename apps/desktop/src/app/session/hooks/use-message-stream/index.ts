@@ -29,7 +29,7 @@ import {
 } from '@/lib/generated-images'
 import { isTodoToolName, nextTodosFromToolEvent, parseTodoRevision } from '@/lib/todos'
 import { turnDoneNotificationBody } from '@/lib/turn-done-notification-body'
-import { suppressVoiceEchoes } from '@/lib/voice-live-transcript'
+import { isModelTurnRole, isVisibleModelMessage, suppressVoiceEchoes } from '@/lib/voice-live-transcript'
 import type { ScopedServerRequest } from '@/store/gateway'
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import { isDiskFullErrorMessage, notifyError } from '@/store/notifications'
@@ -667,13 +667,13 @@ export function useMessageStream({
           // reply twice (#120104). When this occurrence's newest visible
           // assistant row already carries the same text — including a skewed
           // duplicate landing after the turn settled — refresh it in place.
-          const lastUserIndex = nextMessages.findLastIndex(message => message.role === 'user')
+          const lastUserIndex = nextMessages.findLastIndex(message => isModelTurnRole(message, 'user'))
           const normalizedText = authoritativeText.replace(/\s+/g, ' ').trim()
 
           const prevSameText = nextMessages.findLast(
             (message, index) =>
               index > lastUserIndex &&
-              message.role === 'assistant' &&
+              isModelTurnRole(message, 'assistant') &&
               !message.hidden &&
               chatMessageText(message).replace(/\s+/g, ' ').trim() === normalizedText
           )
@@ -869,7 +869,8 @@ export function useMessageStream({
         const hasCurrentResponse = Boolean(streamId || state.sawAssistantPayload || interimBoundaryPending)
 
         const lastUserIndex = prev.findLastIndex(
-          message => message.role === 'user' && !(hasCurrentResponse && message.id === `user-queued-${sessionId}`)
+          message =>
+            isModelTurnRole(message, 'user') && !(hasCurrentResponse && message.id === `user-queued-${sessionId}`)
         )
 
         const streamIndex = streamId
@@ -905,7 +906,7 @@ export function useMessageStream({
           nextMessages = collapsed?.messages ?? settleAt(streamIndex)
         } else {
           const fallbackIndex = prev.findLastIndex(
-            (message, index) => index > lastUserIndex && message.role === 'assistant' && !message.hidden
+            (message, index) => index > lastUserIndex && isModelTurnRole(message, 'assistant') && !message.hidden
           )
 
           if (fallbackIndex >= 0) {
@@ -1016,7 +1017,8 @@ export function useMessageStream({
             const sealedIndex =
               !streamId && interimBoundaryPending && finalText
                 ? prev.findLastIndex(
-                    (message, index) => index < lastUserIndex && message.role === 'assistant' && !message.hidden
+                    (message, index) =>
+                      index < lastUserIndex && isModelTurnRole(message, 'assistant') && !message.hidden
                   )
                 : -1
 
@@ -1037,17 +1039,17 @@ export function useMessageStream({
         nextMessages = sealOpenToolParts(nextMessages)
 
         const hasInlineError = nextMessages.some(
-          (m, index) => index > lastUserIndex && m.role === 'assistant' && m.error && !m.hidden
+          (m, index) => index > lastUserIndex && isModelTurnRole(m, 'assistant') && m.error && !m.hidden
         )
 
-        const lastVisible = [...nextMessages].reverse().find(m => !m.hidden)
-        const unresolvedUserTail = lastVisible?.role === 'user'
+        const lastVisible = [...nextMessages].reverse().find(isVisibleModelMessage)
+        const unresolvedUserTail = isModelTurnRole(lastVisible, 'user')
 
         const sameTurnId = collapsed?.keptId ?? (streamIndex >= 0 ? streamId : null)
 
         const sameTurnAssistant = sameTurnId
           ? nextMessages.find(m => m.id === sameTurnId)
-          : nextMessages.findLast((m, index) => index > lastUserIndex && m.role === 'assistant' && !m.hidden)
+          : nextMessages.findLast((m, index) => index > lastUserIndex && isModelTurnRole(m, 'assistant') && !m.hidden)
 
         const localVisibleText = sameTurnAssistant ? chatMessageText(sameTurnAssistant).trim() : ''
         // Having streamed the reply normally means this window owns the whole
@@ -1143,7 +1145,7 @@ export function useMessageStream({
           ? Math.max(1, Math.round((Date.now() - state.turnStartedAt) / 1000))
           : undefined
 
-        const lastUserIndex = prev.findLastIndex(message => message.role === 'user')
+        const lastUserIndex = prev.findLastIndex(message => isModelTurnRole(message, 'user'))
 
         // The turn's terminal error frame may already have painted this
         // failure's card; a trailing bare `error` event updates that card.
@@ -1152,7 +1154,7 @@ export function useMessageStream({
           : prev.findLast(
               (message, index) =>
                 index > lastUserIndex &&
-                message.role === 'assistant' &&
+                isModelTurnRole(message, 'assistant') &&
                 !message.hidden &&
                 message.error &&
                 !chatMessageText(message).trim()

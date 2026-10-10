@@ -131,23 +131,24 @@ export function pageHonorsLatestOrder(page: TailPage): boolean {
 /** Paging state after `page`: the next older offset and whether older rows may exist. */
 export function tailStateFromPage(page: TailPage, profile?: TranscriptProfileScope): TranscriptTailState {
   const pagination = page.pagination
+  const returned = pagination?.returned ?? page.messages.length
 
   // No pagination metadata is a legacy backend that ignored the paging query
   // and returned the full transcript: nothing is truncated.
   if (!pagination || pagination.limit <= 0) {
-    return { nextOffset: page.messages.length, possiblyTruncated: false, profile }
+    return { nextOffset: returned, possiblyTruncated: false, profile }
   }
 
   // A page with metadata but no honoured-order echo came from a backend that
   // dropped `order` and paged from the OLDEST row (#92508). It is not a tail:
   // arm no backfill, or "Show earlier" prepends the wrong prefix.
   if (!pageHonorsLatestOrder(page)) {
-    return { nextOffset: page.messages.length, possiblyTruncated: false, profile }
+    return { nextOffset: returned, possiblyTruncated: false, profile }
   }
 
   return {
-    nextOffset: pagination.offset + page.messages.length,
-    possiblyTruncated: page.messages.length >= pagination.limit,
+    nextOffset: pagination.offset + returned,
+    possiblyTruncated: returned >= pagination.limit,
     profile
   }
 }
