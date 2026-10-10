@@ -1,3 +1,4 @@
+import { atom, computed, type ReadableAtom } from 'nanostores'
 /**
  * @hermes/plugin-sdk — THE plugin language. The vscode-module model: plugin
  * authors import exactly one module and get everything — they never touch
@@ -17,11 +18,14 @@
  *    and the future seam for per-plugin capability grants.
  *  - `ui.*` — the design language, so plugin UI looks native by default.
  */
-
-import { atom, computed, type ReadableAtom } from 'nanostores'
 import type { ReactNode } from 'react'
 
 import { capabilityScoped } from '@/api/client'
+
+import { botProvisioningClient } from './bot-provisioning'
+import { listConnections } from './connections'
+/** Pane, status bar and titlebar slots; see `./areas` for the mount rules. */
+export { PANES_AREA, STATUSBAR_AREAS, TITLEBAR_AREAS } from './areas'
 import { PRIMARY_SESSION_VIEW } from '@/app/chat/session-view'
 import { openSession, type OpenSessionIntent } from '@/app/open-session'
 import { syncWorkspaceRoute } from '@/app/routes'
@@ -114,8 +118,7 @@ import { planPluginOpenSession } from './plugin-open-session-plan'
 import { sessionsHost } from './sessions'
 import { desktopSettings } from './settings'
 
-/** Pane, status bar and titlebar slots; see `./areas` for the mount rules. */
-export { PANES_AREA, STATUSBAR_AREAS, TITLEBAR_AREAS } from './areas'
+export type { BotVmCapabilities, BotVmRequest, BotVmStatus } from './bot-provisioning'
 
 // -- state: readonly views over the app's live atoms -------------------------
 
@@ -668,6 +671,7 @@ async function awaitProfileActivation(
 }
 
 export const host = {
+  botProvisioning: botProvisioningClient,
   state: {
     /** Runtime id of the active chat session (null on a fresh draft). */
     activeSessionId: readonlyAtom<null | string>($activeSessionId),
@@ -892,18 +896,7 @@ export const host = {
 
   /** The registered connection list (labels, kinds, primary) — token bytes
    *  never included. Rejects on Desktop builds without the registry. */
-  connections: async () => {
-    const bridge = window.hermesDesktop?.connections
-
-    if (!bridge) {
-      throw new Error('This Desktop build has no connection registry. Update Hermes Desktop.')
-    }
-
-    const registryPayload = await bridge.list()
-    const rows = Array.isArray(registryPayload?.connections) ? registryPayload.connections : []
-
-    return rows.map(connection => ({ ...connection, primary: connection.id === registryPayload.primary }))
-  },
+  connections: listConnections,
 
   /** The union agent roster across every registered connection: one row per
    *  (source, profile) with the pre-computed @name-device handle for

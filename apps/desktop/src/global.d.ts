@@ -229,6 +229,10 @@ declare global {
       // v2 multi-connection registry: named agent sources, all persisted
       // together (local + any number of remote/cloud/ssh instances).
       connections: {
+        registerProvisioned: (payload: {
+          connectionId: string
+          requestId: string
+        }) => Promise<DesktopRegistryConnection>
         list: () => Promise<DesktopConnectionsRegistry>
         save: (
           payload: DesktopRegistryConnectionInput

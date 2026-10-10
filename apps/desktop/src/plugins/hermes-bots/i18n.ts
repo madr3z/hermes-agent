@@ -1,3 +1,5 @@
+import { type PluginLocaleBundles, type PluginTranslate, usePluginI18n } from '@hermes/plugin-sdk'
+import { useMemo } from 'react'
 /**
  * Plugin-scoped i18n for Bot Mode — bundles registered under the plugin id via
  * `ctx.i18n.register`, never touching core `en.ts`. Mirrors the kanban plugin:
@@ -29,12 +31,12 @@
  * 机器人 / 機器人, プロファイル / 配置档案 / 設定檔, ゲートウェイ / 网关 / 閘道.
  */
 
-import { type PluginLocaleBundles, type PluginTranslate, usePluginI18n } from '@hermes/plugin-sdk'
-import { useMemo } from 'react'
-
+import { bind, type Bound } from './i18n-bind'
 import { getPluginCtx } from './shared'
+import { vmEn, vmJa, type VmMessages, vmZh, vmZhHant } from './vm-i18n'
 
 type BotsMessages = {
+  vm: VmMessages
   /** Left rail: the bot + group-chat roster. */
   editor: {
     fullConfigHint: string
@@ -484,6 +486,7 @@ type BotsMessages = {
 }
 
 const en: BotsMessages = {
+  vm: vmEn,
   editor: {
     fullConfigHint: 'Full configuration needs a newer gateway (restart it after updating Hermes).',
     liveCapabilities: 'Capabilities (applies immediately — skills, tools, MCP)',
@@ -920,6 +923,7 @@ const en: BotsMessages = {
 }
 
 const ja: BotsMessages = {
+  vm: vmJa,
   editor: {
     fullConfigHint: 'すべての設定を使うには新しいゲートウェイが必要です（Hermes 更新後に再起動してください）。',
     liveCapabilities: '機能（即時適用 — スキル、ツール、MCP）',
@@ -1360,6 +1364,7 @@ const ja: BotsMessages = {
 }
 
 const zh: BotsMessages = {
+  vm: vmZh,
   editor: {
     fullConfigHint: '完整配置需要更新网关（更新 Hermes 后请重启网关）。',
     liveCapabilities: '功能（立即生效 — 技能、工具、MCP）',
@@ -1784,6 +1789,7 @@ const zh: BotsMessages = {
 }
 
 const zhHant: BotsMessages = {
+  vm: vmZhHant,
   editor: {
     fullConfigHint: '完整設定需要更新閘道（更新 Hermes 後請重新啟動閘道）。',
     liveCapabilities: '功能（立即生效 — 技能、工具、MCP）',
@@ -2212,30 +2218,6 @@ export const BOTS_LOCALES: PluginLocaleBundles = { en, ja, zh, 'zh-hant': zhHant
 
 // Bind the message SHAPE to a plugin translator: string leaves resolve now,
 // function leaves forward their args through t(path, …).
-type Bound<T> = {
-  [K in keyof T]: T[K] extends (...args: infer A) => string
-    ? (...args: A) => string
-    : T[K] extends object
-      ? Bound<T[K]>
-      : string
-}
-
-function bind<T extends object>(t: PluginTranslate, template: T, prefix = ''): Bound<T> {
-  const out = {} as Record<string, unknown>
-
-  for (const [key, value] of Object.entries(template)) {
-    const path = prefix ? `${prefix}.${key}` : key
-    out[key] =
-      typeof value === 'function'
-        ? (...args: unknown[]) => t(path, ...args)
-        : value && typeof value === 'object'
-          ? bind(t, value as object, path)
-          : t(path)
-  }
-
-  return out as Bound<T>
-}
-
 export type BotsText = Bound<BotsMessages>
 
 /** The Bot Mode strings for the active locale — one hook every component reads. */

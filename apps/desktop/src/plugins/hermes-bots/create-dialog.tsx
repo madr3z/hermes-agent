@@ -44,6 +44,7 @@ import { isBackfilledFacePng } from './avatar-image'
 import { AvatarPicker } from './avatar-picker'
 import { $selectedBot } from './bot-state'
 import { createCanonicalChat } from './canonical-chat'
+import { createTargetRequest, creationTargetLabel, useCreationConnections } from './create-target'
 import { $botMeta, botHandle, botRosterKey, filterBots, ROSTER_KEY, saveBotMeta } from './data'
 import { labeled, ResizableFrame } from './dialog-parts'
 import { GROUP_CHAT_MAX_MEMBERS, mintGroupRoomId, uniqueGroupChatName, updateGroupChat } from './group-chat'
@@ -72,7 +73,8 @@ import { deleteBot } from './profile-ops'
 import { botRosterMeta } from './routing'
 import { HubSkillsSection } from './skills-hub'
 import { composeSoul } from './soul'
-import type { BotMeta, ConnectionRow, RosterRow } from './types'
+import type { BotMeta, RosterRow } from './types'
+import { VmCreateButton } from './vm-create-button'
 
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
@@ -110,15 +112,17 @@ interface CapabilityCatalog {
   source: string
   toolsets: CapabilityEntry[]
 }
-interface CreateAgentDialogProps {
+export interface CreateAgentDialogProps {
   onClose: () => void
+  onCreateVm?: () => void
   /** Opens the editor for a just-created local bot whose model is not ready. */
   onConfigureModel?: (bot: RosterRow) => void
   open: boolean
   roster: RosterRow[]
 }
 
-export function CreateAgentDialog({ open, onClose, onConfigureModel, roster }: CreateAgentDialogProps) {
+export function CreateAgentDialog(props: CreateAgentDialogProps) {
+  const { open, onClose, onConfigureModel, roster, onCreateVm } = props
   const { t } = useI18n()
   const b = useBots()
   const [name, setName] = useState('')
@@ -151,51 +155,15 @@ export function CreateAgentDialog({ open, onClose, onConfigureModel, roster }: C
   // machine's backend via host.requestProfile, no gateway switch. Only
   // rendered when the desktop has a multi-connection registry.
   const [targetConnection, setTargetConnection] = useState('')
-  const [connections, setConnections] = useState<ConnectionRow[] | null>(null)
-  useEffect(() => {
-    if (
-      !open ||
-      connections !== null ||
-      typeof host.connections !== 'function' ||
-      typeof host.requestProfile !== 'function'
-    ) {
-      return
-    }
-
-    host
-      .connections()
-      // host.connections() returns the registry ROWS on current SDKs, but the
-      // envelope object ({version, primary, connections: [...]}) on desktops
-      // that predate the SDK-side unwrap — accept both shapes.
-      .then((value: ConnectionRow[] | { connections?: ConnectionRow[] }) =>
-        setConnections(Array.isArray(value) ? value : Array.isArray(value?.connections) ? value.connections : [])
-      )
-      .catch(() => setConnections([]))
-  }, [open, connections])
+  const connections = useCreationConnections(open)
   const activeConnectionId = String(host.state?.connectionId?.get?.() || '').trim()
   // Remote target = an explicitly picked registry connection that is not the
   // one this window is already on.
   const remoteTarget = Boolean(targetConnection) && targetConnection !== (activeConnectionId || 'local')
 
-  const targetLabel = remoteTarget
-    ? (connections || []).find(c => c.id === targetConnection)?.label || targetConnection
-    : ''
+  const targetLabel = creationTargetLabel(remoteTarget, connections, targetConnection)
 
-  /** Gateway RPC on the create target: the picked connection's default
-   *  backend for remote targets, the active gateway otherwise. */
-  const requestForTarget = <T,>(method: string, params: Record<string, unknown> = {}): Promise<T> =>
-    remoteTarget
-      ? host.requestProfile(
-          {
-            connectionId: targetConnection,
-            mode: 'remote',
-            profile: 'default',
-            targetProfile: 'default'
-          },
-          method,
-          params
-        )
-      : host.request(method, params)
+  const requestForTarget = createTargetRequest(remoteTarget, targetConnection)
 
   // Set once ensureAgentCreated() materializes the profile for the live
   // Capabilities tab (CapabilitiesView needs a real backend to point at). State —
@@ -624,6 +592,7 @@ export function CreateAgentDialog({ open, onClose, onConfigureModel, roster }: C
         <DialogHeader>
           <DialogTitle>{b.bot.newTitle}</DialogTitle>
           <DialogDescription>{b.editor.newDescription}</DialogDescription>
+          <VmCreateButton busy={busy} onClick={onCreateVm} profileCreated={createdRef.current} />
         </DialogHeader>
         <div className="grid gap-3.5">
           <div className="flex justify-center py-1">

@@ -105,7 +105,7 @@ async function renderDialog(hasCapabilitiesView: boolean, onConfigureModel?: (bo
   mocks.hasCapabilitiesView.value = hasCapabilitiesView
   vi.resetModules()
 
-  const { CreateAgentDialog } = await import('./create-dialog')
+  const { CreateBotDialog: CreateAgentDialog } = await import('./create-agent-dialog')
 
   const view = render(
     withQueryClient(

@@ -284,6 +284,7 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   connections: {
     list: () => ipcRenderer.invoke('hermes:connections:list'),
     save: payload => ipcRenderer.invoke('hermes:connections:save', payload),
+    registerProvisioned: payload => ipcRenderer.invoke('hermes:connections:registerProvisioned', payload),
     remove: id => ipcRenderer.invoke('hermes:connections:remove', id),
     setPrimary: id => ipcRenderer.invoke('hermes:connections:set-primary', id),
     setLaunchMode: mode => ipcRenderer.invoke('hermes:connections:set-launch-mode', mode),

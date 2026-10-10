@@ -1,7 +1,8 @@
 import { ConfirmDialog, host } from '@hermes/plugin-sdk'
 import type { useI18n } from '@hermes/plugin-sdk'
 
-import { CreateAgentDialog, CreateGroupChatDialog, GroupDialog } from './create-dialog'
+import { CreateBotDialog } from './create-agent-dialog'
+import { CreateGroupChatDialog, GroupDialog } from './create-dialog'
 import type { useRoster } from './data'
 import { EditProfileDialog } from './edit-profile-dialog'
 import { disbandGroupChat, openGroupChat } from './group-chat-view'
@@ -56,7 +57,7 @@ export function renderRosterDialogs({
 }: renderRosterDialogsProps) {
   return (
     <>
-      <CreateAgentDialog
+      <CreateBotDialog
         onClose={() => {
           setCreateOpen(false)
           void refetch()

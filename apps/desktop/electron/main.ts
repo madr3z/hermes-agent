@@ -1,3 +1,5 @@
+import { formatApiRequestFailure } from './api-error-log'
+import { registerProvisionedBot } from './bot-provisioning'
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -16124,6 +16126,15 @@ ipcMain.handle('hermes:secret-storage:set', async (_event: any, on: any) => appl
 // the registry lands separately; these handlers only manage the persisted
 // list, so they are safe to ship ahead of the switchover.
 ipcMain.handle('hermes:connections:list', async () => sanitizeConnectionsRegistry())
+ipcMain.handle('hermes:connections:registerProvisioned', (_event, payload) =>
+  registerProvisionedBot(payload, {
+    registry: readDesktopConnectionsRegistry,
+    request: handleHermesApiRequest,
+    persist: writeDesktopConnectionsRegistry,
+    publish: connectionId => broadcastConnectionsChanged({ connectionId, reason: 'saved' }),
+    sanitize: sanitizeRegistryConnection
+  })
+)
 ipcMain.handle('hermes:connections:save', async (_event, payload) => {
   const saved = await saveRegistryConnection(payload)
 
@@ -17629,20 +17640,6 @@ async function handleHermesApiRequest(request) {
   }
 
   return response
-}
-
-// Format an api-request failure for desktop.log. The renderer only ever sees
-// the invoke rejection; the real stack lives here in main, so persist it
-// before rethrowing. Clamp: paths and error detail must not bloat the log.
-function formatApiRequestFailure(
-  request: { method?: string; path?: string } | null | undefined,
-  error: unknown
-): string {
-  const method = String(request?.method ?? 'GET').toUpperCase()
-  const path = String(request?.path ?? '(no path)').slice(0, 500)
-  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
-
-  return `[hermes:api ${method} ${path}] ${detail}`.slice(0, 6000)
 }
 
 ipcMain.handle('hermes:api', async (_event, request) => {
