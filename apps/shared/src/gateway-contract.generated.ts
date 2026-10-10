@@ -2681,6 +2681,7 @@ export interface PromptSubmitParams {
   text?: unknown
   display_kind?: string | null
   interrupted?: boolean | null
+  client_turn_id?: string | null
   queued?: boolean | null
   surface?: string | null
   voice_context?: string | null
@@ -2697,6 +2698,7 @@ export interface PromptSubmitParams {
 export interface PromptSubmitResult {
   status?: PromptSubmitStatus | null
   voice_stopped?: boolean | null
+  client_turn_id?: string | null
   user_row_id?: number | null
   survivor_user_row_ids?: (number | null)[] | null
   survivor_row_id_map?: Record<string, number | null> | null
@@ -4704,6 +4706,7 @@ export interface MessageCompletePayload {
   error_surface?: ErrorSurface | null
   partial?: boolean | null
   persisted_turn?: PersistedTurn | null
+  client_turn_id?: string | null
 }
 /** ``prompt_turn._result_status``. */
 export type TurnStatus = 'complete' | 'error' | 'interrupted'

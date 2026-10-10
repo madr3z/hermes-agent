@@ -50,13 +50,14 @@ def _get_compute_host_supervisor(cfg: dict | None = None):
 def _compute_host_turn_frame(
     rid: str, sid: str, session: dict, text: Any, image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None, display_kind: str | None = None,
-    display_metadata: dict | None = None) -> dict:
+    display_metadata: dict | None = None, client_turn_id: str | None = None) -> dict:
     with session["history_lock"]:
         history = list(session.get("history", []))
         history_version = int(session.get("history_version", 0))
         attached_images = list(image_paths if image_paths is not None else session.get("attached_images", []))
     return {
         "type": "turn.start", "sid": sid, "request_id": rid,
+        **({"client_turn_id": client_turn_id} if client_turn_id else {}),
         "session_key": session.get("session_key") or sid, "text": text,
         **({"display_kind": display_kind} if display_kind else {}), "history": history,
         **({"display_metadata": display_metadata} if display_metadata else {}),
@@ -241,7 +242,8 @@ def _apply_compute_host_metadata_mirror(session: dict, frame: dict | None) -> No
         session["_metadata_mirror_updated_at"] = time.time()
 
 
-def _on_compute_host_turn_done(rid: str, sid: str, session: dict, frame: dict) -> None:
+def _on_compute_host_turn_done(rid: str, sid: str, session: dict, frame: dict,
+                               client_turn_id: str | None = None) -> None:
     with session["history_lock"]:
         _compute_host_adopt_frame_meta(session, frame)
         session["running"] = False
@@ -255,7 +257,8 @@ def _on_compute_host_turn_done(rid: str, sid: str, session: dict, frame: dict) -
         session.pop("pending_model_switch", None)
     if frame.get("type") == "turn.error":
         message = str(frame.get("message") or "compute host turn failed")
-        _emit("message.complete", sid, {"text": f"Error: {message}", "status": "error"})
+        _emit("message.complete", sid, {"text": f"Error: {message}", "status": "error",
+                                        **({"client_turn_id": client_turn_id} if client_turn_id else {})})
     _apply_compute_host_metadata_mirror(session, frame)
     # Settlement of a turn whose session was closed mid-flight: the real lease was held for it.
     _release_deferred_active_session_lease(session)
@@ -268,11 +271,12 @@ def _on_compute_host_turn_done(rid: str, sid: str, session: dict, frame: dict) -
 def _submit_prompt_to_compute_host(
     rid: str, sid: str, session: dict, text: Any, image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None, display_kind: str | None = None,
-    display_metadata: dict | None = None) -> dict:
+    display_metadata: dict | None = None, client_turn_id: str | None = None) -> dict:
     cfg = _load_dashboard_process_isolation_config()
     frame = _compute_host_turn_frame(rid, sid, session, text, image_paths=image_paths,
                                      queued_prompt_generation=queued_prompt_generation,
-                                     display_kind=display_kind, display_metadata=display_metadata)
+                                     display_kind=display_kind, display_metadata=display_metadata,
+                                     client_turn_id=client_turn_id)
     # Caller JSON-RPC ids may repeat across sockets and turns. Use an opaque
     # dispatch lifetime token, installed before a fast child can send activity.
     turn_id = frame["turn_id"] = frame["request_id"] = uuid.uuid4().hex
@@ -289,7 +293,7 @@ def _submit_prompt_to_compute_host(
                     return
                 session.pop("_compute_host_turn_id", None)
                 session.pop("_compute_host_activity_ns", None)
-            _on_compute_host_turn_done(rid, sid, session, done)
+            _on_compute_host_turn_done(rid, sid, session, done, client_turn_id=client_turn_id)
     try:
         _get_compute_host_supervisor(cfg).submit_turn(frame, on_complete=_complete)
     except Exception as exc:
@@ -302,7 +306,8 @@ def _submit_prompt_to_compute_host(
         session["_compute_host_active"] = True
         if image_paths is None:
             session["attached_images"] = []
-    return _ok(rid, {"status": "streaming", "turn_isolation": True})
+    return _ok(rid, {"status": "streaming", "turn_isolation": True,
+                     **({"client_turn_id": client_turn_id} if client_turn_id else {})})
 
 
 def _send_compute_host_control(

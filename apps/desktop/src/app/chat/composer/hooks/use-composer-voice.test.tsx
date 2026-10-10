@@ -77,6 +77,11 @@ vi.mock('@/store/voice-prefs', () => ({
   setAutoSpeakReplies: vi.fn(async () => undefined)
 }))
 
+vi.mock('@/store/voice-transcript-writer', () => ({
+  createVoiceTranscriptWriter: vi.fn(),
+  recoverVoiceTranscripts: vi.fn()
+}))
+
 vi.mock('@/store/wake-word', () => ({
   resumeWakeAfterVoice: vi.fn(async () => undefined)
 }))

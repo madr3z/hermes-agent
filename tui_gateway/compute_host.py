@@ -268,7 +268,8 @@ class ComputeHost:
             server._run_prompt_submit(
                 request_id, sid, session, text, display_kind=frame.get("display_kind") or None,
                 display_metadata=(frame.get("display_metadata")
-                                  if isinstance(frame.get("display_metadata"), dict) else None))
+                                  if isinstance(frame.get("display_metadata"), dict) else None),
+                client_turn_id=frame.get("client_turn_id"))
             run_thread = session.get("_run_thread")
             if run_thread is not None and hasattr(run_thread, "join"):
                 while run_thread.is_alive():

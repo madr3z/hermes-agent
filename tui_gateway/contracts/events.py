@@ -208,6 +208,7 @@ class MessageCompletePayload(Payload):
     error_surface: ErrorSurface | None = None
     partial: bool | None = None
     persisted_turn: PersistedTurn | None = None
+    client_turn_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 event("message.complete", MessageCompletePayload, doc="The turn ended: final text, usage and outcome.")

@@ -116,7 +116,7 @@ def _plan_goal_compression_recovery(
 def _admit_prompt_turn(
     sid: str, session: dict, text: Any, image_paths: list[str] | None,
     queued_prompt_generation: int | None, display_kind: str | None,
-    display_metadata: dict | None) -> tuple[list[str], Any] | None:
+    display_metadata: dict | None, client_turn_id: str | None = None) -> tuple[list[str], Any] | None:
     """Ownership + liveness gate every turn source must cross; ``(images, agent)`` or None.
     Synthesized turns (auto-continue, wake-ups) call ``_run_prompt_submit`` directly — the
     bypass that once let a second backend run a duplicate turn."""
@@ -169,7 +169,8 @@ def _admit_prompt_turn(
         logger.info("Refusing turn for session %s: no agent attached (%s)", session.get("session_key") or sid, reason)
         _emit_terminal_turn_error(
             sid, session, reason,
-            error_surface={"layer": "runtime", "code": "agent_init_failed", "retryable": True})
+            error_surface={"layer": "runtime", "code": "agent_init_failed", "retryable": True},
+            client_turn_id=client_turn_id)
         return None
     return images, agent
 
@@ -502,6 +503,7 @@ class _TurnRun:
     prompt_text: str = ""
     marker_key: str = ""
     receipt_attempted: bool = False
+    client_turn_id: str | None = None
 
 
 def _adopt_out_of_band_turns(session: dict) -> None:
@@ -945,6 +947,8 @@ def _complete_turn_payload(session: dict, st: _TurnRun, status_note: str | None,
     if _is_bot_mode_session(session):
         raw = _bot_mode_delivery_text(raw, successful=status == "complete")
     payload = {"text": raw, "usage": _get_usage(agent), "status": status}
+    if st.client_turn_id:
+        payload["client_turn_id"] = st.client_turn_id
     if receipt := _persisted_turn_receipt(st, raw, status):
         payload["persisted_turn"] = receipt
     if last_reasoning:
@@ -1029,7 +1033,8 @@ def _recover_turn_exception(sid: str, session: dict, st: _TurnRun, e: BaseExcept
             logger.exception("hosted room terminal receipt commit failed")
     try:
         # Same terminal error frame shape as the returned-error path.
-        _emit_terminal_turn_error(sid, session, e, retire_marker=st.receipt_committed)
+        _emit_terminal_turn_error(sid, session, e, retire_marker=st.receipt_committed,
+                                  client_turn_id=st.client_turn_id)
         st.error_retained = True
         st.error_detail = _turn_failure_detail(e, type(e).__name__, st.prompt_text)
     except Exception as emit_exc:
@@ -1123,7 +1128,7 @@ def _run_prompt_submit(
     display_metadata: dict | None = None, image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
     terminal_callback: Callable[[dict[str, Any]], None] | None = None,
-    turn_author: dict | None = None) -> bool:
+    turn_author: dict | None = None, client_turn_id: str | None = None) -> bool:
     # Every dispatch binds the session's own row (session_key, real source) before the turn writes:
     # the synthesized turns that enter here directly (crash auto-continue, queued-prompt drain,
     # wake-ups) bypass prompt.submit's persist, and a row-less turn is otherwise materialized by
@@ -1133,7 +1138,7 @@ def _run_prompt_submit(
             "prompt dispatch: session store unavailable for %s — this turn may not persist",
             session.get("session_key") or sid)
     admitted = _admit_prompt_turn(
-        sid, session, text, image_paths, queued_prompt_generation, display_kind, display_metadata)
+        sid, session, text, image_paths, queued_prompt_generation, display_kind, display_metadata, client_turn_id)
     if admitted is None:
         return False
     images, agent = admitted
@@ -1168,7 +1173,7 @@ def _run_prompt_submit(
         runtime_session_token = _current_runtime_session_record.set(session)
         st = _TurnRun(
             session["agent"], session.pop("one_turn_model_restore", None), terminal_callback,
-            receipt_committed=terminal_callback is None)
+            receipt_committed=terminal_callback is None, client_turn_id=client_turn_id)
         st.marker_key = _record_turn_marker(session, text, auto_continue=terminal_callback is None,
             notification_category=(display_metadata or {}).get("notification_category"))
         goal_followup = None

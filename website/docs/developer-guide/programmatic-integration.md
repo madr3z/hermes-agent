@@ -63,6 +63,12 @@ Within one authenticated gateway, resuming or activating a live session attaches
 
 `session.create` accepts per-session `model` / `provider` overrides. A pair the provider cannot serve (`model: gpt-5.5` with `provider: anthropic`, or with no `provider` when the profile's configured provider is Anthropic) is refused up front with JSON-RPC code `-32602` instead of minting a session whose first turn fails at the provider; `error.data` carries `model`, `provider` and up to five `suggestions` from that provider's catalog, and `error.message` repeats them. The check is offline and only refuses names Hermes knows belong elsewhere: custom endpoints (`custom`, `custom:<name>`), aggregators (OpenRouter, Nous, …), models in the provider's own family that the curated list has not caught up with, and names no catalog lists are all accepted as before.
 
+### Correlating a submitted turn
+
+`prompt.submit` accepts an optional `client_turn_id` string of 1–200 characters. The accepted streaming or queued result echoes it, and that turn's `message.complete` carries the same value through inline and isolated compute execution, including terminal errors. A fast completion may arrive before the submit result; match both against the captured identifier and owning session. The identifier is transport metadata: it never enters model input, conversation history, system prompts or the prompt cache, and is not an idempotency key or a durable completion receipt.
+
+A correlated busy input gets its own FIFO turn instead of becoming an in-place correction. Its envelope neither merges with another input nor disappears when its text repeats an earlier turn. Requests without the field retain the existing busy-input and text-merge behavior. Native live voice sends `queued: true` explicitly and uses a fresh UUID for each delegation. Older backends reject the unknown field before dispatch with `4000`; clients may retry without it only for that specific validation rejection, never after a transport failure or accepted queue result.
+
 ### Rewinding history on `prompt.submit`
 
 A rewind / edit / regenerate is a `prompt.submit` that drops part of the stored transcript before running the new turn. Because that write is a destructive rewrite of the session's durable rows, the gateway honors it only when the client states its intent:

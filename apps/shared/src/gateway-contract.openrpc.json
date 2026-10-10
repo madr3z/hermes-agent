@@ -18990,6 +18990,20 @@
               }
             ],
             "default": null
+          },
+          "client_turn_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Turn Id"
           }
         },
         "title": "MessageCompletePayload",
@@ -26598,6 +26612,20 @@
             "default": null,
             "title": "Interrupted"
           },
+          "client_turn_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Turn Id"
+          },
           "queued": {
             "anyOf": [
               {
@@ -26766,6 +26794,20 @@
             ],
             "default": null,
             "title": "Voice Stopped"
+          },
+          "client_turn_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Turn Id"
           },
           "user_row_id": {
             "anyOf": [

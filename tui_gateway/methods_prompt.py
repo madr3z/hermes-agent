@@ -604,7 +604,8 @@ def _persist_session_row_for_submit(rid, session, text=None, display_kind=None):
 
 
 def _run_after_agent_ready(
-    rid, sid, session, text, display_kind, display_metadata, hosted_terminal_callback, turn_author=None
+    rid, sid, session, text, display_kind, display_metadata, hosted_terminal_callback, turn_author=None,
+    client_turn_id: str | None = None
 ):
     """Turn thread body: patient wait for a deferred build (a slow build must not eat the
     accepted in-flight message), then run."""
@@ -617,7 +618,8 @@ def _run_after_agent_ready(
         # the only way resume shows this to a disconnected client.
         _emit_terminal_turn_error(
             sid, session, (err.get("error") or {}).get("message", "agent initialization failed"),
-            error_surface={"layer": "runtime", "code": "agent_init_failed", "retryable": True})
+            error_surface={"layer": "runtime", "code": "agent_init_failed", "retryable": True},
+            client_turn_id=client_turn_id)
         with session["history_lock"]:
             session["running"] = False
             session["last_active"] = time.time()
@@ -635,7 +637,7 @@ def _run_after_agent_ready(
             return
     _run_prompt_submit(
         rid, sid, session, text, display_kind=display_kind, display_metadata=display_metadata,
-        terminal_callback=hosted_terminal_callback, turn_author=turn_author)
+        terminal_callback=hosted_terminal_callback, turn_author=turn_author, client_turn_id=client_turn_id)
 
 
 _TRUNCATION_PARAMS = (
@@ -678,11 +680,18 @@ def _lock_in_submit_turn(
 _CLIENT_SURFACES = frozenset({"hud", "voice-live"})
 
 
+def _prompt_submit_early_response(rid, text, client_turn_id):
+    if client_turn_id is not None and (not isinstance(client_turn_id, str) or not 1 <= len(client_turn_id) <= 200):
+        return _err(rid, 4000, "client_turn_id must be a string of 1 to 200 characters")
+    return _typed_stop_phrase_response(rid, text)
+
+
 @method("prompt.submit")
 def _(rid, params: dict) -> dict:
     from hermes_cli.input_sanitize import sanitize_user_prompt_text
     sid = params.get("session_id", "")
     raw_text = params.get("text", "")
+    client_turn_id = params.get("client_turn_id")
     text = sanitize_user_prompt_text(raw_text) if isinstance(raw_text, str) else raw_text
     # Off-screen sends (widget intents) type the row so no client renders a bubble;
     # whitelisted to "hidden" — this RPC must not mint kinds.
@@ -693,7 +702,7 @@ def _(rid, params: dict) -> dict:
         if isinstance(title_preview, str) and title_preview.strip()
         else None
     )
-    if (stopped := _typed_stop_phrase_response(rid, text)) is not None:
+    if (stopped := _prompt_submit_early_response(rid, text, client_turn_id)) is not None:
         return stopped
     if params.get("interrupted"):
         # Client-side barge-in: latch so this turn's model message carries the note.
@@ -768,7 +777,7 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 4009, "session busy")
         busy_response = _handle_busy_submit(
             rid, sid, session, text, busy_transport, queued=bool(params.get("queued")), turn_author=turn_author,
-            display_kind=display_kind)
+            display_kind=display_kind, client_turn_id=client_turn_id)
         if busy_response is not None:
             return busy_response
     raw_rebind_ids = params.get("rebind_survivor_row_ids")
@@ -797,7 +806,8 @@ def _(rid, params: dict) -> dict:
             logger.debug("finalized-session reopen before isolated dispatch failed for %s",
                          sid, exc_info=True)
         isolated_response = _submit_prompt_to_compute_host(
-            rid, sid, session, text, display_kind=display_kind, display_metadata=display_metadata)
+            rid, sid, session, text, display_kind=display_kind, display_metadata=display_metadata,
+            client_turn_id=client_turn_id)
         if not isolated_response.get("error"):
             # The truncation already happened inline above (memory + DB).
             isolated_response["result"].update(survivor_fields)
@@ -824,12 +834,14 @@ def _(rid, params: dict) -> dict:
         _start_agent_build(sid, session)
     run_thread = threading.Thread(
         target=lambda: _run_after_agent_ready(
-            rid, sid, session, text, display_kind, display_metadata, hosted_terminal_callback, turn_author),
+            rid, sid, session, text, display_kind, display_metadata, hosted_terminal_callback, turn_author,
+            client_turn_id),
         daemon=True)
     # Handle lets session.interrupt tell a live turn from a stuck `running` flag.
     session["_run_thread"] = run_thread
     run_thread.start()
-    return _ok(rid, {"status": "streaming", **survivor_fields})
+    return _ok(rid, {"status": "streaming", **survivor_fields,
+                     **({"client_turn_id": client_turn_id} if client_turn_id else {})})
 
 
 @method("clipboard.paste")
