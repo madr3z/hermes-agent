@@ -131,6 +131,7 @@ def _admit_prompt_turn(
             session["running"] = False
             session.pop("_submit_user_row", None)  # no turn runs: the submit-time row stays as the send
         _emit("error", sid, {"message": str(ownership_refusal)})
+        _complete_correlated_prompt_error(sid, session, ownership_refusal, client_turn_id)
         return None
     with session["history_lock"]:
         if session.get("_closing") or (
@@ -716,8 +717,9 @@ def _prepare_turn_input(sid: str, session: dict, st: _TurnRun, text: Any, images
         ctx = preprocess_context_references(
             prompt, cwd=cwd, allowed_root=cwd, context_length=ctx_len)
         if ctx.blocked:
-            _emit(
-                "error", sid, {"message": "\n".join(ctx.warnings) or "Context injection refused."})
+            error = "\n".join(ctx.warnings) or "Context injection refused."
+            _emit("error", sid, {"message": error})
+            st.error_retained = _complete_correlated_prompt_error(sid, session, error, st.client_turn_id)
             return None
         prompt = ctx.message
     st.prompt_text = prompt if isinstance(prompt, str) else ""

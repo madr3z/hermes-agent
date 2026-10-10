@@ -523,11 +523,14 @@ def _drain_queued_prompt(rid, sid: str, session: dict) -> bool:
             with session["history_lock"]:
                 session["running"] = False
                 _clear_inflight_turn(session)
-            _emit("error", sid, {"message": str((resp.get("error") or {}).get("message") or "queued prompt failed")})
+            error = str((resp.get("error") or {}).get("message") or "queued prompt failed")
+            _emit("error", sid, {"message": error})
+            _complete_correlated_prompt_error(sid, session, error, queued.get("client_turn_id"))
             dispatch_failed = True
     except Exception as exc:
         _notif_log_failure("queued prompt dispatch failed", exc)
         _notif_release_turn(session)
+        _complete_correlated_prompt_error(sid, session, exc, queued.get("client_turn_id"))
         dispatch_failed = True
     if dispatch_failed:
         with session["history_lock"]:
@@ -598,6 +601,15 @@ def _emit_terminal_turn_error(
     if retire_marker:
         _retire_turn_marker(session)
     _emit("message.complete", sid, payload)
+
+
+def _complete_correlated_prompt_error(sid, session, error, client_turn_id) -> bool:
+    """Settle an accepted client task refused before model execution; legacy errors stay unchanged."""
+    if not client_turn_id:
+        return False
+    # Admission refusal can mean another process owns the crash marker: never retire it here.
+    _emit_terminal_turn_error(sid, session, error, retire_marker=False, client_turn_id=client_turn_id)
+    return True
 
 
 def _restore_agent_history_after_turn_error(session: dict, agent) -> bool:
