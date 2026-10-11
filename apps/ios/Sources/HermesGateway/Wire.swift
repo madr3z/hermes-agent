@@ -71,8 +71,9 @@ public struct GatewayEndpoint: Codable, Identifiable, Equatable, Sendable {
 public enum GatewayError: LocalizedError {
     case message(String)
     case rpc(code: Int, message: String)
+    case http(status: Int, message: String)
     public var errorDescription: String? {
-        switch self { case .message(let text), .rpc(_, let text): return text }
+        switch self { case .message(let text), .rpc(_, let text), .http(_, let text): return text }
     }
     public var rejectsClientTurnID: Bool {
         if case .rpc(let code, let message) = self {

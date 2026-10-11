@@ -29,7 +29,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path.endswith("/api/ws"):
+        if parsed.path.endswith(("/api/display/ws", "/api/terminal/ws")):
+            self.remote_stream(parsed)
+        elif parsed.path.endswith("/api/fixture/remote_events"):
+            self.json_reply(200, {"events": self.server.remote_events})
+        elif parsed.path.endswith("/api/ws"):
             if parse_qs(parsed.query).get("token") != ["fixture+token &?"]:
                 self.json_reply(401, {"error": "unauthorized"})
                 return
@@ -44,6 +48,52 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(200, {"ok": True, "path": parsed.path, "profile": parse_qs(parsed.query).get("profile", [None])[0]})
         else:
             self.json_reply(401, {"error": "unauthorized"})
+
+    def remote_stream(self, parsed):
+        # Match the production query-token seam, deliberately ignoring Bearer.
+        query = parse_qs(parsed.query)
+        display = parsed.path.endswith("/api/display/ws")
+        if query.get("token") != ["fixture+token &?"] or (display and query.get("display_ticket") != ["guest+ticket &?"]):
+            self.json_reply(403, {"error": "unauthorized"})
+            return
+        accept = base64.b64encode(hashlib.sha1((self.headers["Sec-WebSocket-Key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.remote_frame(2, b"RFB 003.008\n" if display else b"\x1b[32mguest shell\x1b[0m")
+        while True:
+            frame = self.read_frame()
+            if frame is None:
+                return
+            opcode, data = frame
+            if opcode == 8:
+                code = struct.unpack("!H", data[:2])[0] if len(data) >= 2 else 1005
+                self.server.remote_events.append({"display": display, "close": code})
+                self.remote_frame(8, data)
+                return
+            self.remote_frame(2, data)
+
+    def remote_frame(self, opcode, data):
+        prefix = bytes([0x80 | opcode, len(data)]) if len(data) < 126 else bytes([0x80 | opcode, 126]) + struct.pack("!H", len(data))
+        self.wfile.write(prefix + data)
+        self.wfile.flush()
+
+    def read_frame(self):
+        header = self.rfile.read(2)
+        if len(header) < 2:
+            return None
+        size = header[1] & 127
+        if size == 126:
+            size = struct.unpack("!H", self.rfile.read(2))[0]
+        elif size == 127:
+            size = struct.unpack("!Q", self.rfile.read(8))[0]
+        mask = self.rfile.read(4) if header[1] & 128 else None
+        data = self.rfile.read(size)
+        if mask:
+            data = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
+        return header[0] & 15, data
 
     def send(self, value):
         data = json.dumps(value).encode()
@@ -162,6 +212,7 @@ with tempfile.TemporaryDirectory(prefix="hermes-phone-wire-") as directory:
     server.question_answer = None
     server.prompt_count = 0
     server.queued_turns = []
+    server.remote_events = []
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
     server.socket = context.wrap_socket(server.socket, server_side=True)

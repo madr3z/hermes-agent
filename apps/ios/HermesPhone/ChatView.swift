@@ -23,6 +23,9 @@ struct ChatView: View {
         .navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { VMControlView(bot: chat.bot, store: store) } label: { Label("VM controls", systemImage: "desktopcomputer") }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("GPT Live", systemImage: "waveform") { showVoice = true }.disabled(!chat.connected).accessibilityIdentifier("startVoice")
             }
         }

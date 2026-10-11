@@ -8,6 +8,8 @@ import Foundation
     private var reader: Task<Void, Never>?
     private var heartbeat: Task<Void, Never>?
     private var pending: [String: CheckedContinuation<JSON, Error>] = [:]
+    private var observers: [UUID: (JSON) -> Void] = [:]
+    private var disconnectObservers: [UUID: () -> Void] = [:]
     public var onEvent: ((JSON) -> Void)?
     public var onDisconnect: ((String) -> Void)?
     public private(set) var connected = false
@@ -63,6 +65,7 @@ import Foundation
     }
     public func disconnect() {
         connected = false
+        Array(disconnectObservers.values).forEach { $0() }
         let old = socket; socket = nil
         reader?.cancel(); heartbeat?.cancel()
         old?.cancel(with: .goingAway, reason: nil)
@@ -86,13 +89,24 @@ import Foundation
         }
     }
     private func receive(_ frame: JSON) {
-        if frame["method"].string == "event" { onEvent?(frame["params"]); return }
+        if frame["method"].string == "event" {
+            let event = frame["params"]
+            onEvent?(event); Array(observers.values).forEach { $0(event) }; return
+        }
         if let id = frame["id"].string, let continuation = pending.removeValue(forKey: id) {
             if let error = frame["error"]["message"].string { continuation.resume(throwing: GatewayError.rpc(code: Int(frame["error"]["code"].number ?? 0), message: error)) }
             else { continuation.resume(returning: frame["result"]) }
         }
         // This client never advertises server_requests. On a shared transport, silence
         // preserves another capable client's authority to answer the fan-out request.
+    }
+
+    public func observe(events: @escaping (JSON) -> Void, disconnected: @escaping () -> Void) -> UUID {
+        let id = UUID(); observers[id] = events; disconnectObservers[id] = disconnected; return id
+    }
+    public func removeObserver(_ id: UUID) { observers.removeValue(forKey: id); disconnectObservers.removeValue(forKey: id) }
+    public func remoteSocket(_ stream: RemoteStream) -> URLSessionWebSocketTask {
+        session.webSocketTask(with: stream.request(endpoint: endpoint, token: token))
     }
 
     public func http(_ path: String, profile: String? = nil, body: JSON? = nil) async throws -> JSON {
@@ -108,7 +122,7 @@ import Foundation
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let payload = try? JSONDecoder().decode(JSON.self, from: data)
             let detail = payload?["detail"].string ?? payload?["error"]["message"].string
-            throw GatewayError.message(detail ?? "Gateway HTTP \(status). Check authentication and service availability.")
+            throw GatewayError.http(status: status, message: detail ?? "Gateway HTTP \(status). Check authentication and service availability.")
         }
         return try JSONDecoder().decode(JSON.self, from: data)
     }

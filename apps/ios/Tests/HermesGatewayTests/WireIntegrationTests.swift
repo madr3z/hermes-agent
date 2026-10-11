@@ -22,8 +22,8 @@ private final class FixtureTrust: NSObject, URLSessionDelegate {
 final class WireIntegrationTests: XCTestCase {
     @MainActor func testRealTLSAndTextWebSocketCanonicalStreamingAndReconnect() async throws {
         let process = Process(), pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [Bundle.module.url(forResource: "gateway", withExtension: "py", subdirectory: "Fixtures")!.path]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["python3", Bundle.module.url(forResource: "gateway", withExtension: "py", subdirectory: "Fixtures")!.path]
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         try process.run()
@@ -47,6 +47,37 @@ final class WireIntegrationTests: XCTestCase {
         let client = GatewayClient(endpoint: endpoint, token: "fixture+token &?", session: session)
         defer { client.disconnect() }
         try await client.connect()
+        // Real WSS must use main query auth plus the independent guest ticket.
+        let display = client.remoteSocket(.display(ticket: "guest+ticket &?"))
+        display.resume()
+        let greeting = try await display.receive()
+        guard case .data(let version) = greeting else { return XCTFail("Expected binary RFB") }
+        XCTAssertEqual(String(decoding: version, as: UTF8.self), "RFB 003.008\n")
+        let pointer = Data([5, 1, 0, 4, 0, 8])
+        try await display.send(.data(pointer))
+        guard case .data(let echoed) = try await display.receive() else { return XCTFail("Expected binary pointer echo") }
+        XCTAssertEqual(echoed, pointer)
+        display.cancel(with: RemoteStream.closeCode(intentional: false), reason: nil)
+        let terminal = client.remoteSocket(.terminal); terminal.resume()
+        guard case .data(let ansi) = try await terminal.receive() else { return XCTFail("Expected raw terminal bytes") }
+        XCTAssertTrue(String(decoding: ansi, as: UTF8.self).contains("guest shell"))
+        let keyboard = Data("echo phone\r".utf8)
+        try await terminal.send(.data(keyboard))
+        guard case .data(let typed) = try await terminal.receive() else { return XCTFail("Expected terminal input") }
+        XCTAssertEqual(typed, keyboard)
+        let resize = "{\"type\":\"resize\",\"cols\":42,\"rows\":19}"
+        try await terminal.send(.string(resize))
+        guard case .data(let resized) = try await terminal.receive() else { return XCTFail("Expected resize frame") }
+        XCTAssertEqual(try JSONDecoder().decode(JSON.self, from: resized)["cols"].number, 42)
+        terminal.cancel(with: RemoteStream.closeCode(intentional: true), reason: nil)
+        var closes: [JSON] = []
+        for _ in 0..<25 {
+            closes = try await client.http("api/fixture/remote_events")["events"].array
+            if closes.count == 2 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(closes.first(where: { $0["display"].bool })?["close"].number, 1011)
+        XCTAssertEqual(closes.first(where: { !$0["display"].bool })?["close"].number, 1000)
         let status = try await client.http("api/audio/voice-live/status", profile: "writer")
         XCTAssertEqual(status["profile"].string, "writer")
         XCTAssertEqual(status["path"].string, "/api/plugins/bot-provisioning/v1/gateways/vm/api/audio/voice-live/status")
@@ -55,12 +86,17 @@ final class WireIntegrationTests: XCTestCase {
         XCTAssertEqual(ChatMessage.project(snapshot["messages"].array).first?.text, "Existing canonical history")
         var chunks = ""
         let complete = expectation(description: "Streaming completion on real text WebSocket")
+        let observerCompletion = expectation(description: "Remote observer coexists with chat events")
+        let observer = client.observe(events: { event in
+            if event["type"].string == "message.complete" { observerCompletion.fulfill() }
+        }, disconnected: {})
         client.onEvent = { event in
             if event["type"].string == "message.delta" { chunks += event["payload"]["text"].string ?? "" }
             if event["type"].string == "message.complete" { complete.fulfill() }
         }
         _ = try await client.request("prompt.submit", ["session_id": .string("runtime"), "profile": .string("writer"), "text": .string("test")])
-        await fulfillment(of: [complete], timeout: 10)
+        await fulfillment(of: [complete, observerCompletion], timeout: 10)
+        client.removeObserver(observer)
         XCTAssertEqual(chunks, "Real wire stream")
         let desktop = session.webSocketTask(with: endpoint.webSocketURL(token: "fixture+token &?"))
         desktop.resume()

@@ -5,7 +5,7 @@ Branch: `codex/hermes-iphone`
 Toolchain: Xcode 27.0 (27A266a), Swift 6.4.0
 Minimum deployment: iOS 17.0
 
-## Passed
+## Initial chat and voice baseline
 
 - `swift test --package-path apps/ios --scratch-path /private/tmp/hermes-iphone-build/swift-tests`: **14 tests executed, 0 failures**, including the TLS/text-WebSocket integration fixture (final correlation run passed at 23:58 BST on 10 October). This is a macOS-hosted native transport test, not a real gateway/model acceptance run.
 - Simulator compilation and link succeeded for arm64 and x86_64. A missing embedded-framework runpath was corrected; installation and runtime launch succeeded, and the native roster screen was visually verified. The final reviewed source compiled and linked successfully at 23:45 BST.
@@ -43,3 +43,16 @@ Older backends retain the immediate persisted-row fallback. Queued/isolated exec
 - Publication, CI, TestFlight and App Store distribution.
 
 Logs and diagnostic artifacts are under `/private/tmp/hermes-iphone-build/`. The local TLS fixture trusts only its own ephemeral certificate in the test target; the app retains ordinary system trust.
+
+
+## Remote VM follow-up — 11 October 2026
+
+- Final complete Swift package run: **19 tests, zero failures**, at 01:12 BST (`remote-swift-final.log`). The real TLS WSS fixture enforces the production query-token seam independently of Authorization headers, preserves the guest display ticket and proxy prefix, transports binary RFB/PTY and keyboard bytes, sends text resize, observes 1011 on abnormal departure versus 1000 on intentional closure, and proves remote observers coexist with chat events. Ownership tests reject unmatched/foreign registry rows, missing request identities and edited endpoints; captured owner metadata survives encoding.
+- Native arm64 iPhone17e/iOS27 simulator tests: **five targeted tests passed**, at 01:17 BST (`remote-native-final.log`). These exercise delayed connection after departure, independent terminal attachment when the desktop stops, Stop recovery for a failed VM, actual bundled WKWebView terminal startup geometry and visible ANSI text, and native HTTP/preferences power persistence before POST plus timeout/relaunch/explicit retry. A failed status refresh cannot authorize a fresh operation UUID.
+- The focused screen test then **passed**, at 01:20 BST (`remote-screen-final.log`): real local WKWebView with the production exact-document navigation policy and CSP, native-channel RFB version/security/server initialization, a 1024×768 guest clipped to the phone at 1:1, and Pan enabled. noVNC needs `clipViewport:true` for local panning when Fit is disabled; Fit automatically disables clipping. These six native cases passed across focused runs, not a claimed live guest acceptance run.
+- Renderer assets reproduce through `npm ci --ignore-scripts --no-audit --no-fund` and `npm run build` from their exact lockfile. Their source and license notices ship with the app. No server URL, token or remote content enters JavaScript as executable code.
+- `python3 -u scripts/check --staged`: all **11 checks passed**, zero code-health findings. The final documentation/source snapshot is checked again before commit.
+
+The first renderer harness run exposed a 30-second cold WebKit startup timeout and an off-window paint assertion; the harness now attaches to the real simulator key window, allows 60 seconds for cold initialization, and waits for paint before checking text. A second fixture error fulfilled an initial-resize expectation more than once on legitimate later resize notifications; the first notification is now observed once. Assertions were retained, and the actual renderer tests passed. Xcode verbose failure diagnostics caused lengthy cleanup stalls; subsequent focused runs use `-collect-test-diagnostics never` and exit normally. The Python wire fixture now resolves Python on PATH instead of Apple's developer-tool launcher, which timed out while the failing Xcode diagnostic run was active.
+
+Simulator tap-through remains unverified: the computer-use native pipe still fails to start. Test-runner WebKit execution and screenshots establish renderer behavior, not physical touch, software keyboard/IME, mobile connection or real VM acceptance. The private proxy/guest plugin and VM lifecycle service require the other owners' integrated runtime. No VM power action or real shell command was sent by these fixtures. Device/signing readiness is inspected separately after the source commit.
