@@ -131,5 +131,8 @@ final class ChatActivityTests: XCTestCase {
         activity.receive(event("error", ["message": .string("Connection lost")]))
         XCTAssertEqual(activity.phase, .failed)
         XCTAssertFalse(activity.isAnimating)
+        activity.receive(event("connection.request", ["op_id": .string("late-login")]))
+        XCTAssertEqual(activity.phase, .failed)
+        XCTAssertFalse(activity.isVisible)
     }
 }

@@ -112,6 +112,7 @@ public struct ChatActivityState: Equatable, Sendable {
         case "message.complete": complete(payload)
         case "session.info": receiveInfo(payload)
         case "connection.request":
+            guard isVisible else { return }
             requests.insert(payload["op_id"].string ?? "connection")
             phase = .waitingForInput; detail = "Open the connection request to continue."
         case "connection.update": receiveConnection(payload)
