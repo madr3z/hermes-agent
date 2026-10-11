@@ -38,5 +38,13 @@ public struct LoginHandoff: Identifiable, Sendable {
               url.user == nil, url.password == nil, url.fragment == nil else { return nil }
         return url
     }
+    public var needsAction: Bool {
+        if ["canceled", "cancelled", "dismissed"].contains(status) { return false }
+        if continuationStatus == "submitted" { return false }
+        if continued && continuationStatus.isEmpty { return false }
+        // Authorization alone still needs account confirmation. An uncertain admission
+        // requires checking the original chat, so its notice remains visible.
+        return true
+    }
     public var canRetry: Bool { ["failed", "expired", "canceled"].contains(status) }
 }

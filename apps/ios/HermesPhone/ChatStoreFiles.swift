@@ -13,17 +13,9 @@ extension ChatStore {
         } catch { self.error = error.localizedDescription }
     }
     func importFile(_ url: URL) {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard size <= ChatUpload.maximumBytes else { throw GatewayError.message("Choose a file no larger than 10 MiB.") }
-            let data = try Data(contentsOf: url)
-            let isImage = (try url.resourceValues(forKeys: [.contentTypeKey])).contentType?.conforms(to: .image) == true
-            if isImage, ["heic", "heif"].contains(url.pathExtension.lowercased()) {
-                guard let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) else { throw GatewayError.message("This image format is unavailable.") }
-                addUpload(name: url.deletingPathExtension().lastPathComponent + ".jpg", data: jpeg, image: true)
-            } else { addUpload(name: url.lastPathComponent, data: data, image: isImage) }
+            let upload = try ChatAttachmentImport.file(url)
+            addUpload(name: upload.name, data: upload.data, image: upload.isImage)
         } catch { self.error = error.localizedDescription }
     }
     func removeUpload(_ id: UUID) { guard !sending else { return }; uploads.removeAll { $0.id == id } }

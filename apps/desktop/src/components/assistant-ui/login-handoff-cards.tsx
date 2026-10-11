@@ -26,6 +26,10 @@ interface LoginHandoffCardsProps {
   sessionId: string | null
 }
 
+const needsAction = (request: LoginHandoffRequest): boolean =>
+  !['canceled', 'cancelled', 'dismissed'].includes(request.status) &&
+  (request.continuation_status === 'unconfirmed' || (!request.continued && request.continuation_status !== 'submitted'))
+
 const secureAuthorizationURL = (raw: string): URL => {
   const url = new URL(raw)
   if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.hash) {
@@ -251,10 +255,12 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
     }
   }
 
-  if (!requests.length && !error) return null
+  const actionableRequests = requests.filter(needsAction)
+
+  if (!actionableRequests.length && !error) return null
   return (
     <div className="max-h-[50vh] space-y-3 overflow-y-auto px-4 py-3" aria-label="Bot sign-in requests">
-      {requests.map(request => (
+      {actionableRequests.map(request => (
         <section
           key={request.id}
           className="rounded-xl border bg-background p-4 text-sm"

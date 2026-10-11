@@ -444,9 +444,9 @@ class _Catalog:
 def _catalog_registry(cat: _Catalog) -> None:
     commands = _tools_mod("hermes_cli.commands")
     for cmd in commands.COMMAND_REGISTRY:
-        meta = commands.command_desktop_meta(cmd)
+        meta = {**commands.command_desktop_meta(cmd), **commands.command_mobile_meta(cmd)}
         cat.commands.update({f"/{key}": dict(meta) for key in (cmd.name, *cmd.aliases)})
-        if cmd.name in _TUI_HIDDEN or cmd.gateway_only:
+        if (cmd.name in _TUI_HIDDEN or cmd.gateway_only) and cmd.mobile != "native":
             continue
         cat.add(f"/{cmd.name}", commands._build_description(cmd), cmd.category)
         for a in cmd.aliases:
@@ -469,6 +469,7 @@ def _catalog_quick_commands(cat: _Catalog) -> None:
         default_desc = {"exec": f"exec: {qc.get('command', '')}", "alias": f"alias → {qc.get('target', '')}"}
         desc = str(qc.get("description") or default_desc.get(qtype, qtype or "quick command"))
         cat.add(f"/{qname}", desc, "User commands")
+        cat.commands.setdefault(f"/{qname}", {"mobile": "dispatch"})
 
 
 def _catalog_plugin_commands(cat: _Catalog) -> None:
@@ -483,7 +484,7 @@ def _catalog_plugin_commands(cat: _Catalog) -> None:
         mode = info.get("argument_mode")
         if mode not in {"options", "text", "mixed"}:
             mode = "text" if str(info.get("args_hint") or "").strip() else None
-        cat.commands[key] = {"argument_mode": mode, "desktop": None}
+        cat.commands[key] = {"argument_mode": mode, "desktop": None, "mobile": "dispatch"}
 
 
 def _catalog_skills(cat: _Catalog, skills: dict[str, dict]) -> str:
@@ -494,8 +495,13 @@ def _catalog_skills(cat: _Catalog, skills: dict[str, dict]) -> str:
     sc = _tools_mod("agent.skill_commands")
     for k, info in sorted(sc.get_interactive_skill_commands().items()):
         cat.pairs.append([k, str(info.get("description", "Skill"))])
+        cat.commands.setdefault(k, {"mobile": "dispatch"})
         name = str(info.get("name") or k.lstrip("/"))
         skills[k] = {"usage": usage(name), "origin": origin_of(name)}
+    for key, info in sorted(_tools_mod("agent.skill_bundles").get_skill_bundles().items()):
+        if key.lower() not in cat.canon:
+            cat.add(key, str(info.get("description") or "Skill bundle"), "Skill bundles")
+            cat.commands[key] = {"mobile": "dispatch"}
     names = sorted(s["name"] for s in _tools_mod("tools.skills_tool")._find_all_skills())
     return "; ".join(filter(None, map(sc.skill_command_collision_note, names)))
 

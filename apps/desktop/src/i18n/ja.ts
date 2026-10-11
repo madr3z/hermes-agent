@@ -1569,15 +1569,15 @@ export const jaOverrides = {
     emptyDesc: 'Hermes がスキルやメモリを蓄積すると、ここに表示されます。'
   },
   agents: {
+    interrupted: '中断',
     extendedTranscript: '詳細な実行ログ',
     transcriptTruncated: '最新の 16 KiB を表示',
-    transcriptUnavailable: 'ライブログは利用できません',
-
+    transcriptUnavailable: '記録を利用できません',
     close: 'エージェントを閉じる',
     title: 'スポーンツリー',
-    subtitle: '現在のターンのライブサブエージェントのアクティビティ。',
-    emptyTitle: 'ライブサブエージェントはありません',
-    emptyDesc: 'ターンで作業を委任すると、子エージェントの進捗状況がここにストリームされます。',
+    subtitle: 'サブエージェントの進捗と最近の結果。',
+    emptyTitle: 'サブエージェントはありません',
+    emptyDesc: 'Hermes が作業を委任すると、ここで子エージェントの進捗と結果を確認できます。',
     running: '実行中',
     failed: '失敗',
     done: '完了',

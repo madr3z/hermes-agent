@@ -256,7 +256,6 @@ export const frOverrides = {
             ? `laissé activé${theyOn > 1 ? 's' : ''} ${theyOn} outil${theyOn > 1 ? 's' : ''} que vous avez désactivé${theyOn > 1 ? 's' : ''}`
             : ''
         ].filter(Boolean)
-
         return `${they.length > 0 ? `Cette personne a ${they.join(' et ')}. ` : ''}Vos modifications restent à l'écran ; rien n'a été écrit.`
       },
       conflictReload: 'Recharger sa version',
@@ -2757,14 +2756,15 @@ export const frOverrides = {
     resetToMine: 'Retour à ma carte'
   },
   agents: {
+    interrupted: 'Interrompu',
     extendedTranscript: 'Transcription étendue',
     transcriptTruncated: 'Affichage des 16 Kio les plus récents',
-    transcriptUnavailable: 'Transcription en direct indisponible',
+    transcriptUnavailable: 'Transcription indisponible',
     close: 'Fermer les agents',
     title: 'Arbre de création',
-    subtitle: 'Activité en direct des sous-agents pour le tour en cours.',
-    emptyTitle: 'Aucun sous-agent en direct',
-    emptyDesc: 'Quand un tour délègue du travail, les sous-agents diffusent leur progression ici.',
+    subtitle: 'Progression des sous-agents en direct et résultats récents.',
+    emptyTitle: 'Aucun sous-agent',
+    emptyDesc: 'Lorsque Hermes délègue une tâche, consultez ici la progression et les résultats des sous-agents.',
     running: 'En cours',
     failed: 'Échoué',
     done: 'Terminé',

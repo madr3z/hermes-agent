@@ -2384,15 +2384,15 @@ export const en: Translations = {
     resetToMine: 'Back to my map'
   },
   agents: {
+    interrupted: 'Interrupted',
     extendedTranscript: 'Extended transcript',
     transcriptTruncated: 'Showing the latest 16 KiB',
-    transcriptUnavailable: 'Live transcript unavailable',
-
+    transcriptUnavailable: 'Transcript unavailable',
     close: 'Close agents',
     title: 'Spawn tree',
-    subtitle: 'Live subagent activity for the current turn.',
-    emptyTitle: 'No live subagents',
-    emptyDesc: 'When a turn delegates work, child agents stream their progress here.',
+    subtitle: 'Live subagent progress and recent results.',
+    emptyTitle: 'No subagents',
+    emptyDesc: 'When Hermes delegates work, review child progress and results here.',
     running: 'Running',
     failed: 'Failed',
     done: 'Done',

@@ -12,6 +12,7 @@ method = _registry.method
 _SUBAGENT_SNAPSHOT_FIELDS = (
     "subagent_id", "parent_id", "depth", "goal", "delegation_id", "model",
     "started_at", "status", "tool_count", "last_tool", "accepting_steer",
+    "child_session_id", "completed_at", "summary", "error",
 )
 _SUBAGENT_TAIL_BYTES = 16384
 
@@ -26,7 +27,7 @@ def _owned_subagent_records(session_id, transport, owner):
                 and r.get("owner_session_record") is owner]
 
 
-def _visible_subagent_records(session_id, transport, owner):
+def _visible_subagent_records(session_id, transport, owner, history=()):
     """Read-only roster for ``subagent.list``: the exact-owner records PLUS children whose durable
     conversation lineage (``owner_agent_session_id`` resolved to its compression tip) is this
     session's agent — the same spine ``delegate_task(action="list")`` walks in-process.
@@ -42,12 +43,19 @@ def _visible_subagent_records(session_id, transport, owner):
     with _active_subagents_lock:
         records = [dict(r) for r in _active_subagents.values()]
     agent = owner.get("agent")
+    history_ids = {r["subagent_id"] for r in history}
+    from tools.delegate_tool_history import session_store_path
+    db_path = session_store_path(agent)
+    if not db_path and history_ids:
+        with _session_db(owner) as db:
+            db_path = str(Path(db.db_path).resolve()) if db is not None else ""
     # Lineage resolution may read the session DB — evaluated outside the registry lock.
     return [r for r in records
             if (r.get("owner_session_id") == session_id
                 and _subagent_transport_matches(r, transport)
                 and r.get("owner_session_record") is owner)
-            or _owns_subagent_record(r, agent)]
+            or _owns_subagent_record(r, agent)
+            or (r.get("subagent_id") in history_ids and db_path and r.get("owner_db_path") == db_path)]
 
 
 @method("subagent.list")
@@ -56,11 +64,43 @@ def _(rid, params):
     transport, owner = _current_session_steer_authority(session_id)
     if transport is None or owner is None:
         return _err(rid, 4001, "session not found or not owned by this transport")
-    live = _visible_subagent_records(session_id, transport, owner)
+    history = _child_history(owner)
+    live = _visible_subagent_records(session_id, transport, owner, history)
+    controlled = {r["subagent_id"] for r in _owned_subagent_records(session_id, transport, owner)}
+    snapshots = []
+    for record in live:
+        can_control = record["subagent_id"] in controlled and record.get("status") in ("running", "queued")
+        snapshots.append({**{key: record.get(key) for key in _SUBAGENT_SNAPSHOT_FIELDS},
+                          "can_interrupt": can_control,
+                          "can_steer": can_control and bool(record.get("accepting_steer")),
+                          "can_tail": can_control and bool(getattr(record.get("agent"), "_live_transcript_path", None))})
+    live_ids = {r["subagent_id"] for r in snapshots}
+    for row in history:
+        if row["subagent_id"] in live_ids:
+            continue
+        if row.get("status") in ("queued", "running"):
+            row = {**row, "status": "interrupted", "error": "The child runtime is no longer available. This work cannot resume after a backend restart."}
+        snapshots.append(row)
     return _ok(rid, {
-        "subagents": [{key: r.get(key) for key in _SUBAGENT_SNAPSHOT_FIELDS} for r in live],
+        "subagents": snapshots,
         "delegations": _failed_delegations(session_id, owner),
     })
+
+
+def _child_history(owner):
+    from tools.delegate_tool_history import child_history
+
+    agent = owner.get("agent")
+    key = str(getattr(agent, "session_id", "") or owner.get("session_key") or "")
+    try:
+        db = getattr(agent, "_session_db", None)
+        if db is not None:
+            return child_history(db, key)
+        with _session_db(owner) as db:
+            return child_history(db, key)
+    except Exception:
+        logger.debug("subagent.list: child history read failed", exc_info=True)
+        return []
 
 
 def _failed_delegations(session_id, owner):

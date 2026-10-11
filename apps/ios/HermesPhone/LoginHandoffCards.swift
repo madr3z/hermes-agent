@@ -9,26 +9,16 @@ struct LoginHandoffCards: View {
     @State private var login = ChatLoginController()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !login.accounts.isEmpty {
-                Menu("Sign in to an account", systemImage: "person.badge.key") {
-                    ForEach(login.accounts) { account in
-                        Button(account.label + (account.requestedIdentity.isEmpty ? "" : " · " + account.requestedIdentity)) {
-                            Task { await login.select(account, chat: chat) }
-                        }
-                    }
-                }.disabled(login.working || !chat.connected)
-            }
-            ForEach(login.requests) { request in
+            ForEach(login.requests.filter(\.needsAction)) { request in
                 LoginHandoffCard(request: request, botName: chat.bot.name, working: login.working,
                     signIn: { Task { await login.signIn(request, chat: chat) } },
                     cancel: { Task { await login.act("cancel", request: request, chat: chat) } },
                     continueTask: { Task { await login.act("continue", request: request, chat: chat) } })
             }
             if login.working { ProgressView("Preparing secure sign-in…") }
-            if let error = login.error { PhoneNotice(title: "Sign-in needs attention", message: error) }
+            if let error = login.error, login.working || login.requests.contains(where: \.needsAction) { PhoneNotice(title: "Sign-in needs attention", message: error) }
         }
         .task(id: chat.runtimeID) {
-            await login.loadAccounts(chat: chat)
             while !Task.isCancelled {
                 await login.refresh(chat: chat)
                 do { try await Task.sleep(for: .seconds(2)) } catch { break }
@@ -77,7 +67,7 @@ struct LoginHandoffCard: View {
             }.font(.subheadline).frame(minHeight: 44)
             if request.status == "authorized" {
                 if request.continued {
-                    Label(request.continuationStatus == "unconfirmed" ? "Check this chat before sending another message." : "Task continuation submitted", systemImage: "checkmark.circle").font(.subheadline)
+                    Label(request.continuationStatus == "unconfirmed" ? "Check this chat before sending another message." : "Task continuation submitted", systemImage: request.continuationStatus == "unconfirmed" ? "exclamationmark.circle" : "checkmark.circle").font(.subheadline)
                 } else {
                     Button("Confirm account and continue", action: continueTask)
                         .buttonStyle(.borderedProminent).controlSize(.large).disabled(working)

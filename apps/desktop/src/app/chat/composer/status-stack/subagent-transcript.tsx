@@ -12,7 +12,15 @@ interface Tail {
   truncated: boolean
 }
 
-export function SubagentTranscript({ sessionId, subagentId }: { sessionId: string; subagentId: string }) {
+export function SubagentTranscript({
+  sessionId,
+  subagentId,
+  live = true
+}: {
+  sessionId: string
+  subagentId: string
+  live?: boolean
+}) {
   const { t } = useI18n()
   const paneVisible = usePaneVisible()
   const [tail, setTail] = useState<Tail | null>(null)
@@ -56,13 +64,13 @@ export function SubagentTranscript({ sessionId, subagentId }: { sessionId: strin
     }
 
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 2000)
+    const timer = live ? window.setInterval(() => void refresh(), 2000) : undefined
 
     return () => {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [sessionId, subagentId, paneVisible])
+  }, [sessionId, subagentId, paneVisible, live])
 
   return (
     <section className="mt-2 text-xs" data-slot="subagent-transcript">

@@ -88,15 +88,16 @@ export const zhHantCapabilities = {
   },
 
   agents: {
+    interrupted: '已中斷',
     extendedTranscript: '完整記錄尾端',
     transcriptTruncated: '顯示最新 16 KiB',
-    transcriptUnavailable: '即時記錄無法使用',
+    transcriptUnavailable: '記錄無法使用',
 
     close: '關閉代理',
     title: '派生樹',
-    subtitle: '目前回合的子代理即時活動。',
-    emptyTitle: '暫無活躍子代理',
-    emptyDesc: '當某個回合派發任務時，子代理會在此即時顯示進度。',
+    subtitle: '子代理的即時進度與近期結果。',
+    emptyTitle: '暫無子代理',
+    emptyDesc: 'Hermes 委派工作後，在此查看子代理的進度與結果。',
     running: '執行中',
     failed: '失敗',
     done: '完成',

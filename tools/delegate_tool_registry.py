@@ -168,7 +168,7 @@ def _capture_gateway_steer_authority(owner_session_id: Optional[str]) -> tuple[A
         return None, None
 
 # Registry record fields never exposed to the TUI/RPC snapshot.
-_PRIVATE_RECORD_KEYS = frozenset({"agent", "owner_session_id", "owner_transport", "owner_session_record", "accepting_steer"})
+_PRIVATE_RECORD_KEYS = frozenset({"agent", "owner_session_id", "owner_transport", "owner_session_record", "accepting_steer", "owner_db_path"})
 
 def list_active_subagents() -> list[dict[str, Any]]:
     """Copy of the running subagent tree ({subagent_id, parent_id, depth, goal, model,
@@ -223,6 +223,11 @@ def _owns_subagent_record(record: dict[str, Any], parent_agent: Any) -> bool:
     a weakref to the old one. Delivery routes by durable session id; control must
     use the same spine or running children go invisible/unsteerable.
     """
+    from tools.delegate_tool_history import session_store_path
+    owner_db_path = record.get("owner_db_path")
+    parent_db_path = session_store_path(parent_agent)
+    if owner_db_path and parent_db_path != owner_db_path:
+        return False
     if _is_descendant_of(record.get("agent"), parent_agent):
         return True
     owner_sid = str(record.get("owner_agent_session_id") or "")

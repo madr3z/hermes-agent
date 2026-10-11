@@ -359,13 +359,14 @@ def _register_child(
     if owner_session_id and (owner_transport is None or owner_session_record is None):
         owner_transport, owner_session_record = _capture_gateway_steer_authority(owner_session_id)
     _raw_depth = getattr(child, "_delegate_depth", 1)
-    _register_subagent({
+    record = {
         "subagent_id": _subagent_id,
         "parent_id": _str_or_none(getattr(child, "_parent_subagent_id", None)),
         "depth": max(0, _raw_depth - 1) if isinstance(_raw_depth, int) else 0,
         "goal": goal,
         "delegation_id": _str_or_none(getattr(child, "_delegation_id", None)),
         "model": _str_or_none(getattr(child, "model", None)),
+        "child_session_id": _str_or_none(getattr(child, "session_id", None)),
         "started_at": time.time(), "status": "running", "tool_count": 0, "agent": child,
         # Owning conversation's durable session id (same lineage completion delivery routes by), sourced from the
         # child's stamp so it survives a parent_agent rebuild between dispatch and run; used for list/steer/stop
@@ -378,7 +379,11 @@ def _register_child(
         "owner_session_id": owner_session_id,
         "owner_transport": owner_transport,
         "owner_session_record": owner_session_record,
-    })
+    }
+    from tools.delegate_tool_history import session_store_path, start_child_history
+    record["owner_db_path"] = session_store_path(child)
+    start_child_history(child, record)
+    _register_subagent(record)
     return _subagent_id
 
 def _create_isolated_worktree(parent_agent: Any, parent_task_id: Any, subagent_id: Optional[str]):
@@ -775,11 +780,13 @@ class _ChildRun:
     ) -> dict[str, Any]:
         """Shared tail of every failure path: emit ``subagent.complete`` (``status`` defaults to the entry's), note
         the steer text that won the race with the failure, report the worktree."""
+        _append_missed_steer(entry, late_steer)
+        from tools.delegate_tool_history import finish_child_history
+        finish_child_history(self.child, entry, status=status)
         _safe_progress(
             self.child_progress_cb, "subagent.complete", preview=preview, status=status or entry["status"],
             duration_seconds=entry["duration_seconds"], summary=summary,
         )
-        _append_missed_steer(entry, late_steer)
         return self.attach_worktree(entry)
 
     def close_steering(self) -> Optional[str]:
@@ -1010,6 +1017,8 @@ class _ChildRun:
     def emit_complete(self, result: dict[str, Any], entry: dict[str, Any], duration: float) -> None:
         """Fire ``subagent.complete`` with the per-branch observability payload (tokens, cost, files touched,
         tool-output tail); every field is optional and degrades gracefully on the client."""
+        from tools.delegate_tool_history import finish_child_history
+        finish_child_history(self.child, entry)
         if not self.child_progress_cb:
             return
         child = self.child

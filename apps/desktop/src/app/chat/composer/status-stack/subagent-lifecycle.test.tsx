@@ -20,7 +20,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('keeps each worker draft while inspecting siblings and removes settled selection', () => {
+it('keeps each worker draft while inspecting siblings and removes controls from settled selection', () => {
   upsertSubagent('parent', { subagent_id: 'a', goal: 'Worker A' })
   upsertSubagent('parent', { subagent_id: 'b', goal: 'Worker B' })
   render(<SubagentSection sessionId="parent" />)
@@ -32,7 +32,7 @@ it('keeps each worker draft while inspecting siblings and removes settled select
   fireEvent.click(screen.getByRole('button', { name: /Worker A/ }))
   expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('Preserve my instruction')
   act(() => upsertSubagent('parent', { subagent_id: 'a', status: 'completed' }, false, 'subagent.complete'))
-  expect(screen.queryByText('Worker A')).toBeNull()
+  expect(screen.getAllByText('Worker A').length).toBeGreaterThan(0)
   expect(screen.queryByRole('textbox')).toBeNull()
 })
 

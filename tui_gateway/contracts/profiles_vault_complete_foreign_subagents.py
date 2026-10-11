@@ -605,7 +605,7 @@ method("session.foreign.import", params=SessionForeignIdParams, result=SessionFo
 
 
 class SubagentSnapshot(Result):
-    """``methods_subagents._SUBAGENT_SNAPSHOT_FIELDS`` projection of one live child record."""
+    """One live or retained child. Control flags require exact current runtime authority."""
 
     subagent_id: str
     parent_id: str | None = None
@@ -618,6 +618,13 @@ class SubagentSnapshot(Result):
     tool_count: int | None = None
     last_tool: str | None = None
     accepting_steer: bool | None = None
+    child_session_id: str | None = None
+    completed_at: float | None = None
+    summary: str | None = None
+    error: str | None = None
+    can_interrupt: bool = False
+    can_steer: bool = False
+    can_tail: bool = False
 
 
 class FailedDelegation(Result):
@@ -633,14 +640,14 @@ class FailedDelegation(Result):
 
 
 class SubagentListResult(Result):
-    """``delegations``: recently failed async delegation tasks for the session (durable store), newest first."""
+    """Live children plus up to 100 retained session rows. ``delegations`` preserves older async failures."""
 
     subagents: list[SubagentSnapshot] = Field(default_factory=list)
     delegations: list[FailedDelegation] = Field(default_factory=list)
 
 
 method("subagent.list", params=SessionParams, result=SubagentListResult,
-       doc="Live children owned by this session (other sessions' children never leak).")
+       doc="Live and retained children owned by this conversation in its profile; controls are explicit capabilities.")
 
 
 class SubagentIdParams(SessionParams):

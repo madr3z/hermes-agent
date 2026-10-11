@@ -36,6 +36,7 @@ import { $interfaceMode, shownInMode, type Tiered } from '@/store/interface-mode
 import { $previewStatusBySession, dismissPreviewArtifact } from '@/store/preview-status'
 import { $sessionControlBySession, refreshSessionControl } from '@/store/session-control'
 import { $sharedMetricsConsent, sharedMetricsOfferPending } from '@/store/shared-metrics'
+import { $subagentsBySession } from '@/store/subagents'
 import { $threadScrolledUpBySession } from '@/store/thread-scroll'
 import { $retainedTodosBySession } from '@/store/todos'
 import { openSessionInNewWindow } from '@/store/windows'
@@ -104,6 +105,14 @@ interface ComposerStatusStackProps {
   sessionId: null | string
 }
 
+function retainedSubagentSections(sessionId: string | null, hasItems: boolean, shown: boolean, groups: StatusGroup[]) {
+  if (!sessionId || !hasItems || !shown || groups.some(group => group.type === 'subagent')) {
+    return []
+  }
+
+  return [{ key: 'subagent', node: <SubagentSection key={sessionId} sessionId={sessionId} /> }]
+}
+
 /**
  * The status "sink" above the composer: one card (the queue's chrome) holding
  * every session-scoped status — subagents, background tasks, queue — grouped by
@@ -125,6 +134,7 @@ export function ComposerStatusStack({ onSubmit, queue, sessionId }: ComposerStat
   // across unrelated writes, so the slice hook bails out unless OUR session's
   // items actually changed.
   const items = useSessionSlice($statusItemsBySession, sessionId)
+  const subagents = useSessionSlice($subagentsBySession, sessionId)
   const retainedTodos = useSessionSlice($retainedTodosBySession, sessionId)
   const busy = useStore(useSessionView().$busy)
   const previews = useSessionSlice($previewStatusBySession, sessionId)
@@ -307,6 +317,8 @@ export function ComposerStatusStack({ onSubmit, queue, sessionId }: ComposerStat
       )
     })
   }
+
+  sections.push(...retainedSubagentSections(sessionId, subagents.length > 0, shown(GROUP_TIER.subagent), groups))
 
   // A settled snapshot is reviewable but never re-enters the live progress
   // feed. Only show this disclosure once the live Todo section has retired.

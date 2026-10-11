@@ -2342,12 +2342,12 @@ export interface SessionForeignImportResult {
   session_id: string
   already_imported?: boolean
 }
-/** ``delegations``: recently failed async delegation tasks for the session (durable store), newest first. */
+/** Live children plus up to 100 retained session rows. ``delegations`` preserves older async failures. */
 export interface SubagentListResult {
   subagents?: SubagentSnapshot[]
   delegations?: FailedDelegation[]
 }
-/** ``methods_subagents._SUBAGENT_SNAPSHOT_FIELDS`` projection of one live child record. */
+/** One live or retained child. Control flags require exact current runtime authority. */
 export interface SubagentSnapshot {
   subagent_id: string
   parent_id?: string | null
@@ -2360,6 +2360,13 @@ export interface SubagentSnapshot {
   tool_count?: number | null
   last_tool?: string | null
   accepting_steer?: boolean | null
+  child_session_id?: string | null
+  completed_at?: number | null
+  summary?: string | null
+  error?: string | null
+  can_interrupt?: boolean
+  can_steer?: boolean
+  can_tail?: boolean
 }
 /** Lifecycle of one delegated child (``tools/delegate_tool_child_run.py``); ``failed`` / ``error`` / ``timeout`` / ``interrupted`` / ``completed`` are terminal. */
 export type SubagentStatus = 'queued' | 'running' | 'completed' | 'failed' | 'error' | 'timeout' | 'interrupted'
@@ -3812,8 +3819,11 @@ export interface CommandCatalogMeta {
   argument_mode?: ArgumentMode | null
   desktop?: string | null
   desktop_subcommands?: string[] | null
+  mobile?: MobileCommandSupport
+  mobile_subcommands?: string[] | null
 }
 export type ArgumentMode = 'options' | 'text' | 'mixed'
+export type MobileCommandSupport = 'native' | 'server' | 'dispatch' | 'unsupported'
 export interface CommandCategory {
   name: string
   pairs?: string[][]
@@ -5550,7 +5560,7 @@ export interface RpcMethods {
   'spawn_tree.save': { params: SpawnTreeSaveParams; result: SpawnTreeSaveResult }
   /** Hard-interrupt one owned child; ``found`` is false when it already finished. */
   'subagent.interrupt': { params: SubagentIdParams; result: SubagentInterruptResult }
-  /** Live children owned by this session (other sessions' children never leak). */
+  /** Live and retained children owned by this conversation in its profile; controls are explicit capabilities. */
   'subagent.list': { params: SessionParams; result: SubagentListResult }
   /** Queue steering text into a live delegated child owned by this session. */
   'subagent.steer': { params: SubagentSteerParams; result: SubagentSteerResult }

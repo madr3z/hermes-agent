@@ -104,3 +104,45 @@ Connectors includes an iCloud preset and a custom stdio account form. Each accou
 The iCloud preset uses [ThomasCrouzet/icloud-mcp](https://github.com/ThomasCrouzet/icloud-mcp/tree/8cf9a4f86c6af36f4e6121d8b0e93806611036e9), MIT, pinned to `8cf9a4f86c6af36f4e6121d8b0e93806611036e9`, at `/opt/hermes-connectors/icloud-mcp`. Install or update that runtime on each VM separately. Saving the preset does not install it. Test connection provides live evidence only when the user runs it successfully.
 
 Calendar and Mail reads are enabled; Contacts are disabled. Read-only is the default and disables all changes, including mail sending. Calendar writes and Mail changes require explicit controls. Sending mail has a separate control and requires exact recipient addresses or an explicit Allow all recipients choice. App-specific passwords stay in the secret store. The custom form uses secure fields for each process environment value and supports independent accounts with the same process environment names.
+
+## Subagents
+
+Open **Subagents** from a bot’s chat toolbar. Ask the bot in chat to delegate work.
+The native list shows the current chat’s child tasks, status, tool progress and
+saved results. List and detail screens refresh while visible. Reconnect resumes
+the canonical Bot Chat before reading its subagents again.
+
+**Send instructions** and **Stop subagent** appear only when the gateway confirms
+control authority for that live child. A task restored from durable history or
+visible through conversation lineage can be read without granting control of an
+older runtime. Stop requests are confirmed by subsequent gateway status. An
+uncertain action is never replayed automatically. There is no pause/resume UI.
+
+## Commands and attachment input
+
+Open **Commands** from the chat’s **+** menu, or type `/` to show gateway
+completions. The list comes from this bot’s canonical command registry. Choose a
+command to fill the composer, add its arguments, then send. Native commands open
+the existing phone controls. Supported server commands show gateway output or
+submit the gateway’s prompt directive. Installed skill bodies stay out of the
+visible transcript. Unsupported commands report their limit and keep the draft.
+Commands do not consume pending attachments.
+
+The gateway advertises `mobile` and `mobile_subcommands` for command availability.
+An older gateway can expose its catalog but cannot authorize command execution
+on the phone. Session-history management, background/side-question lifecycle,
+exports and approval dialogs still require the appropriate existing Mac controls.
+
+Use **+ → Photos** to open the system photo picker, or **+ → Files** for documents.
+Use the system **Paste** button beside **+** for a copied photo or file. The app
+reads only the items supplied by that action. Plain text still uses the text
+field’s normal paste action. Files must be local; a web URL cannot trigger a file
+download. Images are normalized for upload. The existing limit is five files and
+10 MiB combined. Choosing or pasting an item prepares a local draft; **Send**
+starts upload to the current bot’s chat.
+
+Chat sign-in cards appear only for an unhandled request. A saved grant still
+requires account confirmation. A confirmed task-continuation receipt hides the
+card after refresh or reopening; an unconfirmed admission keeps its check-chat
+notice. Canceled requests are hidden. Proactive account sign-in remains in
+**Bot settings → Connectors**.

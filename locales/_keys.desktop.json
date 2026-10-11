@@ -20,6 +20,7 @@
     "agents.failedCount",
     "agents.files",
     "agents.filesCount",
+    "agents.interrupted",
     "agents.moreAgents",
     "agents.moreFiles",
     "agents.queued",

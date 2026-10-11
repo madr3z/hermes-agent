@@ -2114,7 +2114,6 @@ export interface Translations extends NoticeTranslations {
       searchFailed: string
     }
   }
-
   starmap: {
     title: string
     subtitle: (nodes: number, clusters: number) => string
@@ -2146,6 +2145,7 @@ export interface Translations extends NoticeTranslations {
     extendedTranscript: string
     transcriptTruncated: string
     transcriptUnavailable: string
+    interrupted: string
     close: string
     title: string
     subtitle: string

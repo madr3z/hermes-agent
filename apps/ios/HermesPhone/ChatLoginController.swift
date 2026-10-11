@@ -11,7 +11,6 @@ extension ASWebAuthenticationSession: LoginBrowser {}
 
 @MainActor @Observable final class ChatLoginController: NSObject, ASWebAuthenticationPresentationContextProviding {
     var requests: [LoginHandoff] = []
-    var accounts: [MCPConnection] = []
     var error: String?
     var working = false
     private var operation = UUID()
@@ -27,22 +26,6 @@ extension ASWebAuthenticationSession: LoginBrowser {}
     private func call(_ action: String, chat: ChatStore, extra: [String: JSON] = [:]) async throws -> JSON {
         guard let client = chat.client, let runtimeID = chat.runtimeID else { throw GatewayError.message("Reconnect to the bot first.") }
         return try await client.request("login.handoff." + action, ["session_id": .string(runtimeID), "profile": .string(chat.bot.profile)].merging(extra) { _, new in new })
-    }
-    func loadAccounts(chat: ChatStore) async {
-        guard let client = chat.client else { accounts = []; return }
-        let runtime = chat.runtimeID
-        do {
-            let api = BotConnectorsClient(profile: chat.bot.profile) { try await client.request($0, $1) }
-            let rows = try await api.mcpServers()
-            guard chat.runtimeID == runtime else { return }
-            accounts = rows.filter { $0.auth == "oauth" || $0.provider == "google-gmail" }
-        } catch { accounts = [] }
-    }
-    func select(_ account: MCPConnection, chat: ChatStore) async {
-        do {
-            _ = try await call("list", chat: chat, extra: ["account_name": .string(account.name)])
-            await refresh(chat: chat)
-        } catch { self.error = "This account cannot start native sign-in. Check its connector and registered callback." }
     }
     func refresh(chat: ChatStore) async {
         guard chat.connected else { return }
@@ -176,7 +159,7 @@ extension ASWebAuthenticationSession: LoginBrowser {}
         cancelBrowserAttempt = nil
     }
     func contextChanged() {
-        operation = UUID(); closeBrowser(); requests = []; accounts = []; error = nil
+        operation = UUID(); closeBrowser(); requests = []; error = nil
     }
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()

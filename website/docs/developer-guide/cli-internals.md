@@ -8,6 +8,21 @@ description: "How hermes_cli is shaped: slash dispatch, config loaders, the skin
 
 Companion to `hermes_cli/AGENTS.md` (the rules) — this page holds the longer explanations.
 
+## Mobile command catalog
+
+`CommandDef.mobile` is the phone's support boundary in the canonical registry.
+`commands.catalog` returns `native` for a phone screen or session control, `server`
+for an existing session command RPC, and `dispatch` for discovered quick commands,
+plugin commands, skills, and bundles. Other commands return `unsupported`.
+`mobile_subcommands` restricts mixed command families. An empty string permits
+only the bare command, as used for `/usage` without its reset action.
+
+The phone handles `/stop` with `session.interrupt`. It does not route that command
+through the terminal worker. MCP reload remains unavailable through the mobile
+command menu; the dedicated reload RPC retains its prompt-cache confirmation.
+Commands that start agent work still use the existing prompt and approval flow.
+Catalog discovery and command metadata do not change the current toolset or prompt.
+
 ## Update pipeline
 
 User-facing behaviour (receipts, `--plan`, snapshot modes) is in

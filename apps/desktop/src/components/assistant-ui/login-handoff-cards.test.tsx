@@ -23,6 +23,42 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+it('shows only unresolved sign-in cards while keeping uncertain admission and account confirmation visible', async () => {
+  const rpc = vi.fn(async () => ({
+    requests: [
+      {
+        ...request,
+        id: 'submitted',
+        name: 'Submitted',
+        status: 'authorized',
+        continued: true,
+        continuation_status: 'submitted'
+      },
+      { ...request, id: 'legacy', name: 'Legacy completed', status: 'authorized', continued: true },
+      { ...request, id: 'canceled', name: 'Canceled', status: 'canceled' },
+      { ...request, id: 'confirmation', name: 'Confirm account', status: 'authorized' },
+      {
+        ...request,
+        id: 'uncertain',
+        name: 'Uncertain',
+        status: 'authorized',
+        continued: true,
+        continuation_status: 'unconfirmed'
+      },
+      { ...request, id: 'pending', name: 'Pending' }
+    ]
+  }))
+  render(<LoginHandoffCards gateway={{ request: rpc } as unknown as HermesGateway} sessionId="owned-chat" />)
+  await screen.findByLabelText('Sign in to Pending')
+  expect(screen.queryByLabelText('Sign in to Submitted')).toBeNull()
+  expect(screen.queryByLabelText('Sign in to Legacy completed')).toBeNull()
+  expect(screen.queryByLabelText('Sign in to Canceled')).toBeNull()
+  expect(screen.getByLabelText('Sign in to Confirm account')).toBeTruthy()
+  expect(screen.getByLabelText('Sign in to Uncertain')).toBeTruthy()
+  expect(screen.getByText('Check this chat before sending another message.')).toBeTruthy()
+  expect(rpc).toHaveBeenCalledTimes(1)
+})
+
 it('opens system browser and relays callback only to its owning chat', async () => {
   let started = false
   const rpc = vi.fn(async (method: string) => {

@@ -54,6 +54,20 @@ After a process restart, `reconnect` returns `RECONNECT_UNAVAILABLE` and never
 starts a replacement child. Running Python threads also cannot survive process
 exit; callers must treat those handles as interrupted by process exit.
 
+## App visibility for native delegation
+
+The shared `subagent.list` RPC exposes native `delegate_task` children for the
+owning conversation and profile. It merges the live registry with up to 100
+recent child session rows. The existing session store retains each child's goal,
+parent, status, and bounded terminal result, including nested children and
+compression continuations. No extra scheduler or replacement child is created.
+
+Each row carries `can_interrupt`, `can_steer`, and `can_tail`. Only the exact live
+owner can control the child. Reconstructed and terminal rows are read-only. A
+retained running row with no live runtime is shown as interrupted; backend
+restart does not resume its work. The transcript tail remains a live-runtime
+operation. Retained result summaries are separate from hidden reasoning.
+
 Requests are fail-closed: goal/context/metadata sizes are capped, unknown or
 parent-broadening toolsets are rejected, and per-tool blocks, working-directory
 overrides, and per-launch timeouts are explicitly rejected until Hermes can

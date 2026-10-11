@@ -257,7 +257,6 @@ export const esOverrides = {
             ? `dejó activada${theyOn === 1 ? '' : 's'} ${theyOn} herramienta${theyOn === 1 ? '' : 's'} que desactivaste`
             : ''
         ].filter(Boolean)
-
         return `${they.length > 0 ? `Esa persona ${they.join(' y ')}. ` : ''}Tus cambios siguen en pantalla; no se escribió nada.`
       },
       conflictReload: 'Recargar su versión',
@@ -2743,14 +2742,15 @@ export const esOverrides = {
     resetToMine: 'Volver a mi mapa'
   },
   agents: {
+    interrupted: 'Interrumpido',
     extendedTranscript: 'Transcripción ampliada',
     transcriptTruncated: 'Mostrando los últimos 16 KiB',
-    transcriptUnavailable: 'Transcripción en vivo no disponible',
+    transcriptUnavailable: 'Transcripción no disponible',
     close: 'Cerrar agentes',
     title: 'Árbol de generación',
-    subtitle: 'Actividad de subagentes en vivo para el turno actual.',
-    emptyTitle: 'No hay subagentes activos',
-    emptyDesc: 'Cuando un turno delegue trabajo, los agentes hijos mostrarán su progreso aquí.',
+    subtitle: 'Progreso de los subagentes en directo y resultados recientes.',
+    emptyTitle: 'Sin subagentes',
+    emptyDesc: 'Cuando Hermes delega trabajo, consulta aquí el progreso y los resultados de los subagentes.',
     running: 'En ejecución',
     failed: 'Falló',
     done: 'Listo',

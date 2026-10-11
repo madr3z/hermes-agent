@@ -10,9 +10,18 @@ interface SubagentControlsProps {
   subagentId: string
   text: string
   setText: (text: string) => void
+  canSteer?: boolean
+  canInterrupt?: boolean
 }
 
-export function SubagentControls({ sessionId, subagentId, text, setText }: SubagentControlsProps) {
+export function SubagentControls({
+  sessionId,
+  subagentId,
+  text,
+  setText,
+  canSteer = true,
+  canInterrupt = true
+}: SubagentControlsProps) {
   const { t } = useI18n()
   const [pending, setPending] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -60,25 +69,31 @@ export function SubagentControls({ sessionId, subagentId, text, setText }: Subag
         event.preventDefault()
         event.stopPropagation()
 
-        if (text.trim() && !pending) {
+        if (canSteer && text.trim() && !pending) {
           void send('steer')
         }
       }}
     >
       <div className="flex min-w-0 items-center gap-1">
-        <Input
-          aria-label={t.agents.steerPlaceholder}
-          disabled={pending}
-          onChange={event => setText(event.target.value)}
-          placeholder={t.agents.steerPlaceholder}
-          value={text}
-        />
-        <Button disabled={pending || !text.trim()} size="xs" type="submit" variant="secondary">
-          {t.agents.steer}
-        </Button>
-        <Button disabled={pending} onClick={() => void send('interrupt')} size="xs" type="button" variant="text">
-          {t.statusStack.stop}
-        </Button>
+        {canSteer && (
+          <Input
+            aria-label={t.agents.steerPlaceholder}
+            disabled={pending}
+            onChange={event => setText(event.target.value)}
+            placeholder={t.agents.steerPlaceholder}
+            value={text}
+          />
+        )}
+        {canSteer && (
+          <Button disabled={pending || !text.trim()} size="xs" type="submit" variant="secondary">
+            {t.agents.steer}
+          </Button>
+        )}
+        {canInterrupt && (
+          <Button disabled={pending} onClick={() => void send('interrupt')} size="xs" type="button" variant="text">
+            {t.statusStack.stop}
+          </Button>
+        )}
       </div>
       {feedback && (
         <p className="text-xs text-(--ui-text-secondary)" role={failed ? 'alert' : 'status'}>

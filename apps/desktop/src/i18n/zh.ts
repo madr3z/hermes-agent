@@ -2311,15 +2311,15 @@ export const zhOverrides = {
     resetToMine: '返回我的图谱'
   },
   agents: {
+    interrupted: '已中断',
     extendedTranscript: '扩展记录',
     transcriptTruncated: '显示最新 16 KiB',
-    transcriptUnavailable: '实时记录不可用',
-
+    transcriptUnavailable: '记录不可用',
     close: '关闭代理',
     title: '派生树',
-    subtitle: '当前回合的子代理实时活动。',
-    emptyTitle: '暂无活跃子代理',
-    emptyDesc: '当某个回合派发任务时，子代理会在此实时显示进度。',
+    subtitle: '子代理的实时进度和近期结果。',
+    emptyTitle: '暂无子代理',
+    emptyDesc: 'Hermes 委派工作后，在此查看子代理的进度和结果。',
     running: '运行中',
     failed: '失败',
     done: '完成',

@@ -253,7 +253,6 @@ export const deOverrides = {
           theyOff > 0 ? `${theyOff} Tool${theyOff === 1 ? '' : 's'} ausgeschaltet, die bei Ihnen an sind` : '',
           theyOn > 0 ? `${theyOn} Tool${theyOn === 1 ? '' : 's'} angelassen, die Sie ausgeschaltet haben` : ''
         ].filter(Boolean)
-
         return `${they.length > 0 ? `Die andere Person hat ${they.join(' und ')}. ` : ''}Ihre Änderungen bleiben auf dem Bildschirm; nichts wurde geschrieben.`
       },
       conflictReload: 'Deren Version neu laden',
@@ -2747,14 +2746,15 @@ export const deOverrides = {
     resetToMine: 'Zurück zu meiner Map'
   },
   agents: {
+    interrupted: 'Unterbrochen',
     extendedTranscript: 'Extended Transcript',
     transcriptTruncated: 'Zeigt die letzten 16 KiB',
-    transcriptUnavailable: 'Live-Transcript nicht verfügbar',
+    transcriptUnavailable: 'Transkript nicht verfügbar',
     close: 'Agents schließen',
     title: 'Spawn-Baum',
-    subtitle: 'Live-Subagent-Aktivität für die aktuelle Runde.',
-    emptyTitle: 'Keine Live-Subagents',
-    emptyDesc: 'Sobald eine Runde Arbeit delegiert, streamen die Unter-Agents ihren Fortschritt hierher.',
+    subtitle: 'Live-Fortschritt der Unteragenten und aktuelle Ergebnisse.',
+    emptyTitle: 'Keine Unteragenten',
+    emptyDesc: 'Wenn Hermes Arbeit delegiert, sehen Sie hier Fortschritt und Ergebnisse der Unteragenten.',
     running: 'Läuft',
     failed: 'Fehlgeschlagen',
     done: 'Fertig',

@@ -198,10 +198,19 @@ class ArgumentMode(WireEnum):
     mixed = "mixed"
 
 
+class MobileCommandSupport(WireEnum):
+    native = "native"
+    server = "server"
+    dispatch = "dispatch"
+    unsupported = "unsupported"
+
+
 class CommandCatalogMeta(Result):
     argument_mode: ArgumentMode | None = None
     desktop: str | None = None
     desktop_subcommands: list[str] | None = None
+    mobile: MobileCommandSupport = MobileCommandSupport.unsupported
+    mobile_subcommands: list[str] | None = None
 
 
 class CommandCategory(Result):

@@ -19,6 +19,8 @@ import HermesGateway
     var client: GatewayClient?
     var voice = VoiceCall()
     var activity: ChatActivityState
+    let subagents = SubagentsStore()
+    var commands = ChatCommandsStore()
     private var streamID: String?
     private var buffered: [JSON] = []
     private var invalidation: Task<Void, Never>?
@@ -28,6 +30,7 @@ import HermesGateway
     func open(store: PhoneStore) async {
         guard !loading, !sending else { return }
         loading = true; error = nil; activity.disconnect(); activityRevision += 1
+        subagents.disconnect(); commands.disconnect()
         defer {
             loading = false
             if needsCanonicalRefresh { scheduleCanonicalRefresh() }
@@ -45,6 +48,7 @@ import HermesGateway
                 guard let self, let client, self.client === client else { return }
                 self.connected = false; self.error = message; self.voice.stop()
                 self.activity.disconnect(); self.activityRevision += 1
+                self.subagents.disconnect(); self.commands.disconnect()
             }
             let snapshot = try await CanonicalChat.open(profile: bot.profile) { try await client.request($0, $1) }
             try await cleanupImages(client: client)
@@ -61,20 +65,28 @@ import HermesGateway
                 messages.append(ChatMessage(id: streamID!, role: "assistant", text: text))
             } else { streamID = nil }
             connected = true; status = busy ? "Working on the gateway" : "Connected"
+            bindSubagents(client: client)
             let hadBuffered = buffered.contains { $0["session_id"].string == runtimeID }
             buffered.removeAll()
             loading = false
             if hadBuffered { await refreshSnapshot() }
             await voice.recoverTranscripts(client: client, profile: bot.profile, runtimeID: runtimeID ?? "")
-        } catch { self.error = error.localizedDescription; connected = false; activity.disconnect() }
+        } catch { self.error = error.localizedDescription; connected = false; activity.disconnect(); subagents.disconnect(); commands.disconnect() }
     }
     func params(_ extra: [String: JSON] = [:]) -> [String: JSON] {
         ["session_id": .string(runtimeID ?? ""), "profile": .string(bot.profile)].merging(extra) { _, new in new }
     }
-    func send() async {
+    func send(modelText: String? = nil, visibleText: String? = nil) async {
         guard let client, let runtimeID, connected, !sending, !loading,
-              !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !uploads.isEmpty else { return }
-        let text = draft
+              !(modelText ?? draft).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !uploads.isEmpty else { return }
+        if modelText == nil, ChatCommandInvocation(draft) != nil {
+            guard uploads.isEmpty else { error = "Send or remove your attachments before running a command. Your draft and files are kept."; return }
+            await runCommand(draft)
+            return
+        }
+        let sourceDraft = draft
+        let text = modelText ?? draft
+        let displayText = visibleText ?? text
         let selected = uploads.map(\.id)
         sending = true; error = nil
         var pendingID: String?
@@ -89,7 +101,7 @@ import HermesGateway
             try Task.checkCancellation()
             guard self.runtimeID == runtimeID, connected else { throw GatewayError.message("Bot Chat changed. Reconnect before sending.") }
             let prompt = ([text] + prepared.filter { !$0.image }.map(\.reference)).filter { !$0.isEmpty }.joined(separator: "\n")
-            let visible = ([text] + prepared.map { $0.image ? "@image:\(quotedReference($0.path))" : $0.reference }).filter { !$0.isEmpty }.joined(separator: "\n")
+            let visible = ([displayText] + prepared.map { $0.image ? "@image:\(quotedReference($0.path))" : $0.reference }).filter { !$0.isEmpty }.joined(separator: "\n")
             let id = UUID().uuidString; pendingID = id
             messages.append(ChatMessage(id: id, role: "user", text: visible))
             busy = true; status = "Sending…"
@@ -99,7 +111,7 @@ import HermesGateway
             activity.submissionAccepted(submission, result: result)
             pendingImageCleanup.removeAll { $0.runtime == runtimeID }
             uploads.removeAll { selected.contains($0.id) }
-            if draft == text { draft = "" }
+            if draft == sourceDraft { draft = "" }
             status = result["status"].string == "queued" ? "Queued on the gateway" : "Working on the gateway"
         } catch {
             if let activitySubmission { activity.submissionFailed(activitySubmission, message: error.localizedDescription) }
@@ -112,21 +124,57 @@ import HermesGateway
             if pendingID != nil && !knownRefusal {
                 // A lost acknowledgement can still mean accepted work. Never replay the upload/send.
                 uploads.removeAll { selected.contains($0.id) }
-                if draft == text { draft = "" }
+                if draft == sourceDraft { draft = "" }
                 self.error = "\(self.error ?? "Send failed.") Refresh Bot Chat before deciding whether to send again."
             }
             await refreshSnapshot()
         }
     }
+    private func runCommand(_ text: String) async {
+        let owner = runtimeID
+        sending = true; error = nil
+        defer { sending = false }
+        do {
+            let result = try await commands.execute(text)
+            guard runtimeID == owner, connected else { return }
+            switch result {
+            case .output(let output):
+                commands.output = PhoneCommandOutput(title: String(text.prefix(60)), text: output)
+                if draft == text { draft = "" }
+            case .prefill(let message, let notice):
+                if draft == text { draft = message }
+                if let notice { commands.output = PhoneCommandOutput(title: "Command", text: notice) }
+            case .send(let message, let display, let notice):
+                if let notice { commands.output = PhoneCommandOutput(title: "Command", text: notice) }
+                sending = false
+                await send(modelText: message, visibleText: display)
+            case .native(let name):
+                switch name {
+                case "stop": await interrupt(); if error == nil, draft == text { draft = "" }
+                case "voice": CallPresentation.shared.open(self)
+                case "commands": commands.route = .help
+                default:
+                    guard let route = PhoneCommandRoute(rawValue: name) else { throw GatewayError.message("Use the matching control in Bot settings or on your Mac for this command.") }
+                    commands.route = route
+                }
+            }
+        } catch { self.error = error.localizedDescription + " No command was retried. Your draft is kept." }
+    }
     func bindSnapshot(_ snapshot: JSON, restoreActivity: Bool = true) {
         let next = snapshot["session_id"].string
         let changedRuntime = runtimeID != next
         if changedRuntime {
+            subagents.disconnect(); commands.disconnect()
             for index in uploads.indices { uploads[index].staged = nil }
         }
         runtimeID = next
+        if changedRuntime, let client, client.connected { bindSubagents(client: client) }
         storedSessionID = snapshot["stored_session_id"].string
         if changedRuntime || restoreActivity { activity.bind(runtimeID: next, snapshot: snapshot) }
+    }
+    private func bindSubagents(client: GatewayClient) {
+        subagents.bind(profile: bot.profile, runtimeID: runtimeID) { try await client.request($0, $1) }
+        commands.bind(profile: bot.profile, runtimeID: runtimeID) { try await client.request($0, $1) }
     }
     func interrupt() async {
         guard let client, let runtimeID, connected else { return }
@@ -163,7 +211,7 @@ import HermesGateway
         needsCanonicalRefresh = true
         if reclaimed {
             connected = false; busy = false; status = "Reconnecting Bot Chat…"; voice.stop()
-            activity.disconnect()
+            activity.disconnect(); subagents.disconnect(); commands.disconnect()
         }
         invalidation?.cancel()
         invalidation = Task { [weak self] in
@@ -179,6 +227,7 @@ import HermesGateway
                 guard self.client === client, client.connected else { return }
                 self.bindSnapshot(snapshot, restoreActivity: self.activityRevision == revision)
                 self.connected = true
+                self.bindSubagents(client: client)
                 self.needsCanonicalRefresh = false
                 if self.activityRevision == revision {
                     self.messages = ChatMessage.project(snapshot["messages"].array)

@@ -4184,7 +4184,7 @@
     },
     {
       "name": "subagent.list",
-      "summary": "Live children owned by this session (other sessions' children never leak).",
+      "summary": "Live and retained children owned by this conversation in its profile; controls are explicit capabilities.",
       "params": [
         {
           "name": "params",
@@ -8269,6 +8269,25 @@
             ],
             "default": null,
             "title": "Desktop Subcommands"
+          },
+          "mobile": {
+            "$ref": "#/components/schemas/MobileCommandSupport",
+            "default": "unsupported"
+          },
+          "mobile_subcommands": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mobile Subcommands"
           }
         },
         "title": "CommandCatalogMeta",
@@ -19946,6 +19965,16 @@
         ],
         "title": "MoaReferencePayload",
         "type": "object"
+      },
+      "MobileCommandSupport": {
+        "enum": [
+          "native",
+          "server",
+          "dispatch",
+          "unsupported"
+        ],
+        "title": "MobileCommandSupport",
+        "type": "string"
       },
       "ModelCapabilities": {
         "additionalProperties": false,
@@ -36127,7 +36156,7 @@
       },
       "SubagentListResult": {
         "additionalProperties": false,
-        "description": "``delegations``: recently failed async delegation tasks for the session (durable store), newest first.",
+        "description": "Live children plus up to 100 retained session rows. ``delegations`` preserves older async failures.",
         "properties": {
           "subagents": {
             "items": {
@@ -36174,7 +36203,7 @@
       },
       "SubagentSnapshot": {
         "additionalProperties": false,
-        "description": "``methods_subagents._SUBAGENT_SNAPSHOT_FIELDS`` projection of one live child record.",
+        "description": "One live or retained child. Control flags require exact current runtime authority.",
         "properties": {
           "subagent_id": {
             "title": "Subagent Id",
@@ -36298,6 +36327,69 @@
             ],
             "default": null,
             "title": "Accepting Steer"
+          },
+          "child_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Child Session Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completed At"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Summary"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "can_interrupt": {
+            "default": false,
+            "title": "Can Interrupt",
+            "type": "boolean"
+          },
+          "can_steer": {
+            "default": false,
+            "title": "Can Steer",
+            "type": "boolean"
+          },
+          "can_tail": {
+            "default": false,
+            "title": "Can Tail",
+            "type": "boolean"
           }
         },
         "required": [

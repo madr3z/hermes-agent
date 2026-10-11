@@ -30,7 +30,7 @@ function statusGlyph(status: SubagentStatus, a: Translations['agents']): ReactNo
   if (status === 'running' || status === 'queued') {
     return (
       <GlyphSpinner
-        ariaLabel={a.running}
+        ariaLabel={status === 'queued' ? a.queued : a.running}
         className="size-3.5 shrink-0 text-[0.95rem] text-muted-foreground/80"
         spinner="breathe"
       />
@@ -38,7 +38,12 @@ function statusGlyph(status: SubagentStatus, a: Translations['agents']): ReactNo
   }
 
   if (status === 'failed' || status === 'interrupted') {
-    return <AlertCircle aria-label={a.failed} className="size-3.5 shrink-0 text-destructive" />
+    return (
+      <AlertCircle
+        aria-label={status === 'interrupted' ? a.interrupted : a.failed}
+        className="size-3.5 shrink-0 text-destructive"
+      />
+    )
   }
 
   return <CheckCircle2 aria-label={a.done} className="size-3.5 shrink-0 text-emerald-600/85 dark:text-emerald-400/85" />
@@ -339,6 +344,27 @@ function StreamLine({
   )
 }
 
+interface SubagentResultProps {
+  node: SubagentNode
+  open: boolean
+}
+
+function SubagentResult({ node, open }: SubagentResultProps) {
+  if (!open || node.status === 'running' || node.status === 'queued' || !node.summary) {
+    return null
+  }
+
+  return (
+    <pre
+      className="whitespace-pre-wrap break-words pl-6 text-xs text-(--ui-text-primary)"
+      data-selectable-text="true"
+      data-slot="subagent-result"
+    >
+      {node.summary}
+    </pre>
+  )
+}
+
 export function SubagentRow({ node, depth = 0, nowMs }: { node: SubagentNode; depth?: number; nowMs: number }) {
   const { t } = useI18n()
   const running = node.status === 'running' || node.status === 'queued'
@@ -356,7 +382,8 @@ export function SubagentRow({ node, depth = 0, nowMs }: { node: SubagentNode; de
     }
   }, [running])
 
-  const visibleRows = open ? node.stream.slice(-10) : node.stream.slice(-2)
+  const stream = !running && open && node.summary ? node.stream.filter(entry => entry.kind !== 'summary') : node.stream
+  const visibleRows = open ? stream.slice(-10) : stream.slice(-2)
   const fileLines = [...node.filesWritten.map(p => `+ ${p}`), ...node.filesRead.map(p => `· ${p}`)]
 
   const subtitle = [
@@ -407,6 +434,8 @@ export function SubagentRow({ node, depth = 0, nowMs }: { node: SubagentNode; de
           ))}
         </div>
       ) : null}
+
+      <SubagentResult node={node} open={open} />
 
       {open && fileLines.length > 0 ? (
         <div className="grid min-w-0 gap-0.5 pl-6" data-selectable-text="true">

@@ -38,6 +38,9 @@ export interface SubagentProgress {
   summary?: string
   /** Active tool while running — cleared on terminal status. */
   currentTool?: string
+  canSteer?: boolean
+  canInterrupt?: boolean
+  canTail?: boolean
 }
 
 export interface SubagentNode extends SubagentProgress {
@@ -199,7 +202,7 @@ function streamFromPayload(
     out.push({ at, kind: 'thinking', text })
   }
 
-  const summary = compact(str(payload.summary) || str(payload.text) || timeoutSummary(payload))
+  const summary = compact(str(payload.summary) || str(payload.error) || str(payload.text) || timeoutSummary(payload))
 
   if (TERMINAL.has(status) && summary) {
     out.push({ at, isError: status === 'failed', kind: 'summary', text: summary })
@@ -207,6 +210,15 @@ function streamFromPayload(
 
   return out
 }
+
+const subagentCapabilities = (payload: SubagentPayload, prev: SubagentProgress | undefined) => ({
+  canSteer: typeof payload.can_steer === 'boolean' ? payload.can_steer : prev?.canSteer,
+  canInterrupt: typeof payload.can_interrupt === 'boolean' ? payload.can_interrupt : prev?.canInterrupt,
+  canTail: typeof payload.can_tail === 'boolean' ? payload.can_tail : prev?.canTail
+})
+
+const subagentSummary = (payload: SubagentPayload) =>
+  str(payload.summary) || str(payload.error) || timeoutSummary(payload)
 
 function toProgress(payload: SubagentPayload, prev: SubagentProgress | undefined, eventType = ''): SubagentProgress {
   const at = Date.now()
@@ -236,12 +248,26 @@ function toProgress(payload: SubagentPayload, prev: SubagentProgress | undefined
     filesRead: filesRead.length ? filesRead : (prev?.filesRead ?? []),
     filesWritten: filesWritten.length ? filesWritten : (prev?.filesWritten ?? []),
     stream,
-    summary: str(payload.summary) || timeoutSummary(payload) || prev?.summary || undefined,
-    currentTool: TERMINAL.has(status) ? undefined : tool || prev?.currentTool
+    summary: subagentSummary(payload) || prev?.summary || undefined,
+    currentTool: TERMINAL.has(status) ? undefined : tool || prev?.currentTool,
+    ...subagentCapabilities(payload, prev)
   }
 }
 
 const failedDelegationId = (p: SubagentPayload) => `delegation:${str(p.delegation_id)}:${num(p.task_index) ?? 0}`
+
+function restoreSnapshotTiming(projected: SubagentProgress, payload: SubagentPayload, prev?: SubagentProgress) {
+  projected.startedAt = (num(payload.started_at) ?? 0) * 1000 || prev?.startedAt || projected.startedAt
+  projected.updatedAt = (num(payload.completed_at) ?? 0) * 1000 || prev?.updatedAt || projected.startedAt
+
+  if (
+    TERMINAL.has(projected.status) &&
+    num(payload.completed_at) !== undefined &&
+    projected.durationSeconds === undefined
+  ) {
+    projected.durationSeconds = Math.max(0, (projected.updatedAt - projected.startedAt) / 1000)
+  }
+}
 
 /** Reconcile a scoped, race-checked snapshot without replacing stream history.
  *  `failedDelegations` are durable failed tasks the live roster no longer holds
@@ -272,8 +298,7 @@ export function reconcileSubagentSnapshot(
     }
 
     const projected = toProgress(payload, prev)
-    projected.startedAt = (num(payload.started_at) ?? 0) * 1000 || prev?.startedAt || projected.startedAt
-    projected.updatedAt = prev?.updatedAt ?? projected.startedAt
+    restoreSnapshotTiming(projected, payload, prev)
 
     // A roster records the last tool, not a currently executing call. Seed cold
     // activity only; a repeated snapshot must not append over newer live text.

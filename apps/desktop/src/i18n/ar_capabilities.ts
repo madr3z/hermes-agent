@@ -44,15 +44,16 @@ export const arCapabilities = {
     failedToUpdate: name => `فشل تحديث ${name}`
   },
   agents: {
+    interrupted: 'تمت المقاطعة',
     extendedTranscript: 'سجل موسّع',
     transcriptTruncated: 'عرض أحدث 16 KiB',
-    transcriptUnavailable: 'السجل المباشر غير متاح',
+    transcriptUnavailable: 'السجل غير متاح',
 
     close: 'إغلاق الوكلاء',
     title: 'شجرة التوليد',
-    subtitle: 'نشاط الوكلاء الفرعيين المباشر للدور الحالي.',
-    emptyTitle: 'لا يوجد وكلاء فرعيون مباشرون',
-    emptyDesc: 'عندما يفوّض دور ما عملا، يبث الوكلاء الأبناء تقدّمهم هنا.',
+    subtitle: 'تقدّم الوكلاء الفرعيين المباشر ونتائجهم الأخيرة.',
+    emptyTitle: 'لا يوجد وكلاء فرعيون',
+    emptyDesc: 'عندما يفوّض Hermes عملا، راجع تقدّم الوكلاء الفرعيين ونتائجهم هنا.',
     running: 'قيد التشغيل',
     failed: 'فشل',
     done: 'تم',

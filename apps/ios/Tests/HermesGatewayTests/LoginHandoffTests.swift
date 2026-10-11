@@ -22,4 +22,24 @@ final class LoginHandoffTests: XCTestCase {
         XCTAssertTrue(valid.continued)
         XCTAssertFalse(valid.canRetry)
     }
+    func testHandledRequestsStayHiddenWhenRestoredButAccountConfirmationRemainsVisible() throws {
+        for row: JSON in [
+            .object(["status": .string("authorized"), "continued": .bool(true), "continuation_status": .string("submitted")]),
+            .object(["status": .string("authorized"), "continued": .bool(true)]),
+            .object(["status": .string("canceled")]),
+            .object(["status": .string("dismissed")])
+        ] {
+            XCTAssertFalse(LoginHandoff(row).needsAction)
+            let restored = try JSONDecoder().decode(JSON.self, from: JSONEncoder().encode(row))
+            XCTAssertFalse(LoginHandoff(restored).needsAction)
+        }
+        XCTAssertTrue(LoginHandoff(.object(["status": .string("authorized"), "continued": .bool(false)])).needsAction)
+    }
+    func testOutstandingLoginRetryAndUncertainContinuationRemainVisible() {
+        for status in ["awaiting_human", "failed", "expired"] {
+            XCTAssertTrue(LoginHandoff(.object(["status": .string(status)])).needsAction)
+        }
+        XCTAssertTrue(LoginHandoff(.object(["status": .string("authorized"), "continued": .bool(true), "continuation_status": .string("unconfirmed")])).needsAction)
+    }
+
 }

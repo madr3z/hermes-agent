@@ -71,6 +71,10 @@ class CommandDef:
     # relevant review actions with CLI-hub mutations (e.g. /skills install),
     # so offering the command doesn't widen the whole family.
     desktop_subcommands: tuple[str, ...] | None = None
+    # The phone uses native screens or the existing session-scoped command RPCs.
+    # Unreviewed commands stay unavailable; terminal dispatch is never a fallback.
+    mobile: str = "unsupported"
+    mobile_subcommands: tuple[str, ...] | None = None
 
     def describe(self) -> str:
         """Localized description (``slash.<name>.description``); ``description`` is the English source."""
@@ -94,7 +98,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("redraw", "Force a full UI repaint (recovers from terminal drift)", "Session",
                cli_only=True, desktop="terminal"),
     CommandDef("history", "Show conversation history", "Session",
-               cli_only=True, desktop="terminal"),
+               cli_only=True, desktop="terminal", mobile="server"),
     CommandDef("save", "Export the current conversation (bare /save shows usage)", "Session",
                args_hint="<json|md|html> [filename] [redact]"),
     CommandDef("retry", "Retry the last message (resend to agent)", "Session"),
@@ -122,7 +126,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("import", "Import a shared profile archive as a new profile", "Configuration",
                cli_only=True, args_hint="<archive.tar.gz> [--name <name>]"),
     CommandDef("stop", "Kill all running background processes", "Session",
-               busy_policy="interrupt_then_dispatch", busy_handler="stop"),
+               busy_policy="interrupt_then_dispatch", busy_handler="stop", mobile="native"),
     CommandDef("pause", "Pause new work globally (emergency stop); '/pause off' resumes", "Session",
                gateway_only=True, args_hint="[reason | off]", busy_policy="dispatch"),
     CommandDef("approve", "Approve a pending dangerous command", "Session",
@@ -136,33 +140,33 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("btw", "Ask a side question about the current conversation without interrupting it", "Session",
                args_hint="<question>", busy_policy="dispatch"),
     CommandDef("agents", "Show active agents and running tasks", "Session",
-               aliases=("tasks",), busy_policy="dispatch"),
+               aliases=("tasks",), busy_policy="dispatch", mobile="native"),
     CommandDef("journey", "Open the learning journey timeline",
                "Session", aliases=("learning", "memory-graph"), cli_only=True,
                args_hint="[list|delete <id>|edit <id>]", subcommands=("list", "delete", "edit")),
     CommandDef("queue", "Queue a prompt for the next turn, or list/edit/rm/move/clear queued prompts", "Session",
                aliases=("q",), args_hint="[<prompt>|list|edit N <prompt>|rm N|move A B|clear]",
                subcommands=("list", "edit", "rm", "move", "clear", "add"),
-               busy_policy="dispatch", busy_handler="queue"),
+               busy_policy="dispatch", busy_handler="queue", mobile="server"),
     CommandDef("steer", "Inject a message after the next tool call without interrupting", "Session",
-               aliases=("s",), args_hint="<prompt>", busy_policy="dispatch", busy_handler="steer"),
+               aliases=("s",), args_hint="<prompt>", busy_policy="dispatch", busy_handler="steer", mobile="server"),
     CommandDef("goal", "Set a standing goal Hermes works on across turns until achieved", "Session",
                args_hint="[text | -- <text> | draft <text> | show | gate add <cmd> | pause | resume | clear | status | wait <pid> | unwait]",
-               argument_mode="mixed", busy_policy="dispatch", busy_handler="goal"),
+               argument_mode="mixed", busy_policy="dispatch", busy_handler="goal", mobile="server"),
     CommandDef("heartbeat", "Set a recurring prompt that re-enters this session when idle", "Session",
                aliases=("hb",), args_hint="[every <interval> <prompt> | status | pause | resume | clear]",
                subcommands=("status", "pause", "resume", "clear"),
                busy_policy="dispatch"),
     CommandDef("refine", "Review this conversation now and save lessons to memory/skills", "Session",
-               args_hint="[focus instructions]"),
+               args_hint="[focus instructions]", mobile="server"),
     CommandDef("review", "Spawn an independent subagent to review the work just discussed (PR, code, docs)", "Session",
-               args_hint="[review instructions]"),
+               args_hint="[review instructions]", mobile="server"),
     CommandDef("loop", "Re-run a prompt on a recurring interval in this session", "Session",
                aliases=("proactive",),
                args_hint="[interval] <prompt> [--times N] [--until <condition>] | status | pause | resume | stop",
                argument_mode="mixed", busy_policy="dispatch", busy_handler="loop"),
     CommandDef("plan", "Write a markdown implementation plan to .hermes/plans/ without executing anything", "Session",
-               args_hint="[task]"),
+               args_hint="[task]", mobile="server"),
     CommandDef("initiate-setup", "Run the first-run setup: learn about you and set Hermes up around you", "Session",
                aliases=("initiate_setup",)),
     CommandDef("moa", "Run one prompt through the default Mixture of Agents preset, then restore your model", "Session",
@@ -170,15 +174,15 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("subgoal", "Add or manage extra criteria on the active goal", "Session",
                args_hint="[text | remove N | clear]", busy_policy="dispatch"),
     CommandDef("status", "Show session, model, token, and context info", "Session",
-               busy_policy="dispatch"),
+               busy_policy="dispatch", mobile="server"),
     CommandDef("egress", "Show Docker egress proxy status", "Session",
                args_hint="[status]", subcommands=("status",), busy_policy="dispatch",
                busy_handler="egress", execute="egress"),
     CommandDef("context", "Show detailed context window view with usage gauge, category breakdown, compression stats, and throughput", "Session",
-               aliases=("ctx",), args_hint="[all]", subcommands=("all",), busy_policy="dispatch"),
+               aliases=("ctx",), args_hint="[all]", subcommands=("all",), busy_policy="dispatch", mobile="server"),
     CommandDef("whoami", "Show your slash command access (admin / user)", "Info"),
     CommandDef("profile", "Show active profile name and home directory", "Info",
-               busy_policy="dispatch", execute="profile"),
+               busy_policy="dispatch", execute="profile", mobile="native"),
     CommandDef("sethome", "Set this chat as the home channel", "Session",
                gateway_only=True, aliases=("set-home",), desktop="terminal"),
     CommandDef("resume", "Resume a previously-named session", "Session",
@@ -190,7 +194,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
                cli_only=True, desktop="terminal"),
     CommandDef("model", "Switch model (session-scoped; --global to persist)", "Configuration",
                args_hint="[model] [--provider name] [--reasoning level] [--global|--session] [--refresh]",
-               busy_policy="reject", busy_handler="model", desktop="hidden"),
+               busy_policy="reject", busy_handler="model", desktop="hidden", mobile="native"),
     CommandDef("codex-runtime", "Toggle codex app-server runtime for OpenAI/Codex models",
                "Configuration", aliases=("codex_runtime",), args_hint="[auto|codex_app_server]",
                busy_policy="reject", busy_handler="codex-runtime"),
@@ -235,7 +239,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
                subcommands=INDICATOR_STYLES, desktop="terminal"),
     CommandDef("voice", "Toggle voice mode", "Configuration",
                args_hint="[on|off|tts|status]", subcommands=("on", "off", "tts", "status"),
-               desktop="composer-voice"),
+               desktop="composer-voice", mobile="native"),
     CommandDef("wake", "Toggle the 'Hey Hermes' wake word listener", "Configuration",
                cli_only=True, args_hint="[on|off|status]", subcommands=("on", "off", "status")),
     CommandDef("busy", "Control how messages behave while Hermes is working", "Configuration",
@@ -245,7 +249,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
 
     # Tools & Skills
     CommandDef("tools", "Manage tools: /tools [list|disable|enable] [name...]", "Tools & Skills",
-               args_hint="[list|disable|enable] [name...]", cli_only=True, argument_mode="options"),
+               args_hint="[list|disable|enable] [name...]", cli_only=True, argument_mode="options",
+               mobile="server", mobile_subcommands=("", "list")),
     CommandDef("toolsets", "List available toolsets", "Tools & Skills",
                cli_only=True, desktop="terminal"),
     CommandDef("skills", "Search, install, inspect, or manage skills",
@@ -258,11 +263,11 @@ COMMAND_REGISTRY: list[CommandDef] = [
                # (search/browse/inspect/install/audit) run a full interactive
                # CLI hub that must not be reachable from a desktop exec
                # (#98330 review).
-               desktop_subcommands=("pending", "approve", "reject", "diff",
-                                    "approval")),
+               desktop_subcommands=("pending", "approve", "reject", "diff", "approval"),
+               mobile="server", mobile_subcommands=("pending", "approve", "reject", "diff", "approval")),
     CommandDef("memory", "Review pending memory writes / toggle the approval gate",
                "Tools & Skills", args_hint="[pending|approve|reject|approval] [id|on|off]",
-               subcommands=("pending", "approve", "reject", "approval")),
+               subcommands=("pending", "approve", "reject", "approval"), mobile="server"),
     CommandDef("bundles", "List skill bundles (aliases /<name> for multiple skills)",
                "Tools & Skills", execute="bundles"),
     CommandDef("pet", "Toggle or adopt a petdex mascot (/pet, /pet list, /pet <slug>)", "Tools & Skills",
@@ -270,9 +275,9 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("hatch", "Generate a new petdex pet from a description",
                "Tools & Skills", cli_only=True, aliases=("generate-pet",), args_hint="[description]"),
     CommandDef("learn", "Learn a reusable skill from anything you describe (dirs, URLs, this chat, notes)",
-               "Tools & Skills", args_hint="<what to learn from>"),
+               "Tools & Skills", args_hint="<what to learn from>", mobile="server"),
     CommandDef("init", "Generate or update AGENTS.md project instructions from a repo scan",
-               "Tools & Skills", args_hint="[notes]"),
+               "Tools & Skills", args_hint="[notes]", mobile="server"),
     CommandDef("cron", "Manage scheduled tasks", "Tools & Skills",
                cli_only=True, args_hint="[subcommand]",
                subcommands=("list", "add", "create", "edit", "pause", "resume", "run", "remove"),
@@ -303,22 +308,22 @@ COMMAND_REGISTRY: list[CommandDef] = [
                "Tools & Skills", aliases=("reload_skills",), desktop="advanced"),
     CommandDef("browser", "Connect browser tools to your live Chromium-family browser via CDP, or switch to Browser Use mode", "Tools & Skills",
                cli_only=True, args_hint="[connect|disconnect|status|use]",
-               subcommands=("connect", "disconnect", "status", "use")),
+               subcommands=("connect", "disconnect", "status", "use"), mobile="native"),
     CommandDef("plugins", "List installed plugins and their status",
                "Tools & Skills", cli_only=True, desktop="terminal"),
 
     # Info
     CommandDef("commands", "Browse all commands and skills (paginated)", "Info",
                gateway_only=True, args_hint="[page]", busy_policy="dispatch",
-               execute="gateway_commands"),
+               execute="gateway_commands", mobile="native"),
     CommandDef("help", "Show available commands (/help skills lists skill commands, /help <text> filters)", "Info", busy_policy="dispatch",
-               execute="gateway_help", args_hint="[skills|<filter>]"),
+               execute="gateway_help", args_hint="[skills|<filter>]", mobile="native"),
     CommandDef("palette", "Open the fuzzy command palette (also Ctrl+P)", "Info",
                cli_only=True, busy_policy="dispatch"),
     CommandDef("restart", "Gracefully restart the gateway after draining active runs", "Session",
                gateway_only=True, busy_policy="dispatch", desktop="terminal"),
     CommandDef("usage", "Show token usage and rate limits; `reset` redeems a banked Codex limit reset", "Info",
-               args_hint="[reset [--force]]"),
+               args_hint="[reset [--force]]", mobile="server", mobile_subcommands=("",)),
     CommandDef("subscription", "View your Nous plan and change it in the browser", "Info",
                cli_only=True, aliases=("upgrade",)),
     CommandDef("login", "Sign in with a Nous account (keeps your connectors)", "Info",
@@ -368,6 +373,14 @@ def command_desktop_meta(cmd: CommandDef) -> dict[str, object]:
     meta: dict[str, object] = {"argument_mode": infer_argument_mode(cmd), "desktop": cmd.desktop}
     if cmd.desktop_subcommands is not None:
         meta["desktop_subcommands"] = list(cmd.desktop_subcommands)
+    return meta
+
+
+def command_mobile_meta(cmd: CommandDef) -> dict[str, object]:
+    """Mobile disposition from the same canonical command definition."""
+    meta: dict[str, object] = {"mobile": cmd.mobile}
+    if cmd.mobile_subcommands is not None:
+        meta["mobile_subcommands"] = list(cmd.mobile_subcommands)
     return meta
 
 

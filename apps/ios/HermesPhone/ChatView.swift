@@ -11,6 +11,7 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var composerFocused: Bool
     @State private var showFiles = false
+    @State private var showPhotos = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var importingPhotos = false
     init(bot: Bot, store: PhoneStore, messageID: String? = nil) { self.store = store; self.messageID = messageID; _chat = State(initialValue: ChatStore(bot: bot)) }
@@ -58,6 +59,11 @@ struct ChatView: View {
                 }.accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { SubagentsView(chat: chat) } label: { Image(systemName: "person.2") }
+                    .accessibilityLabel("Subagents for \(chat.bot.name)")
+                    .accessibilityIdentifier("openSubagents")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { VMControlView(bot: chat.bot, store: store, chat: chat) } label: { Image(systemName: "desktopcomputer") }
                     .accessibilityLabel("Computer for \(chat.bot.name)")
             }
@@ -77,6 +83,22 @@ struct ChatView: View {
             if phase == .active { Task { await chat.open(store: store) } }
 
         }
+        .sheet(item: $chat.commands.output) { ChatCommandOutputView(output: $0) }
+        .sheet(item: $chat.commands.route) { route in
+            NavigationStack {
+                Group {
+                    switch route {
+                    case .help: ChatCommandsView(chat: chat)
+                    case .agents: SubagentsView(chat: chat)
+                    case .model: BotModelView(bot: chat.bot, store: store, runtimeID: chat.runtimeID)
+                    case .browser: VMControlView(bot: chat.bot, store: store, chat: chat)
+                    case .profile: Text("Return to the bot list to choose a bot. Each bot keeps its own conversation and settings.").padding(20)
+                    }
+                }.toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { chat.commands.route = nil } } }
+            }
+        }
+        .task(id: chat.draft + ":" + chat.commands.bindingID.uuidString) { await chat.commands.complete(chat.draft) }
+        .photosPicker(isPresented: $showPhotos, selection: $photos, maxSelectionCount: 5, matching: .images)
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): urls.forEach { chat.importFile($0) }
@@ -87,6 +109,22 @@ struct ChatView: View {
     }
     private var composer: some View {
         VStack(spacing: 8) {
+            if !chat.commands.completions.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(chat.commands.completions) { completion in
+                            Button {
+                                if let completed = chat.commands.apply(completion, to: chat.draft) { chat.draft = completed; composerFocused = true }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(completion.display).font(.subheadline.weight(.medium))
+                                    if !completion.detail.isEmpty { Text(completion.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                                }.padding(10).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                            }.tint(.primary).disabled(chat.sending)
+                        }
+                    }
+                }.accessibilityLabel("Command suggestions")
+            }
             if let error = chat.error {
                 VStack(alignment: .leading, spacing: 6) {
                     PhoneNotice(title: "Connection needs attention", message: error)
@@ -107,7 +145,7 @@ struct ChatView: View {
                     }
                 }
             }
-            if importingPhotos { ProgressView("Preparing photos…").font(.subheadline) }
+            if importingPhotos { ProgressView("Preparing attachment…").font(.subheadline) }
             if !chat.uploads.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
@@ -126,10 +164,15 @@ struct ChatView: View {
             }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    PhotosPicker(selection: $photos, maxSelectionCount: 5, matching: .images) { Label("Photos", systemImage: "photo") }
-                    Button("Files", systemImage: "doc") { showFiles = true }
+                    Button("Photos", systemImage: "photo") { composerFocused = false; showPhotos = true }
+                    Button("Files", systemImage: "doc") { composerFocused = false; showFiles = true }
+                    Button("Commands", systemImage: "command") { composerFocused = false; chat.commands.route = .help }
                 } label: { Image(systemName: "plus").font(.title3).frame(width: 44, height: 44) }
                 .accessibilityLabel("Attach photos or files").disabled(chat.sending || importingPhotos)
+                PasteButton(supportedContentTypes: ChatAttachmentImport.pasteTypes) { providers in
+                    Task { await importPasted(providers) }
+                }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel("Paste photo or file").disabled(chat.sending || importingPhotos)
                 TextField("Message \(chat.bot.name)", text: $chat.draft, axis: .vertical)
                     .lineLimit(1...6).padding(.vertical, 12)
                     .accessibilityLabel("Message \(chat.bot.name)")
@@ -145,6 +188,20 @@ struct ChatView: View {
             .overlay { RoundedRectangle(cornerRadius: 28).strokeBorder(Color.primary.opacity(0.07)) }
         }.padding(.horizontal, 16).padding(.vertical, 10).background(.bar)
     }
+    private func importPasted(_ providers: [NSItemProvider]) async {
+        guard !importingPhotos, !chat.sending else { return }
+        importingPhotos = true
+        defer { importingPhotos = false }
+        for provider in providers.prefix(5) {
+            do {
+                let upload = try await ChatAttachmentImport.paste(provider)
+                try Task.checkCancellation()
+                chat.addUpload(name: upload.name, data: upload.data, image: upload.isImage)
+            } catch is CancellationError { return }
+            catch { chat.error = error.localizedDescription }
+        }
+        if providers.count > 5 { chat.error = "Attach up to five files with a combined size of 10 MiB." }
+    }
     private func importPhotos() async {
         guard !photos.isEmpty else { return }
         importingPhotos = true
@@ -153,9 +210,8 @@ struct ChatView: View {
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else { throw GatewayError.message("This photo could not be read.") }
                 try Task.checkCancellation()
-                guard data.count <= ChatUpload.maximumBytes else { throw GatewayError.message("Choose a photo no larger than 10 MiB.") }
-                guard let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) else { throw GatewayError.message("This photo format is unavailable.") }
-                chat.addUpload(name: "photo-\(UUID().uuidString.prefix(8)).jpg", data: jpeg, image: true)
+                let upload = try ChatAttachmentImport.photo(data, name: "photo-\(UUID().uuidString.prefix(8))")
+                chat.addUpload(name: upload.name, data: upload.data, image: true)
             } catch is CancellationError { return }
             catch { chat.error = error.localizedDescription }
         }
