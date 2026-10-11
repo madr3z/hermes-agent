@@ -424,7 +424,15 @@ its bot context menu and choose **Remote VM**. The pane combines the existing
 screen viewer and its **Take control** / hand-back controls with a guest terminal
 and VM power status. Screen and terminal tabs stay attached when hidden.
 
-The terminal runs as `hermes` in `/home/hermes/workspace` inside the guest. Closing
+New VMs use the exact bot name as the Linux username. Choose and confirm the VM
+password during **Create Bot**. The main gateway advertises valid names, reserved
+accounts and password limits. The VM password is separate from the controller
+login. Desktop keeps it only in memory and clears it after acceptance or closing
+the dialog. A saved request ID and non-secret settings allow safe recovery.
+After an uncertain submission or reopening, Desktop looks up that request first.
+Only a missing request permits password reentry and a retry with the same ID.
+
+The terminal runs as the bot account in its home workspace inside the guest. Closing
 the pane detaches from its persistent tmux shell; reconnecting resumes it. The
 most recent terminal attachment owns keyboard input. If another client takes
 over, use **Reconnect** explicitly to regain control. If you exit the shell,

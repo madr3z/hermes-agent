@@ -7,6 +7,7 @@ import { listConnections } from './connections'
 export interface BotVmRequest {
   request_id: string
   name: string
+  linux_password: string
   resources: { cpu: number; memory_mib: number; disk_gib: number }
   credentials: { copy: boolean; source_profile: 'default' }
 }
@@ -20,6 +21,12 @@ export interface BotVmStatus {
 export interface BotVmCapabilities {
   available: boolean
   vm_control?: boolean
+  linux_account?: {
+    username: 'bot_name'
+    username_pattern: string
+    reserved_usernames: string[]
+    password: { required: true; min_bytes: number; max_bytes: number }
+  }
   resources: Record<'cpu' | 'memory_mib' | 'disk_gib', { min: number; max: number; default: number }>
   credential_keys: string[]
 }
@@ -94,6 +101,16 @@ export function botProvisioningClient() {
         throw error
       }
     },
+    requestScope: async () => {
+      const route = await owner()
+      const snapshot = await captured
+
+      return JSON.stringify({
+        connectionId: route.connectionId,
+        url: snapshot?.vm?.mainUrl ?? snapshot?.selected.url ?? ''
+      })
+    },
+    status: (requestId: string) => request<BotVmStatus>(`${prefix}/requests/${encodeURIComponent(requestId)}`),
     list: () => request<{ requests: BotVmStatus[] }>(`${prefix}/requests`),
     create: (body: BotVmRequest) => request<BotVmStatus>(`${prefix}/requests`, body),
     register: async (requestId: string) =>

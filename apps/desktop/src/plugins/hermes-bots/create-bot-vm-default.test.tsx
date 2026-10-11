@@ -23,6 +23,9 @@ vi.mock('@hermes/plugin-sdk', async () => {
     DialogFooter: Container,
     DialogHeader: Container,
     DialogTitle: Container,
+    readKey: (key: string) => localStorage.getItem(key),
+    writeKey: (key: string, value: string | null) =>
+      value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value),
     host: { botProvisioning: botProvisioningClient, notify: vi.fn() }
   }
 })
@@ -47,11 +50,18 @@ const capabilities = {
     memory_mib: { min: 2048, max: 4096, default: 2048 },
     disk_gib: { min: 20, max: 40, default: 20 }
   },
+  linux_account: {
+    username: 'bot_name',
+    username_pattern: '^[a-z][a-z0-9_-]{0,31}$',
+    reserved_usernames: ['root'],
+    password: { required: true, min_bytes: 8, max_bytes: 256 }
+  },
   credential_keys: []
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   mocks.active = 'main'
   mocks.list.mockResolvedValue({ connections: [main, guest] })
   Object.defineProperty(window, 'hermesDesktop', {
@@ -59,9 +69,13 @@ beforeEach(() => {
     value: { connections: { list: mocks.list, registerProvisioned: mocks.register } }
   })
   mocks.api.mockImplementation(async (_owner, request) => {
-    if (request.path.endsWith('/capabilities')) {return capabilities}
+    if (request.path.endsWith('/capabilities')) {
+      return capabilities
+    }
 
-    if (request.method === 'POST') {return { ...request.body, phase: 'queued' }}
+    if (request.method === 'POST') {
+      return { ...request.body, phase: 'queued' }
+    }
 
     return { requests: [] }
   })
@@ -77,6 +91,9 @@ function open() {
 
 async function create() {
   fireEvent.change(await screen.findByLabelText(vmEn.name), { target: { value: 'research' } })
+  fireEvent.change(screen.getByLabelText(vmEn.password), { target: { value: 'chosen-password' } })
+  fireEvent.change(screen.getByLabelText(vmEn.confirmPassword), { target: { value: 'chosen-password' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: vmEn.create })).toHaveProperty('disabled', false))
   fireEvent.click(screen.getByRole('button', { name: vmEn.create }))
 }
 

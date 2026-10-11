@@ -1,4 +1,13 @@
 export interface VmMessages extends Record<string, string> {
+  reservedUsername: string
+  resumePassword: string
+  loginUnavailable: string
+  loginRules: string
+  username: string
+  password: string
+  confirmPassword: string
+  passwordMismatch: string
+  loginDescription: string
   createProfile: string
   title: string
   description: string
@@ -57,6 +66,17 @@ export interface VmMessages extends Record<string, string> {
 }
 
 export const vmEn: VmMessages = {
+  reservedUsername: 'This Linux username is reserved. Choose another bot name.',
+  resumePassword: 'The request was not found. Reenter the same VM password to retry this request.',
+  loginUnavailable: 'VM login setup is unavailable. Update the main gateway before creating a bot.',
+  loginRules:
+    'Use 1–32 lowercase ASCII letters, numbers, underscores or hyphens. Start with a letter. Choose an 8–256 byte password without line breaks.',
+  username: 'Linux username',
+  password: 'VM password',
+  confirmPassword: 'Confirm VM password',
+  passwordMismatch: 'The passwords do not match.',
+  loginDescription:
+    'The Linux username is the bot name. This password signs in to the VM; it is separate from the controller login.',
   createProfile: 'Create a profile on an existing gateway',
   storageFailed: 'Unable to save the operation for safe retry. No command was sent.',
   recover: 'Review VM state',
@@ -118,6 +138,15 @@ export const vmEn: VmMessages = {
 }
 
 export const vmJa: VmMessages = {
+  reservedUsername: 'この Linux ユーザー名は予約済みです。別のボット名を選択してください。',
+  resumePassword: '要求が見つかりません。同じ VM パスワードを再入力して再試行してください。',
+  loginUnavailable: 'VM のログイン設定を利用できません。ボットを作成する前にメインゲートウェイを更新してください。',
+  loginRules: '名前は小文字の英字で始まる 1～32 文字の英数字・_・- です。パスワードは改行なしの 8～256 バイトです。',
+  username: 'Linux ユーザー名',
+  password: 'VM のパスワード',
+  confirmPassword: 'VM のパスワードを確認',
+  passwordMismatch: 'パスワードが一致しません。',
+  loginDescription: 'Linux ユーザー名はボット名です。このパスワードは VM 用で、コントローラーへのログインとは別です。',
   createProfile: '既存のゲートウェイにプロファイルを作成',
   storageFailed: '安全な再試行用に操作を保存できません。コマンドは送信されていません。',
   recover: 'VM の状態を確認',
@@ -177,6 +206,16 @@ export const vmJa: VmMessages = {
 }
 
 export const vmZh: VmMessages = {
+  reservedUsername: '此 Linux 用户名已保留。请选择其他机器人名称。',
+  resumePassword: '未找到请求。请重新输入相同的虚拟机密码后重试此请求。',
+  loginUnavailable: '虚拟机登录设置不可用。请先更新主网关，再创建机器人。',
+  loginRules:
+    '名称须以小写英文字母开头，包含 1–32 个小写英文字母、数字、下划线或连字符。密码须为 8–256 字节且不含换行。',
+  username: 'Linux 用户名',
+  password: '虚拟机密码',
+  confirmPassword: '确认虚拟机密码',
+  passwordMismatch: '两次输入的密码不一致。',
+  loginDescription: 'Linux 用户名与机器人名称相同。此密码用于登录虚拟机，与控制器登录不同。',
   createProfile: '在现有网关上创建配置文件',
   storageFailed: '无法保存操作以安全重试。未发送命令。',
   recover: '检查虚拟机状态',
@@ -235,6 +274,16 @@ export const vmZh: VmMessages = {
 }
 
 export const vmZhHant: VmMessages = {
+  reservedUsername: '此 Linux 使用者名稱已保留。請選擇其他機器人名稱。',
+  resumePassword: '找不到要求。請重新輸入相同的虛擬機密碼後重試此要求。',
+  loginUnavailable: '虛擬機登入設定無法使用。請先更新主閘道，再建立機器人。',
+  loginRules:
+    '名稱須以小寫英文字母開頭，包含 1–32 個小寫英文字母、數字、底線或連字號。密碼須為 8–256 位元組且不含換行。',
+  username: 'Linux 使用者名稱',
+  password: '虛擬機密碼',
+  confirmPassword: '確認虛擬機密碼',
+  passwordMismatch: '兩次輸入的密碼不一致。',
+  loginDescription: 'Linux 使用者名稱與機器人名稱相同。此密碼用於登入虛擬機，與控制器登入不同。',
   createProfile: '在現有閘道上建立設定檔',
   storageFailed: '無法儲存操作以安全重試。未傳送命令。',
   recover: '檢查虛擬機狀態',
