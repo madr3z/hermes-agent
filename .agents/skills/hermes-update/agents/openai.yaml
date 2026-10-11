@@ -1,4 +1,4 @@
 interface:
   display_name: "Update Custom Hermes"
   short_description: "Update Hermes, preserve features, and deploy safely"
-  default_prompt: "Use $hermes-update to update our custom Hermes from upstream, resolve conflicts, report features now covered upstream, and deploy the verified update to the existing cluster and managed bot VMs."
+  default_prompt: "Use $hermes-update to update our custom Hermes from upstream, resolve conflicts, report features now covered upstream, install the custom Mac app in /Applications/Hermes.app, and deploy the verified update to the existing cluster and managed bot VMs."

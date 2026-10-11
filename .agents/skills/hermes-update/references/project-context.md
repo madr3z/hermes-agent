@@ -23,6 +23,9 @@ guest-access plugins and cluster packaging live in the separate Infra repository
 
 ## Discovery locations
 
+- Required Mac installation: `/Applications/Hermes.app`. Every successful skill
+  update installs or verifies the custom build there. Preserve user data and keep
+  release/rollback bundles outside managed worker checkouts.
 - Canonical custom branch: `codex/hermes-custom`, in the primary checkout
   `/Users/madrez/developments/Projects/hermes-agent`. It combines all custom
   Hermes client/backend work and this skill. Keep `main` as the upstream baseline.

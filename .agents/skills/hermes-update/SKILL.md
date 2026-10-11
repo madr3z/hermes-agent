@@ -12,6 +12,7 @@ Creating or editing this skill does not itself request an update.
 ## Scope and authority
 
 A user request to run this update includes routine private image publication and
+installation of the verified custom Mac app at `/Applications/Hermes.app`, and
 updates to the existing Hermes deployments using their established credentials,
 capacity, private routes, and permissions. Carry forward applicable approval;
 do not ask again for each ordinary build, push, or rollout. Prepare the concrete
@@ -91,6 +92,30 @@ iPhone, Hermes backend, and Infra revisions when their source differs. Preserve
 client data, Keychain, gateway identities, and existing signing arrangements.
 Do not quit a client holding an unsent password or active session without an
 appropriate handoff. Use protected credential input; never print secrets.
+
+## Install the custom Mac app
+
+Every successful update must leave `/Applications/Hermes.app` at the verified
+custom Mac revision, replacing the original or previous app there. This install
+is part of the user's update request; do not leave the result only in a build or
+worker directory. If Mac source is unchanged, reuse the verified matching
+artifact and check the installed revision instead of rebuilding unnecessarily.
+
+Keep the release artifact and a rollback copy of the previously installed app
+outside disposable worker checkouts. Verify the source stamp and strict deep
+signature before replacement. Inspect whether Hermes is running. Quit it
+gracefully before swapping the bundle; preserve app data, Keychain, saved
+connections and remote VMs. If it cannot quit safely because of an active call,
+unsent protected input or pending save, finish staging and request only the
+needed handoff. Do not force-kill or clear user state.
+
+Stage a complete copy on the same volume as `/Applications`, verify it, then
+replace the exact `/Applications/Hermes.app` bundle. Do not merge new files into
+an old bundle, leave a partial installation, or disable macOS security settings.
+Keep a rollback copy until the installed bundle verifies. Verify its embedded
+source revision and signature after the swap. Reopen it if it was running before
+the update, unless the user asked otherwise; report any launch or signing block.
+Record the installed path/revision separately from build and live-flow evidence.
 
 ## Deploy the verified version
 
