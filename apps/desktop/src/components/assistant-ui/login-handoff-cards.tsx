@@ -12,6 +12,8 @@ export interface LoginHandoffRequest {
   detail: string
   account_ref: string
   verified_identity?: string
+  attempt_id?: string | null
+  continuation_status?: string
   user_code: string
   verification_url: string
   auth_url: string
@@ -54,13 +56,54 @@ async function launchAuthorization(
   if (url.searchParams.get('redirect_uri') !== native.redirectUri) {
     throw new Error('This provider requires its registered Mac callback. Use its supported connector settings flow.')
   }
-  const callback = window.hermesDesktop.mcpOauth!.wait(native.id)
   await window.hermesDesktop.openExternal(url.href)
-  const result = await callback
+  const result = await window.hermesDesktop.mcpOauth!.wait(native.id)
   if (!active()) return true
   if (!result.state) throw new Error('Sign-in browser closed or expired. Retry or cancel.')
   await relay({ ...result, iss: result.iss || undefined })
   return true
+}
+
+interface AuthorizationPoll {
+  gateway: HermesGateway
+  sessionId: string
+  requestId: string
+  native?: NativeListener
+  active: () => boolean
+  update: (requests: LoginHandoffRequest[]) => void
+  callback: (pending: LoginHandoffRequest, params: Record<string, unknown>) => Promise<unknown>
+  finished: () => void
+}
+
+async function pollAuthorization({
+  gateway,
+  sessionId,
+  requestId,
+  native,
+  active,
+  update,
+  callback,
+  finished
+}: AuthorizationPoll) {
+  for (let poll = 0; poll < 30; poll++) {
+    if (!active()) return
+    const result = await gateway.request<{ requests: LoginHandoffRequest[] }>('login.handoff.list', {
+      session_id: sessionId
+    })
+    if (!active()) return
+    update(result.requests)
+    const pending = result.requests.find(item => item.id === requestId)
+    if (!pending || pending.status !== 'awaiting_human') {
+      finished()
+      return
+    }
+    if (await launchAuthorization(pending, native, params => callback(pending, params), active)) {
+      if (native && active()) finished()
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+  throw new Error('The provider has not supplied sign-in yet. Retry after checking the bot connection.')
 }
 
 /** UI-only metadata: never copy the URL or device code into the transcript. */
@@ -71,12 +114,15 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
   const generation = useRef(0)
   const attemptGeneration = useRef(0)
   const listener = useRef<string | null>(null)
+  const busy = useRef(false)
+  const cancelPending = useRef<null | (() => Promise<unknown>)>(null)
 
   useEffect(() => {
     const current = ++generation.current
     setRequests([])
     setError('')
     setWorking(false)
+    busy.current = false
     if (!gateway || !sessionId) return
     let timer: ReturnType<typeof setTimeout>
     const refresh = async () => {
@@ -99,9 +145,12 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
     void refresh()
     return () => {
       ++generation.current
+      ++attemptGeneration.current
       clearTimeout(timer)
       if (listener.current) void window.hermesDesktop.mcpOauth?.cancel(listener.current)
       listener.current = null
+      void cancelPending.current?.().catch(() => {})
+      cancelPending.current = null
     }
   }, [gateway, sessionId])
 
@@ -115,61 +164,90 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
   }
 
   const signIn = async (request: LoginHandoffRequest) => {
+    if (busy.current) return
     if (request.provider === 'google-gmail') {
-      setError('This optional self-hosted Google connector uses the iPhone callback. Finish its sign-in on your iPhone.')
+      setError(
+        'This optional self-hosted Google connector uses the iPhone callback. Finish its sign-in on your iPhone.'
+      )
       return
     }
     const current = generation.current
     const attempt = ++attemptGeneration.current
     const active = () => current === generation.current && attempt === attemptGeneration.current
     setWorking(true)
+    busy.current = true
     setError('')
     let native: { id: string; redirectUri: string } | undefined
     try {
       if (request.provider === 'mcp') {
         if (!window.hermesDesktop.mcpOauth) throw new Error('Update Hermes Desktop to support native callbacks.')
         native = await window.hermesDesktop.mcpOauth.listen()
+        if (!active()) return
         listener.current = native.id
       }
-      await action('start', request, native ? { client_redirect_uri: native.redirectUri } : {})
-      for (let poll = 0; poll < 30; poll++) {
-        if (!active() || !gateway || !sessionId) return
-        const result = await gateway.request<{ requests: LoginHandoffRequest[] }>('login.handoff.list', {
-          session_id: sessionId
-        })
-        if (!active()) return
-        setRequests(result.requests)
-        const pending = result.requests.find(item => item.id === request.id)
-        if (!pending || pending.status !== 'awaiting_human') return
-        if (await launchAuthorization(pending, native, params => action('callback', pending, params), active)) return
-        await new Promise(resolve => setTimeout(resolve, 1000))
+      const started = await action('start', request, native ? { client_redirect_uri: native.redirectUri } : {})
+      const cancel = async () =>
+        started.request.attempt_id ? action('cancel', request, { attempt_id: started.request.attempt_id }) : undefined
+      if (!active()) {
+        await cancel()
+        return
       }
-      throw new Error('The provider has not supplied sign-in yet. Retry after checking the bot connection.')
+      cancelPending.current = cancel
+      if (!gateway || !sessionId) return
+      await pollAuthorization({
+        gateway,
+        sessionId,
+        requestId: request.id,
+        native,
+        active,
+        update: setRequests,
+        callback: (pending, params) => action('callback', pending, params),
+        finished: () => {
+          cancelPending.current = null
+        }
+      })
     } catch (failure) {
-      if (active()) setError(failure instanceof Error ? failure.message : 'Sign-in could not start. Retry.')
+      if (active()) {
+        await cancelPending.current?.().catch(() => {})
+        cancelPending.current = null
+        setError(failure instanceof Error ? failure.message : 'Sign-in could not start. Retry.')
+      }
     } finally {
       if (native) await window.hermesDesktop.mcpOauth?.cancel(native.id).catch(() => {})
       if (active()) {
         listener.current = null
+        busy.current = false
         setWorking(false)
       }
     }
   }
 
   const respond = async (verb: string, request: LoginHandoffRequest) => {
+    if (verb !== 'cancel' && busy.current) return
     const current = generation.current
+    busy.current = true
+    setWorking(true)
     try {
       if (verb === 'cancel') {
         ++attemptGeneration.current
-        setWorking(false)
       }
       if (verb === 'cancel' && listener.current) await window.hermesDesktop.mcpOauth?.cancel(listener.current)
-      const result = await action(verb, request)
+      const result = await action(
+        verb,
+        request,
+        verb === 'cancel' ? { attempt_id: request.attempt_id || undefined } : {}
+      )
       if (current !== generation.current) return
       setRequests(items => items.map(item => (item.id === request.id ? result.request : item)))
       setError('')
+      cancelPending.current = null
     } catch {
       if (current === generation.current) setError('The bot could not confirm this sign-in action. Refresh and retry.')
+    } finally {
+      if (current === generation.current) {
+        busy.current = false
+        setWorking(false)
+      }
     }
   }
 
@@ -190,9 +268,7 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
               ? `Permissions: ${request.scopes.join(', ')}`
               : 'Review the requested permissions on the provider consent screen.'}
           </p>
-          {request.verified_identity && (
-            <p className="mt-1 text-xs">Verified account: {request.verified_identity}</p>
-          )}
+          {request.verified_identity && <p className="mt-1 text-xs">Verified account: {request.verified_identity}</p>}
           {request.account_ref && (
             <p className="mt-1 text-xs text-muted-foreground">Account slot: {request.account_ref}</p>
           )}
@@ -205,10 +281,15 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
           <div className="mt-3 flex gap-3">
             {request.status === 'authorized' ? (
               request.continued ? (
-                <p>Task continuation submitted</p>
+                <p>
+                  {request.continuation_status === 'unconfirmed'
+                    ? 'Check this chat before sending another message.'
+                    : 'Task continuation submitted'}
+                </p>
               ) : (
                 <button
                   className="rounded-lg bg-primary px-3 py-2 text-primary-foreground"
+                  disabled={working}
                   onClick={() => void respond('continue', request)}
                 >
                   Confirm account and continue task

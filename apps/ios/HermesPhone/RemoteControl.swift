@@ -24,6 +24,7 @@ import HermesGateway
     private var generation = UUID()
     private var lifetime = UUID()
     private var attaching: Task<Void, Never>?
+    private(set) var handoffID = UUID().uuidString
     init(bot: Bot) { self.bot = bot }
     var controlling: Bool { DisplayIdentity.holds(lease, viewer: viewer) && connected }
     var desktopRunning: Bool { status["running"].bool }
@@ -190,10 +191,11 @@ import HermesGateway
                 return
             }
             adoptLease(result); updateControl()
+            if controlling { handoffID = UUID().uuidString }
         } catch { if currentLifetime == lifetime { self.error = error.localizedDescription } }
     }
-    func releaseControl() async {
-        guard let client, let viewer, !working else { return }
+    @discardableResult func releaseControl() async -> Bool {
+        guard let client, let viewer, !working else { return false }
         working = true
         let currentLifetime = lifetime
         defer { if currentLifetime == lifetime { working = false } }
@@ -201,9 +203,22 @@ import HermesGateway
             var params = profile; params["viewer_id"] = .string(viewer)
             let current = generation
             let result = try await client.request("display.lease.release", params)["lease"]
-            guard current == generation, self.client === client else { return }
+            guard current == generation, self.client === client else { return false }
             adoptLease(result); updateControl()
-        } catch { if currentLifetime == lifetime { self.error = error.localizedDescription } }
+            guard result["holder"].string == "agent" else {
+                error = "Another person holds this computer. The task has not resumed."
+                return false
+            }
+            return true
+        } catch { if currentLifetime == lifetime { self.error = error.localizedDescription }; return false }
+    }
+    func agentHasControl() async throws -> Bool {
+        guard let client, client.connected else { throw GatewayError.message("Reconnect to this computer before continuing the task.") }
+        let current = generation
+        let result = try await client.request("display.status", profile)
+        guard current == generation, self.client === client else { return false }
+        status = result; adoptLease(result["lease"])
+        return result["lease"]["holder"].string == "agent"
     }
     func paste(_ text: String) async {
         guard connected, mode == .terminal || controlling else { return }

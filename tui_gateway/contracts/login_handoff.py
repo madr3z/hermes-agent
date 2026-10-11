@@ -12,6 +12,7 @@ class LoginHandoffParams(Params):
 class LoginHandoffActionParams(LoginHandoffParams):
     request_id: str
     client_redirect_uri: str | None = None
+    attempt_id: str | None = None
 
 
 class LoginHandoffCallbackParams(LoginHandoffActionParams):
@@ -31,6 +32,8 @@ class LoginHandoffRequest(Payload):
     detail: str
     account_ref: str
     verified_identity: str | None = None
+    attempt_id: str | None = None
+    continuation_status: str = ""
     user_code: str
     verification_url: str
     auth_url: str

@@ -44,14 +44,17 @@ def _login_handoff_rpc(rid, params, action):
             if action == "start":
                 record = login.start(home, chat, request_id, client_redirect_uri=params.get("client_redirect_uri"))
             elif action == "cancel":
-                record = login.cancel(home, chat, request_id)
+                record = login.cancel(home, chat, request_id, attempt_id=params.get("attempt_id"))
             elif action == "callback":
                 record = login.callback(home, chat, request_id, {k: params.get(k) for k in ("code", "state", "error", "iss")})
             else:
                 record = login.continuation(home, chat, request_id)
                 if record["continued"]:
                     return _ok(rid, {"request": login.public(record)})
-                # Existing prompt.submit owns durable user rows, queuing and client_turn_id deduplication.
+                claimed, receipt = login.claim_continuation(home, chat, request_id)
+                if not claimed:
+                    return _ok(rid, {"request": receipt})
+                # client_turn_id is correlation only. The durable claim prevents a second admission.
                 submitted = _methods["prompt.submit"](rid, {
                     "session_id": params["session_id"], "queued": True,
                     "client_turn_id": "login-handoff-" + request_id,

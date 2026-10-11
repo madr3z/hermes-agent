@@ -58,6 +58,10 @@ struct ChatView: View {
                 }.accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { VMControlView(bot: chat.bot, store: store, chat: chat) } label: { Image(systemName: "desktopcomputer") }
+                    .accessibilityLabel("Computer for \(chat.bot.name)")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button(chat.voice.active || chat.voice.connecting ? "Return to call" : "Call", systemImage: chat.voice.active ? "phone.fill" : "phone") { composerFocused = false; CallPresentation.shared.open(chat) }
                     .disabled(!chat.connected || chat.sending).accessibilityIdentifier("startVoice")
                     .accessibilityLabel("Voice call with \(chat.bot.name)")

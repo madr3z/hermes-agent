@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import http.server
+import hashlib
+import json
 import logging
 import os
 import secrets
@@ -109,13 +111,23 @@ def cancel_attempt(flow) -> bool:
 
 
 def _commit(server_name: str, cfg: dict, on_commit: Optional[Callable[[], None]], flow=None) -> None:
-    from hermes_cli.mcp_config import _save_mcp_server
+    from hermes_cli.mcp_config import _get_mcp_servers, _save_mcp_server
+    from hermes_cli.config import _CONFIG_LOCK
 
     with _COMMIT_GUARD:
-        if flow is not None and getattr(flow, "cancelled", False):
-            raise AttemptCanceled("canceled")
-        if not _save_mcp_server(server_name, cfg):
-            raise RuntimeError(f"'{server_name}' was rejected: suspicious command/args configuration")
+        deadline = getattr(flow, "expires_at", None)
+        if flow is not None and (getattr(flow, "cancelled", False)
+                                 or (deadline is not None and time.time() >= deadline)):
+            raise AttemptCanceled("canceled or expired")
+        with _CONFIG_LOCK:
+            expected = getattr(flow, "expected_config_ref", None)
+            if expected:
+                current = _get_mcp_servers().get(server_name) or {}
+                if hashlib.sha256(json.dumps(current, sort_keys=True).encode()).hexdigest() != expected:
+                    raise AttemptCanceled("The selected account configuration changed")
+                # Chat sign-in authorizes an existing slot. It never rewrites that slot.
+            elif not _save_mcp_server(server_name, cfg):
+                raise RuntimeError(f"'{server_name}' was rejected: suspicious command/args configuration")
         if on_commit is not None:
             on_commit()
         if flow is not None:
@@ -314,6 +326,8 @@ def start(
     server_name: str, *, url_timeout: float = URL_TIMEOUT_SECONDS,
     client_redirect_uri: Optional[str] = None, cfg: Optional[dict] = None,
     env: Optional[dict[str, str]] = None, on_commit: Optional[Callable[[], None]] = None,
+    expires_at: Optional[float] = None,
+    expected_config_ref: Optional[str] = None,
 ) -> OAuthAttempt:
     """Start a card OAuth flow and wait until its authorization URL is published.
 
@@ -332,7 +346,8 @@ def start(
     hermes_home = str(get_hermes_home().expanduser().resolve(strict=False))
     flow = DashboardOAuthFlow(
         flow_id=secrets.token_urlsafe(24), server_name=server_name, profile=None,
-        hermes_home=hermes_home, redirect_uri="", reconnect_live=False)
+        hermes_home=hermes_home, redirect_uri="", reconnect_live=False, expires_at=expires_at,
+        expected_config_ref=expected_config_ref)
     with _COMMIT_GUARD:
         older = _ACTIVE.get((hermes_home, server_name))
         _ACTIVE[(hermes_home, server_name)] = flow

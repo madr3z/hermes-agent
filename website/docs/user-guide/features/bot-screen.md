@@ -168,7 +168,13 @@ bot you wouldn't trust with them.
 When the bot hits a step it should not do itself (a login, 2FA, a CAPTCHA, a
 payment) it says so in its reply and ends its turn; the ask reaches you in
 whatever chat you are on. Take over when you are ready, do the step, hand back,
-and tell the bot to continue. Nothing blocks on the bot's side while it waits:
+and tell the bot to continue. On Mac, taking over from this bot's focused chat
+also offers **Hand back and continue task**. On iPhone, open **Computer** directly
+from the chat for the same action. It returns to the captured chat and asks the
+bot to check the page and account before continuing. A released screen does not
+prove that sign-in succeeded. If submission is unconfirmed, return to chat and
+check its activity before sending another message; Hermes does not replay it.
+Nothing blocks on the bot's side while it waits:
 taking over is always yours to start, and a bot never holds a tool call open
 waiting for you.
 

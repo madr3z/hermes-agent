@@ -17931,6 +17931,18 @@
             ],
             "default": null,
             "title": "Client Redirect Uri"
+          },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Attempt Id"
           }
         },
         "required": [
@@ -17999,6 +18011,18 @@
             ],
             "default": null,
             "title": "Client Redirect Uri"
+          },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Attempt Id"
           },
           "code": {
             "anyOf": [
@@ -18160,6 +18184,23 @@
             ],
             "default": null,
             "title": "Verified Identity"
+          },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Attempt Id"
+          },
+          "continuation_status": {
+            "default": "",
+            "title": "Continuation Status",
+            "type": "string"
           },
           "user_code": {
             "title": "User Code",

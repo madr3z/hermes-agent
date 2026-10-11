@@ -83,7 +83,8 @@ def public(record):
         record["auth_url"] = active["oauth"].auth_url if active.get("oauth") else active.get("auth_url", "")
     return {**{key: record[key] for key in (
         "id", "provider", "name", "owner_profile", "scopes", "auth_url", "status", "detail", "account_ref", "user_code", "verification_url", "expires_at", "continued")},
-        "verified_identity": record.get("verified_identity")}
+        "verified_identity": record.get("verified_identity"), "attempt_id": record.get("attempt_id"),
+        "continuation_status": record.get("continuation_status", "")}
 
 
 def list_requests(home: Path, chat: str, *, required: bool):
@@ -130,18 +131,21 @@ def start(home: Path, chat: str, request_id: str, *, client_redirect_uri=None):
         import psutil
         record.update(status="awaiting_human", detail="Preparing provider sign-in…", user_code="",
                       instance=_INSTANCE, pid=os.getpid(), process_started=psutil.Process().create_time(),
-                      expires_at=time.time() + 900, continued=False)
+                      expires_at=time.time() + 900, continued=False, verified_identity=None, grant_ref="",
+                      attempt_id=uuid.uuid4().hex)
         _write(db, record)
-        attempt = {"cancelled": False, "attempt_id": uuid.uuid4().hex}
+        attempt = {"cancelled": False, "attempt_id": record["attempt_id"]}
         _ACTIVE[request_id] = attempt
     threading.Thread(target=contextvars.copy_context().run, args=(_worker_for(record), home, chat, request_id, attempt, client_redirect_uri),
                      daemon=True, name="codex-login-handoff").start()
     return public(record)
 
 
-def cancel(home: Path, chat: str, request_id: str):
+def cancel(home: Path, chat: str, request_id: str, *, attempt_id=None):
     with _LOCK, _database(home) as db:
         record = _recover(_read(db, request_id, chat))
+        if attempt_id is not None and attempt_id != record.get("attempt_id"):
+            return public(record)
         if record["status"] == "authorized":
             return public(record)  # Cancellation cannot revoke a committed grant.
         if (record.get("instance") and record["instance"] != _INSTANCE
@@ -205,10 +209,22 @@ def continuation(home: Path, chat: str, request_id: str):
     return record
 
 
+def claim_continuation(home: Path, chat: str, request_id: str):
+    """Consume one handoff before admission. An uncertain admission must never replay."""
+    with _LOCK, _database(home) as db:
+        record = _read(db, request_id, chat)
+        if record["continued"]:
+            return False, public(record)
+        record.update(continued=True, continuation_status="unconfirmed",
+                      detail="Task continuation is unconfirmed. Check this chat before sending another message.")
+        _write(db, record)
+        return True, public(record)
+
+
 def mark_continued(home: Path, chat: str, request_id: str):
     with _LOCK, _database(home) as db:
         record = _read(db, request_id, chat)
-        record["continued"] = True
+        record.update(continued=True, continuation_status="submitted", detail="Task continuation submitted.")
         _write(db, record)
         return public(record)
 
@@ -279,16 +295,22 @@ def create_mcp(home: Path, chat: str, name: str):
     if not google and (url.scheme != "https" or not url.hostname or cfg.get("auth") != "oauth"):
         raise ValueError("Chat sign-in requires a configured HTTPS MCP OAuth server")
     provider = "google-gmail" if google else "mcp"
+    config_ref = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
     with _LOCK, _database(home) as db:
         rows = db.execute("SELECT body FROM requests WHERE chat=?", (chat,))
         for row in rows:
             existing = _recover(json.loads(row[0]))
             if existing["provider"] == provider and existing["name"] == name and not existing["continued"]:
-                return public(existing)
+                if existing["config_ref"] == config_ref:
+                    return public(existing)
+                _retire_attempt(existing["id"])
+                existing.update(status="canceled", user_code="", grant_ref="",
+                                verified_identity=None, detail="The account setup changed. Use its new sign-in request.")
+                _write(db, existing)
         record = {"id": uuid.uuid4().hex, "chat": chat, "provider": provider, "name": name,
                   "scopes": [], "status": "awaiting_human", "detail": "Authorize the requested Google account" if google else "Authorize the intended account at " + url.hostname,
                   "account_ref": name, "user_code": "", "verification_url": "", "expires_at": 0.0,
-                  "continued": False, "config_ref": hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()}
+                  "continued": False, "config_ref": config_ref}
         _write(db, record)
         return public(record)
 
@@ -303,7 +325,8 @@ def _mcp_worker(home, chat, request_id, attempt, client_redirect_uri):
         cfg = _get_mcp_servers().get(record["name"]) or {}
         if hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest() != record["config_ref"]:
             raise ValueError("Server configuration changed")
-        oauth = mcp_oauth.start(record["name"], client_redirect_uri=client_redirect_uri)
+        oauth = mcp_oauth.start(record["name"], client_redirect_uri=client_redirect_uri,
+                                expires_at=record["expires_at"], expected_config_ref=record["config_ref"])
         with _LOCK:
             attempt["oauth"] = oauth
             if attempt["cancelled"]:
@@ -319,19 +342,40 @@ def _mcp_worker(home, chat, request_id, attempt, client_redirect_uri):
                 _ACTIVE.pop(request_id, None)
 
 
+def _retire_attempt(request_id):
+    attempt = _ACTIVE.pop(request_id, None)
+    if not attempt:
+        return
+    attempt["cancelled"] = True
+    if oauth := attempt.get("oauth"):
+        from tools.connectors.mcp_oauth import cancel_attempt
+        cancel_attempt(oauth.flow)
+    if attempt.get("google_gmail"):
+        from tools.connectors.google_gmail_login import cancel as cancel_google
+        cancel_google(attempt)
+
+
 def _observe_mcp(home, chat):
+    from hermes_cli.mcp_config import _get_mcp_servers
+    servers = _get_mcp_servers()
     with _LOCK, _database(home) as db:
         rows = db.execute("SELECT body FROM requests WHERE chat=?", (chat,)).fetchall()
         for row in rows:
-            record = _recover(json.loads(row[0]))
+            record = json.loads(row[0])
             attempt = _ACTIVE.get(record["id"])
             if record["provider"] != "mcp" or not attempt or not attempt.get("oauth"):
                 continue
             oauth = attempt["oauth"]
-            if record["status"] == "expired":
-                from tools.connectors.mcp_oauth import cancel_attempt
-                cancel_attempt(oauth.flow)
             snapshot = oauth.poll()
+            current = servers.get(record["name"]) or {}
+            if hashlib.sha256(json.dumps(current, sort_keys=True).encode()).hexdigest() != record["config_ref"]:
+                record.update(status="failed", detail="The account setup changed. Select the account again before signing in.")
+            if snapshot["status"] != "approved":
+                record = _recover(record)
+            if record["status"] in {"expired", "canceled", "failed"}:
+                _retire_attempt(record["id"])
+                _write(db, record)
+                continue
             if snapshot["status"] in ("approved", "error"):
                 record.update(status="authorized" if snapshot["status"] == "approved" else "failed",
                               grant_ref=_mcp_grant_ref(home, record["name"]) if snapshot["status"] == "approved" else "",
@@ -342,6 +386,8 @@ def _observe_mcp(home, chat):
 
 def callback(home, chat, request_id, params):
     from tui_gateway.mcp_oauth_sessions import deliver_callback_flow
+    # Expiry must apply even if the app was suspended and no status poll ran.
+    list_requests(home, chat, required=False)
     with _LOCK, _database(home) as db:
         record = _read(db, request_id, chat)
         attempt = _ACTIVE.get(request_id)

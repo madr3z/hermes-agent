@@ -58,6 +58,21 @@ See `VALIDATION.md` for exact build/test evidence. Simulator launch cannot estab
 
 ## VM screen, terminal and power
 
+Chat's **Computer** button keeps the originating chat for manual website sign-in.
+Choose **Take control**, sign in in the bot's browser, then **Hand back and continue
+task**. The bot must check the page and account before it resumes. A lost hand-back
+reply can be checked and retried. A lost task-submission reply offers **Return to
+chat**; inspect that chat before sending another message. The phone never replays
+an uncertain submission. Local Safari cookies and passkeys are not copied to the VM.
+
+Supported MCP OAuth sign-in uses the system authentication browser. It supports
+the password, passkey, MFA, Apple or Google options that the provider exposes there.
+Provider registration and callback restrictions still apply. Closing the browser
+cancels its exact attempt; late cleanup cannot cancel a newer retry. A completed
+grant stays bound to the bot and named account slot. Confirm account before task
+continuation. An uncertain continuation receipt requires checking the chat instead
+of submitting again. Actual provider authentication requires human acceptance.
+
 Open **VM controls** from a bot's chat toolbar. The surrounding roster, chat, voice and VM controls remain native SwiftUI; the two focused remote surfaces use bundled [renderer sources](RemoteRenderers/README.md). Portrait and landscape are supported. Screen is initially view-only. **Take control** uses the guest's existing human/agent lease; **Hand back** relinquishes it. Touch supports pointer movement, dragging, right click and scrolling. Use Keyboard, Ctrl, navigation keys, Fit/1:1, Pan and explicit Paste for remote work. Leaving or backgrounding the view closes its attachment without stopping the guest or terminating its desktop/shell.
 
 The main gateway proxy must support sibling `/api/display/ws` and `/api/terminal/ws` under the registered guest route. Native WSS uses a fresh main controller ticket for cookie sessions, or the existing main query token for access-token connections. Display also sends the independent single-use guest `display_ticket`. These authenticated URLs stay in URLSession and never enter JavaScript, preferences, debug output or navigation. RPC event listeners coexist with chat, bind to the gateway client plus `profile_key`, and compare the human lease's viewer hash. Abnormal transport/RPC failures close with 1011, preserving the lease; intentional departure closes with 1000. A viewer ID is reused only while its original RPC owner remains connected.

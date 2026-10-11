@@ -3,6 +3,12 @@ import HermesGateway
 
 struct VMControlView: View {
     let store: PhoneStore
+    var chat: ChatStore?
+    @Environment(\.dismiss) private var dismiss
+    @State private var continuing = false
+    @State private var continuationPending = false
+    @State private var continuationSent = false
+    @State private var continuation: (client: GatewayClient, runtime: String, turnID: String)?
     @State private var control: RemoteControl
     @State private var power = VMPowerControl()
     @State private var confirming: VMPowerAction?
@@ -10,7 +16,7 @@ struct VMControlView: View {
     @State private var showHelp = false
     @State private var pasted = ""
     @Environment(\.scenePhase) private var scenePhase
-    init(bot: Bot, store: PhoneStore) { self.store = store; _control = State(initialValue: RemoteControl(bot: bot)) }
+    init(bot: Bot, store: PhoneStore, chat: ChatStore? = nil) { self.store = store; self.chat = chat; _control = State(initialValue: RemoteControl(bot: bot)) }
     var body: some View {
         VStack(spacing: 0) {
             DisclosureGroup {
@@ -23,6 +29,10 @@ struct VMControlView: View {
                 ForEach(RemoteControl.Mode.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8)
             remoteStatus
+            if control.controlling {
+                Text("Sign in in this bot’s browser. The bot’s screen and browser tools stay paused while you control it.")
+                    .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
+            }
             RemoteSurface(control: control)
                 .overlay {
                     if !control.connected {
@@ -158,11 +168,50 @@ struct VMControlView: View {
                     .disabled(control.working || !control.status["installed"].bool)
             } else if control.controlling {
                 Button("Hand back", systemImage: "arrow.uturn.backward") { Task { await control.releaseControl() } }
+                if chat != nil {
+                    Button("Hand back and continue task", systemImage: "play") { Task { await continueTask() } }
+                        .disabled(control.working || continuing)
+                }
             } else {
-                Button("Take control", systemImage: "cursorarrow") { Task { await control.takeControl() } }.disabled(!control.connected)
+                Button("Take control", systemImage: "cursorarrow") { Task { await control.takeControl() } }.disabled(!control.connected || continuationPending)
+            }
+        }
+        if continuationPending && !control.controlling {
+            if continuationSent {
+                Button("Return to chat", systemImage: "bubble") { dismiss() }
+            } else {
+                Button("Retry hand back", systemImage: "play") { Task { await continueTask() } }.disabled(continuing)
             }
         }
         Button("Paste", systemImage: "doc.on.clipboard") { showPaste = true }
             .disabled(!control.connected || (control.mode == .display && !control.controlling))
+    }
+    private func continueTask() async {
+        guard !continuing, let chat,
+              chat.bot.endpointID == control.bot.endpointID, chat.bot.profile == control.bot.profile else { return }
+        guard !continuationSent else { dismiss(); return }
+        continuing = true
+        defer { continuing = false }
+        if !continuationPending {
+            guard let client = chat.client, let runtime = chat.runtimeID else { return }
+            let original = (client: client, runtime: runtime, turnID: "desktop-handoff-" + control.handoffID)
+            continuation = original
+            continuationPending = true
+        }
+        guard let original = continuation else { return }
+        if control.controlling { guard await control.releaseControl() else { return } }
+        do {
+            guard try await control.agentHasControl() else {
+                control.error = "A person still controls this computer. The task has not resumed."
+                return
+            }
+            continuationSent = true
+            _ = try await original.client.request("prompt.submit", ["session_id": .string(original.runtime), "queued": .bool(true),
+                "client_turn_id": .string(original.turnID),
+                "text": .string("I have handed this bot’s computer back. Check the current page and signed-in account before continuing the task that needed manual sign-in. If sign-in is incomplete, ask me to finish it.")])
+            continuationPending = false
+            continuation = nil
+            dismiss()
+        } catch { control.error = continuationSent ? "Task continuation is unconfirmed. Return to chat and check it before sending another message." : "Hand back is unconfirmed. Reconnect to check control, then retry hand back." }
     }
 }

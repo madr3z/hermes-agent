@@ -1926,6 +1926,8 @@ export interface LoginHandoffRequest {
   detail: string
   account_ref: string
   verified_identity?: string | null
+  attempt_id?: string | null
+  continuation_status?: string
   user_code: string
   verification_url: string
   auth_url: string
@@ -1938,6 +1940,7 @@ export interface LoginHandoffActionParams {
   account_name?: string | null
   request_id: string
   client_redirect_uri?: string | null
+  attempt_id?: string | null
 }
 export interface LoginHandoffActionResult {
   request: LoginHandoffRequest
@@ -1948,6 +1951,7 @@ export interface LoginHandoffCallbackParams {
   account_name?: string | null
   request_id: string
   client_redirect_uri?: string | null
+  attempt_id?: string | null
   code?: string | null
   state?: string | null
   error?: string | null

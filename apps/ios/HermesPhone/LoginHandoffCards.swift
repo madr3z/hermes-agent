@@ -34,7 +34,8 @@ struct LoginHandoffCards: View {
                 do { try await Task.sleep(for: .seconds(2)) } catch { break }
             }
         }
-        .onDisappear { login.closeBrowser() }
+        .onChange(of: chat.runtimeID) { _, _ in login.contextChanged() }
+        .onDisappear { login.contextChanged() }
     }
 }
 
@@ -76,7 +77,7 @@ struct LoginHandoffCard: View {
             }.font(.subheadline).frame(minHeight: 44)
             if request.status == "authorized" {
                 if request.continued {
-                    Label("Task continuation submitted", systemImage: "checkmark.circle").font(.subheadline)
+                    Label(request.continuationStatus == "unconfirmed" ? "Check this chat before sending another message." : "Task continuation submitted", systemImage: "checkmark.circle").font(.subheadline)
                 } else {
                     Button("Confirm account and continue", action: continueTask)
                         .buttonStyle(.borderedProminent).controlSize(.large).disabled(working)
@@ -96,110 +97,5 @@ struct LoginHandoffCard: View {
         Button(request.canRetry ? "Retry sign-in" : "Sign in", action: signIn)
             .buttonStyle(.borderedProminent).controlSize(.large).disabled(working)
         Button("Cancel", role: .cancel, action: cancel).buttonStyle(.bordered).controlSize(.large)
-    }
-}
-
-@MainActor @Observable private final class ChatLoginController: NSObject, ASWebAuthenticationPresentationContextProviding {
-    var requests: [LoginHandoff] = []
-    var accounts: [MCPConnection] = []
-    var error: String?
-    var working = false
-    private var operation = UUID()
-    private var browser: ASWebAuthenticationSession?
-    private var activeID: String?
-    private func call(_ action: String, chat: ChatStore, extra: [String: JSON] = [:]) async throws -> JSON {
-        guard let client = chat.client, let runtimeID = chat.runtimeID else { throw GatewayError.message("Reconnect to the bot first.") }
-        return try await client.request("login.handoff." + action, ["session_id": .string(runtimeID), "profile": .string(chat.bot.profile)].merging(extra) { _, new in new })
-    }
-    func loadAccounts(chat: ChatStore) async {
-        guard let client = chat.client else { accounts = []; return }
-        let runtime = chat.runtimeID
-        do {
-            let api = BotConnectorsClient(profile: chat.bot.profile) { try await client.request($0, $1) }
-            let rows = try await api.mcpServers()
-            guard chat.runtimeID == runtime else { return }
-            accounts = rows.filter { $0.auth == "oauth" || $0.provider == "google-gmail" }
-        } catch { accounts = [] }
-    }
-    func select(_ account: MCPConnection, chat: ChatStore) async {
-        do {
-            _ = try await call("list", chat: chat, extra: ["account_name": .string(account.name)])
-            await refresh(chat: chat)
-        } catch { self.error = "This account cannot start native sign-in. Check its connector and registered callback." }
-    }
-    func refresh(chat: ChatStore) async {
-        guard chat.connected else { return }
-        let runtime = chat.runtimeID
-        do {
-            let result = try await call("list", chat: chat)
-            guard chat.runtimeID == runtime else { return }
-            requests = result["requests"].array.map(LoginHandoff.init)
-        } catch GatewayError.rpc(let code, _) where code == -32601 { requests = [] }
-        catch { self.error = "Sign-in status is unavailable. Reconnect to this bot to check it." }
-    }
-    func act(_ action: String, request: LoginHandoff, chat: ChatStore) async {
-        do {
-            if action == "cancel" { operation = UUID(); working = false; closeBrowser() }
-            _ = try await call(action, chat: chat, extra: ["request_id": .string(request.id)])
-            error = nil
-            await refresh(chat: chat)
-        } catch { self.error = "The bot could not confirm this sign-in action. Refresh and try again." }
-    }
-    func signIn(_ request: LoginHandoff, chat: ChatStore) async {
-        guard !working else { return }
-        working = true; error = nil
-        let operation = UUID(); self.operation = operation
-        defer { if self.operation == operation { working = false } }
-        let runtime = chat.runtimeID
-        do {
-            var extra: [String: JSON] = ["request_id": .string(request.id)]
-            if ["mcp", "google-gmail"].contains(request.provider) { extra["client_redirect_uri"] = .string(MCPOAuthSession.callbackURI) }
-            _ = try await call("start", chat: chat, extra: extra)
-            for _ in 0..<30 {
-                try Task.checkCancellation()
-                guard chat.runtimeID == runtime, self.operation == operation else { return }
-                await refresh(chat: chat)
-                guard let current = requests.first(where: { $0.id == request.id }) else { return }
-                if current.status == "authorized" || current.canRetry { return }
-                if let url = current.authorizationURL {
-                    openAuthentication(url, request: current, chat: chat, runtime: runtime)
-                    return
-                }
-                if !current.userCode.isEmpty, let url = current.verificationURL {
-                    if await UIApplication.shared.open(url) == false { error = "OpenAI sign-in could not open. Try again." }
-                    return
-                }
-                try await Task.sleep(for: .seconds(1))
-            }
-            error = "The provider has not supplied sign-in yet. Retry after checking the bot connection."
-        } catch { if self.operation == operation { self.error = "Sign-in could not start. Refresh and try again." } }
-    }
-    private func openAuthentication(_ url: URL, request: LoginHandoff, chat: ChatStore, runtime: String?) {
-        closeBrowser(); activeID = request.id
-        let browser = ASWebAuthenticationSession(url: url, callbackURLScheme: "com.hermes.iphone") { [weak self] callback, _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.activeID == request.id, chat.runtimeID == runtime else { return }
-                if let callback {
-                    do {
-                        let flow = try MCPOAuthSession(name: request.name, result: .object(["ok": .bool(true), "session_id": .string(request.id), "auth_url": .string(url.absoluteString)]))
-                        var params = try flow.callbackParameters(callback)
-                        params.removeValue(forKey: "name"); params.removeValue(forKey: "session_id")
-                        params["request_id"] = .string(request.id)
-                        _ = try await self.call("callback", chat: chat, extra: params)
-                        await self.refresh(chat: chat)
-                    } catch { self.error = "The bot rejected the provider callback. Retry sign-in." }
-                } else { self.error = "Sign-in browser closed. The task remains paused. Reopen sign-in or cancel." }
-                self.browser = nil
-            }
-        }
-        browser.presentationContextProvider = self
-        // Use the system's normal authentication context and local password/passkey support.
-        browser.prefersEphemeralWebBrowserSession = false
-        self.browser = browser
-        if !browser.start() { error = "Secure sign-in could not open. This provider may require its registered Mac callback." }
-    }
-    func closeBrowser() { activeID = nil; browser?.cancel(); browser = nil }
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
     }
 }

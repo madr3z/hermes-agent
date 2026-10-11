@@ -42,6 +42,8 @@ class DashboardOAuthFlow:
     hermes_home: str
     redirect_uri: str
     reconnect_live: bool = False
+    expires_at: float | None = None
+    expected_config_ref: str | None = None
     created_at: float = field(default_factory=time.time)
     status: str = "starting"
     authorization_url: str | None = None

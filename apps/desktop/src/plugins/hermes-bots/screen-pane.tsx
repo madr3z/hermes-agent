@@ -31,6 +31,8 @@ import {
   viewerHash
 } from './screen-connection'
 import { ScreenInstallCard } from './screen-install'
+import { ScreenHandoffActions } from './screen-handoff-actions'
+import { captureScreenTask, continueScreenTask, type ScreenTaskContinuation } from './screen-continuation'
 import {
   $screenState,
   beginScreenStatusRequest,
@@ -88,6 +90,8 @@ export function BotScreenPane({ bot }: { bot: RosterRow }) {
   // names its holder by hash, so a reload can never inherit a stale holder's authority.
   const viewer = state?.viewer ?? null
   const iHold = leaseHeldBy(lease, viewer)
+  const [task, setTask] = useState<ScreenTaskContinuation | null>(null)
+  const [continuationPending, setContinuationPending] = useState(false)
 
   const canvasHost = useRef<HTMLDivElement | null>(null)
   const rfb = useRef<RfbLike | null>(null)
@@ -374,6 +378,7 @@ export function BotScreenPane({ bot }: { bot: RosterRow }) {
     }
 
     setBusy(true)
+    const originalTask = captureScreenTask(bot)
 
     try {
       const result = await displayRequest<{ lease: DisplayLease }>(bot, 'display.lease.acquire', {
@@ -381,6 +386,10 @@ export function BotScreenPane({ bot }: { bot: RosterRow }) {
       })
 
       setScreenLease(bot, result.lease)
+      if (leaseHeldBy(result.lease, viewer)) {
+        setTask(originalTask)
+        setContinuationPending(false)
+      }
 
       if (conn !== 'live') {
         void attach()
@@ -396,20 +405,39 @@ export function BotScreenPane({ bot }: { bot: RosterRow }) {
   // minted a fresh viewer id; the old one still holds): the server refuses a
   // plain release from anyone but the holder.
   const handBack = useCallback(
-    async (force = false) => {
+    async (force = false, continueTask = false) => {
       setBusy(true)
+      if (continueTask && task) setContinuationPending(true)
 
       try {
+        if (continueTask && task?.submissionStarted) {
+          await continueScreenTask(bot, task)
+          setContinuationPending(false)
+          setTask(null)
+          return
+        }
         const params = force ? { force: true } : { viewer_id: viewer?.id }
         const result = await displayRequest<{ lease: DisplayLease }>(bot, 'display.lease.release', params)
         setScreenLease(bot, result.lease)
+        if (continueTask && task) {
+          if (result.lease.holder !== 'agent')
+            throw new Error('Another person controls this computer. The task has not resumed.')
+          await continueScreenTask(bot, task)
+          setContinuationPending(false)
+          setTask(null)
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        const message = err instanceof Error ? err.message : String(err)
+        setError(
+          task?.submissionStarted
+            ? `${message} Continuation is unconfirmed. Return to chat before sending another message.`
+            : message
+        )
       } finally {
         setBusy(false)
       }
     },
-    [bot, viewer?.id]
+    [bot, viewer?.id, task]
   )
 
   if (state?.unavailable) {
@@ -473,7 +501,7 @@ export function BotScreenPane({ bot }: { bot: RosterRow }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5 text-xs">
         <Codicon name="device-desktop" />
         <span className="font-medium">{t.screen.title}</span>
         {status?.display ? (
@@ -507,27 +535,17 @@ export function BotScreenPane({ bot }: { bot: RosterRow }) {
         ) : (
           <span className="rounded bg-muted px-2 py-0.5 text-muted-foreground">{t.screen.agentControls}</span>
         )}
-        {iHold ? (
-          <Button disabled={busy} onClick={() => void handBack()} size="sm" variant="secondary">
-            <Codicon name="debug-continue" /> {t.screen.handBack}
-          </Button>
-        ) : (
-          <>
-            {humanOther ? (
-              <Tip label={t.screen.handBackForceHint}>
-                <Button disabled={busy} onClick={() => void handBack(true)} size="sm" variant="secondary">
-                  <Codicon name="debug-continue" /> {t.screen.handBackForce}
-                </Button>
-              </Tip>
-            ) : null}
-            {/* The lease is granted to a server-minted viewer id; until `display.observe` has
-                minted one for this attach a Take over could only send an empty id and dead-end
-                on "viewer_id required". Reconnect is the way to mint one. */}
-            <Button disabled={busy || conn === 'attaching' || !viewer} onClick={() => void takeOver()} size="sm">
-              <Codicon name="record-keys" /> {t.screen.takeOver}
-            </Button>
-          </>
-        )}
+        <ScreenHandoffActions
+          iHold={iHold}
+          humanOther={humanOther}
+          busy={busy}
+          canTakeOver={conn !== 'attaching' && Boolean(viewer)}
+          task={task}
+          continuationPending={continuationPending}
+          text={t.screen}
+          handBack={handBack}
+          takeOver={takeOver}
+        />
         <Tip label={t.screen.reconnect}>
           <Button
             aria-label={t.screen.reconnect}
