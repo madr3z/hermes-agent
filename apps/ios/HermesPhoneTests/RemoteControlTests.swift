@@ -147,12 +147,64 @@ import HermesGateway
         await fulfillment(of: [connected], timeout: 10)
         messages.next = nil
         _ = try await view.evaluateJavaScript("Array.from(document.querySelectorAll('#tools button')).find(button => button.textContent === '1:1').click()")
-        let width = try await view.evaluateJavaScript("document.querySelector('canvas').width") as? Int
-        XCTAssertGreaterThan(try XCTUnwrap(width), 0)
-        XCTAssertLessThan(try XCTUnwrap(width), 1024) // 1:1 must clip to the phone so Pan can reach the rest.
+        let width = try await view.evaluateJavaScript("document.querySelector('canvas').getBoundingClientRect().width") as? Double
+        XCTAssertEqual(try XCTUnwrap(width), 1024, accuracy: 1) // Native guest pixels, clipped by the phone's outer viewport.
         _ = try await view.evaluateJavaScript("Array.from(document.querySelectorAll('#tools button')).find(button => button.textContent === 'Pan').click()")
         let pan = try await view.evaluateJavaScript("Array.from(document.querySelectorAll('#tools button')).find(button => button.textContent === 'Pan').classList.contains('selected')") as? Bool
         XCTAssertEqual(pan, true)
+        try await assertLocalPinch(view, messages: messages, controlling: false)
+        // Fit then 1:1 resets zoom and scroll before the same gesture with input authority.
+        _ = try await view.evaluateJavaScript("Array.from(document.querySelectorAll('#tools button')).find(button => button.textContent === 'Fit').click(); Array.from(document.querySelectorAll('#tools button')).find(button => button.textContent === '1:1').click()")
+        try await assertLocalPinch(view, messages: messages, controlling: true)
+        // Turn Pan off. A subsequent tap must target the same guest pixel after zoom.
+        _ = try await view.evaluateJavaScript("Array.from(document.querySelectorAll('#tools button')).find(button => button.textContent === 'Pan').click()")
+        messages.received.removeAll()
+        let tapped = expectation(description: "Tap reaches the guest after local zoom")
+        var awaitingTap = true
+        messages.next = { if awaitingTap && $0["type"] as? String == "bytes" { awaitingTap = false; tapped.fulfill() } }
+        _ = try await view.callAsyncJavaScript("""
+            const canvas = document.querySelector('canvas'), rect = canvas.getBoundingClientRect();
+            canvas.dispatchEvent(new CustomEvent('gesturestart', {detail:{type:'onetap',clientX:rect.left+200,clientY:rect.top+200}}));
+            """, arguments: [:], in: nil, contentWorld: .page)
+        await fulfillment(of: [tapped], timeout: 10)
+        messages.next = nil
+        let pointers = messages.received.compactMap { message -> Data? in
+            guard message["type"] as? String == "bytes", let raw = message["data"] as? String,
+                  let data = Data(base64Encoded: raw), data.first == 5 else { return nil }
+            return data
+        }
+        XCTAssertFalse(pointers.isEmpty)
+        for packet in pointers {
+            XCTAssertEqual(Int(packet[2]) * 256 + Int(packet[3]), 100)
+            XCTAssertEqual(Int(packet[4]) * 256 + Int(packet[5]), 100)
+        }
+    }
 
+    private func assertLocalPinch(_ view: WKWebView, messages: RendererMessages, controlling: Bool) async throws {
+        try await call(view, "control", [controlling])
+        _ = try await view.callAsyncJavaScript("await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))", arguments: [:], in: nil, contentWorld: .page)
+        messages.received.removeAll()
+        let noInput = expectation(description: "Pinch sends no input to the guest")
+        noInput.isInverted = true
+        messages.next = { if $0["type"] as? String == "bytes" { noInput.fulfill() } }
+        // Exercise noVNC's real touch recognizer. Opposing finger motion becomes a local pinch.
+        _ = try await view.callAsyncJavaScript("""
+            const canvas = document.querySelector('canvas'), rect = canvas.getBoundingClientRect();
+            const y = rect.top + 100;
+            const touch = (type, fingers) => {
+                const event = new Event(type, {bubbles:true,cancelable:true});
+                Object.defineProperty(event, 'changedTouches', {value:fingers.map(([identifier,clientX]) => ({identifier,clientX,clientY:y}))});
+                canvas.dispatchEvent(event);
+            };
+            touch('touchstart', [[0,120],[1,220]]);
+            touch('touchmove', [[0,70],[1,270]]);
+            touch('touchend', [[0,70],[1,270]]);
+            """, arguments: [:], in: nil, contentWorld: .page)
+        await fulfillment(of: [noInput], timeout: 0.3)
+        messages.next = nil
+        let width = try await view.evaluateJavaScript("document.querySelector('canvas').getBoundingClientRect().width") as? Double
+        XCTAssertEqual(try XCTUnwrap(width), 2048, accuracy: 1)
+        let sent = messages.received.filter { $0["type"] as? String == "bytes" }
+        XCTAssertTrue(sent.isEmpty, "Pinch must not send guest pointer, key, wheel, or resize messages.")
     }
 }

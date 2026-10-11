@@ -7,6 +7,7 @@ Reproduce the checked-in asset with Node and npm:
 ```sh
 cd apps/ios/RemoteRenderers
 npm ci --ignore-scripts --no-audit --no-fund
+npm test
 npm run build
 ```
 
@@ -14,4 +15,4 @@ npm run build
 
 Corresponding upstream source: [noVNC 1.7.0](https://github.com/novnc/noVNC/tree/v1.7.0), [xterm 6.0.0](https://github.com/xtermjs/xterm.js/tree/6.0.0), and the exact npm packages named in the lockfile. Upstream code is unmodified. noVNC's MPL-2.0, authors, incorporated pako MIT notice, and xterm/Fit MIT licenses accompany the app resources. The integration source is `renderer.js` and `index.html`; rebuilding preserves the upstream legal comments in the bundle.
 
-Screen touch uses noVNC's pointer gestures: tap/drag, two-finger right click/scroll. Fit versus 1:1 and Pan change only the local viewport; rotation never resizes the guest desktop. Keyboard, modifier, navigation and paste controls remain focused on this remote surface. Terminal paste uses xterm's bracketed-paste handling. A disconnected or replaced stream requires explicit Reconnect; another terminal attachment (4409) never causes an automatic takeover loop.
+Screen touch uses noVNC's pointer gestures: tap/drag, two-finger right click/scroll. Two-finger pinch changes only the local viewport, including while viewing without control; it never sends Ctrl+wheel to the guest. Fit resets the viewport, 1:1 shows guest pixels at native size, and Pan moves the local viewport with one finger. Zoom uses noVNC's public scaleViewport property so later pointer input still maps to the correct guest pixels. Rotation never resizes the guest desktop. Keyboard, modifier, navigation and paste controls remain focused on this remote surface. Terminal paste uses xterm's bracketed-paste handling. A disconnected or replaced stream requires explicit Reconnect; another terminal attachment (4409) never causes an automatic takeover loop.

@@ -1,4 +1,5 @@
 import RFB from '@novnc/novnc';
+import { RemoteViewport } from './viewport.js';
 const KeyTable = {XK_Control_L:0xffe3,XK_Escape:0xff1b,XK_Tab:0xff09,XK_Left:0xff51,XK_Up:0xff52,XK_Right:0xff53,XK_Down:0xff54,XK_BackSpace:0xff08,XK_Return:0xff0d};
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -14,7 +15,7 @@ const encode = bytes => {
   return btoa(value);
 };
 const decode = value => Uint8Array.from(atob(value), char => char.charCodeAt(0));
-let rfb, terminal, fit, channel, resizeObserver, controlling = false, ctrl = false;
+let rfb, viewport, terminal, fit, channel, resizeObserver, controlling = false, ctrl = false;
 function send(bytes, generation = rendererGeneration) {
   if (bytes.length > 65536) { post('failure', {message:'Input is limited to 64 KiB at a time.'}, generation); return; }
   post('bytes', {data: encode(bytes)}, generation);
@@ -59,8 +60,9 @@ function setupTools(kind) {
   const control = button('Ctrl', () => { ctrl = !ctrl; control.classList.toggle('selected', ctrl); }); control.id = 'ctrl';
   for (const [label, symbol, text] of [['←',KeyTable.XK_Left,'\x1b[D'],['↓',KeyTable.XK_Down,'\x1b[B'],['↑',KeyTable.XK_Up,'\x1b[A'],['→',KeyTable.XK_Right,'\x1b[C']]) button(label, () => key(symbol, text));
   if (kind === 'display') {
-    const zoom = button('1:1', () => { rfb.scaleViewport = !rfb.scaleViewport; zoom.textContent = rfb.scaleViewport ? '1:1' : 'Fit'; });
-    const pan = button('Pan', () => { rfb.dragViewport = !rfb.dragViewport; pan.classList.toggle('selected', rfb.dragViewport); });
+    const zoom = button('1:1', () => viewport.toggleFit());
+    viewport.onChange = () => { zoom.textContent = viewport.fitting ? '1:1' : 'Fit'; };
+    const pan = button('Pan', () => { viewport.pan = !viewport.pan; pan.classList.toggle('selected', viewport.pan); });
   }
 }
 keyboard.addEventListener('input', event => {
@@ -75,11 +77,13 @@ window.remote = {
   setup({kind,generation}) {
     rendererGeneration = generation;
     const notify = (type, data = {}) => post(type, data, generation);
-    resizeObserver?.disconnect(); rfb?.disconnect(); terminal?.dispose(); rfb = terminal = null; keyboard.hidden = true;
+    resizeObserver?.disconnect(); viewport?.dispose(); viewport = null; rfb?.disconnect(); terminal?.dispose(); rfb = terminal = null; keyboard.hidden = true;
     surface.replaceChildren(); controlling = false; ctrl = false;
     if (kind === 'display') {
-      channel = new NativeChannel(generation); rfb = new RFB(surface, channel);
-      rfb.viewOnly = true; rfb.scaleViewport = true; rfb.clipViewport = true; rfb.resizeSession = false;
+      const target = document.createElement('div'); surface.appendChild(target);
+      channel = new NativeChannel(generation); rfb = new RFB(target, channel);
+      rfb.viewOnly = true; rfb.scaleViewport = true; rfb.clipViewport = false; rfb.resizeSession = false;
+      viewport = new RemoteViewport(surface, target, rfb);
       rfb.addEventListener('connect', () => notify('connected'));
       rfb.addEventListener('disconnect', () => notify('closed'));
       rfb.addEventListener('securityfailure', () => notify('failure', {message: 'The guest desktop rejected the connection.'}));
