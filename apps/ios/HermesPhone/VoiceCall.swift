@@ -44,12 +44,11 @@ import WebRTC
             fragments = []; transcript = ""; muted = false
             try configureOutbox(client: client, profile: profile, runtimeID: runtimeID)
             try await flush()
+            let audioConfiguration = VoiceAudioConfiguration.install()
             let audio = RTCAudioSession.sharedInstance()
             audio.lockForConfiguration()
             do {
-                try audio.setCategory(AVAudioSession.Category.playAndRecord, with: [.defaultToSpeaker, .allowBluetoothHFP])
-                try audio.setMode(AVAudioSession.Mode.voiceChat)
-                try audio.setActive(true)
+                try audio.setConfiguration(audioConfiguration, active: true)
                 audio.unlockForConfiguration()
             } catch { audio.unlockForConfiguration(); throw error }
             RTCInitializeSSL()
