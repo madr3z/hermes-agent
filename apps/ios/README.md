@@ -26,7 +26,7 @@ Managed guests share their verified owning main session only when their authenti
 - Opening a bot resolves `session.list(title:"Bot Chat",include_hidden:true,profile)` every time, resumes its `resolved_id`, and uses the returned **runtime** ID for later RPC calls.
 - A missing registry row uses `session.create` plus eager `session.title`. A concurrent creator's registry winner is adopted before any prompt is sent. A failed lookup never creates a replacement chat.
 - `prompt.submit` streams gateway events; Stop uses `session.interrupt`. Reconnection restores the authoritative transcript, including in-flight output. The app does not close sessions when leaving a screen or backgrounding; bot services and healthy work stay on the VM under existing server lifecycle policy.
-- Unsupported server requests are left unanswered so a capable shared Desktop client can respond. The phone never approves them. This initial client does not render desktop-only tools, attachments, approval/clarification dialogs or session editing.
+- Unsupported server requests are left unanswered so a capable shared Desktop client can respond. The phone never approves them. The phone shows compact tool progress, native Markdown, fenced code and attachments. It does not approve server requests or edit sessions.
 
 ## GPT Live
 
@@ -71,3 +71,13 @@ Power controls use separate credential-free owner metadata `{mainID,requestID,ga
 A controller advertising `vm_delete:true` enables **Delete Bot and VM** for its registered VM connections and provisioning requests. This includes an offline guest or a failed/incomplete creation. Unmanaged gateways and the pilot have no VM deletion action. The confirmation states that the bot stops and its VM, workspace and files are removed permanently; existing backups remain.
 
 The phone uses the existing owning main client/session, including its normal HTTP cookie handling. After confirmation it saves a stable operation UUID and the exact registered bot name before `POST /api/plugins/bot-provisioning/v1/requests/{id}/delete` with `{operation_id,confirm_name}`. Loading and polling only read status/receipts. Recovery reads sibling `/delete/{operation_id}` first; only a 404 permits an explicit resend of the same body/UUID. A failed receipt requires explicit confirmation of a fresh operation. Queued/deleting/failed receipts retain the local connection. Only a matching `deleted` receipt removes that VM's local endpoint and copied gateway credential. The main login, pilot and other connections remain.
+
+## Native chat attachments
+
+Use the composer’s **Photos** or **Files** action. Selections stay in memory until Send. Attach up to five files, with a combined size of 10 MiB. Photos are converted to JPEG. HEIC/HEIF images selected from Files are also converted to JPEG. Other files retain their bytes. Removing a selection before Send does not contact the gateway.
+
+Uploads use the current Bot Chat runtime and profile. `file.attach` stages bytes and supplies the exact server reference. Photos then use `image.attach` with that known gateway path; this permits `image.detach` cleanup even when an image-registration acknowledgement is lost. A rejected send retains its draft and staged receipts. An uncertain send is not replayed; refresh the authoritative transcript before choosing a new message. Reconnection clears only confirmed image staging, and upload receipts never cross a runtime change.
+
+Message cards recognize local `@image:`, `@file:`, `MEDIA:` and Markdown file links outside code fences. Code examples stay literal. Images, documents and generated artifacts download through the authenticated owning client at `GET /api/fs/download?profile=…&session_id=…&path=…`. The session ID is the persisted stored ID. Quick Look and Save or Share receive only a protected local temporary file, which is removed when its card leaves the screen. Downloads refuse redirects and files over 25 MiB. Remote web links remain links.
+
+The controller’s provisioning proxy must explicitly support the download route and its three query fields. A gateway implementing this API does not establish that an older deployed proxy forwards it. Missing proxy support appears as a download error. The current upload limit fits the deployed 16 MiB WebSocket frame cap after base64 encoding. These features require integrated builds and real device acceptance; no additional signing capability is needed for PhotosPicker, Files, Quick Look or sharing.

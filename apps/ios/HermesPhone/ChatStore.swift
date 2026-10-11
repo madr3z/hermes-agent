@@ -7,6 +7,9 @@ import HermesGateway
     var messages: [ChatMessage] = []
     var draft = ""
     var runtimeID: String?
+    var storedSessionID: String?
+    var uploads: [ChatUpload] = []
+    var pendingImageCleanup: [(runtime: String, path: String)] = []
     var status = "Connecting…"
     var error: String?
     var loading = false
@@ -22,7 +25,7 @@ import HermesGateway
     private var activityRevision = 0
     init(bot: Bot) { self.bot = bot }
     func open(store: PhoneStore) async {
-        guard !loading else { return }
+        guard !loading, !sending else { return }
         loading = true; error = nil
         defer {
             loading = false
@@ -41,7 +44,8 @@ import HermesGateway
                 self?.connected = false; self?.error = message; self?.voice.stop()
             }
             let snapshot = try await CanonicalChat.open(profile: bot.profile) { try await client.request($0, $1) }
-            runtimeID = snapshot["session_id"].string
+            try await cleanupImages(client: client)
+            bindSnapshot(snapshot)
             messages = ChatMessage.project(snapshot["messages"].array)
             busy = snapshot["running"].bool || snapshot["inflight"]["streaming"].bool
             let inflight = snapshot["inflight"]
@@ -64,26 +68,54 @@ import HermesGateway
         ["session_id": .string(runtimeID ?? ""), "profile": .string(bot.profile)].merging(extra) { _, new in new }
     }
     func send() async {
-        guard let client, connected, runtimeID != nil, !sending, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let client, let runtimeID, connected, !sending, !loading,
+              !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !uploads.isEmpty else { return }
         let text = draft
+        let selected = uploads.map(\.id)
         sending = true; error = nil
-        let pendingID = UUID().uuidString
-        messages.append(ChatMessage(id: pendingID, role: "user", text: text))
-        busy = true
-        status = "Sending…"
+        var pendingID: String?
         defer {
             sending = false
             if needsCanonicalRefresh && !busy { scheduleCanonicalRefresh() }
         }
         do {
-            let result = try await client.request("prompt.submit", params(["text": .string(text), "queued": .bool(true)]))
+            try await cleanupImages(client: client)
+            let prepared = try await prepareUploads(client: client, runtime: runtimeID, ids: selected)
+            try Task.checkCancellation()
+            guard self.runtimeID == runtimeID, connected else { throw GatewayError.message("Bot Chat changed. Reconnect before sending.") }
+            let prompt = ([text] + prepared.filter { !$0.image }.map(\.reference)).filter { !$0.isEmpty }.joined(separator: "\n")
+            let visible = ([text] + prepared.map { $0.image ? "@image:\(quotedReference($0.path))" : $0.reference }).filter { !$0.isEmpty }.joined(separator: "\n")
+            let id = UUID().uuidString; pendingID = id
+            messages.append(ChatMessage(id: id, role: "user", text: visible))
+            busy = true; status = "Sending…"
+            let result = try await client.request("prompt.submit", ["session_id": .string(runtimeID), "profile": .string(bot.profile), "text": .string(prompt), "queued": .bool(true)])
+            pendingImageCleanup.removeAll { $0.runtime == runtimeID }
+            uploads.removeAll { selected.contains($0.id) }
             if draft == text { draft = "" }
             status = result["status"].string == "queued" ? "Queued on the gateway" : "Working on the gateway"
         } catch {
-            messages.removeAll { $0.id == pendingID }
+            if let pendingID { messages.removeAll { $0.id == pendingID } }
             self.error = error.localizedDescription
+            do { try await cleanupImages(client: client) }
+            catch { connected = false; self.error = "Attachment cleanup is waiting for reconnection. Reconnect before sending again." }
+            var knownRefusal = false
+            if let failure = error as? GatewayError, case .rpc = failure { knownRefusal = true }
+            if pendingID != nil && !knownRefusal {
+                // A lost acknowledgement can still mean accepted work. Never replay the upload/send.
+                uploads.removeAll { selected.contains($0.id) }
+                if draft == text { draft = "" }
+                self.error = "\(self.error ?? "Send failed.") Refresh Bot Chat before deciding whether to send again."
+            }
             await refreshSnapshot()
         }
+    }
+    func bindSnapshot(_ snapshot: JSON) {
+        let next = snapshot["session_id"].string
+        if runtimeID != next {
+            for index in uploads.indices { uploads[index].staged = nil }
+        }
+        runtimeID = next
+        storedSessionID = snapshot["stored_session_id"].string
     }
     func interrupt() async {
         guard let client, connected else { return }
@@ -92,7 +124,7 @@ import HermesGateway
     }
     func startVoice() async {
         guard let client, let runtimeID, connected else { return }
-        await voice.start(client: client, profile: bot.profile, runtimeID: runtimeID, history: messages)
+        await voice.start(client: client, profile: bot.profile, runtimeID: runtimeID, history: messages.filter { ["user", "assistant"].contains($0.role) })
     }
     private func refreshSnapshot() async {
         guard let client, let runtimeID else { return }
@@ -125,7 +157,8 @@ import HermesGateway
             do {
                 let snapshot = try await CanonicalChat.open(profile: self.bot.profile) { try await client.request($0, $1) }
                 guard !Task.isCancelled else { return }
-                self.runtimeID = snapshot["session_id"].string
+                try await self.cleanupImages(client: client)
+                self.bindSnapshot(snapshot)
                 self.connected = true
                 self.needsCanonicalRefresh = false
                 if self.activityRevision == revision {
@@ -169,8 +202,14 @@ import HermesGateway
             Task { await refreshSnapshot() }
             if needsCanonicalRefresh { scheduleCanonicalRefresh() }
         case "status.update": status = payload["text"].string ?? status
-        case "tool.start":
-            status = "Running \(payload["name"].string ?? payload["tool"].string ?? "a tool")"
+        case "tool.start", "tool.complete":
+            let name = payload["name"].string ?? "Tool"
+            let running = event["type"].string == "tool.start"
+            let id = "tool-" + (payload["tool_id"].string ?? name)
+            let row = ChatMessage(id: id, role: "tool", text: payload["summary"].string ?? payload["context"].string ?? (running ? "Running…" : "Completed"), toolName: name, toolRunning: running)
+            if let index = messages.firstIndex(where: { $0.id == id }) { messages[index] = row }
+            else { messages.append(row) }
+            status = running ? "Running \(name)" : "Working on the gateway"
         case "voice.live.transcript":
             messages = ChatMessage.upserting(payload["message"], into: messages)
         case "error": error = payload["message"].string ?? "The gateway reported an error."

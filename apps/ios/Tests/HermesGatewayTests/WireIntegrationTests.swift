@@ -25,7 +25,7 @@ final class WireIntegrationTests: XCTestCase {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["python3", Bundle.module.url(forResource: "gateway", withExtension: "py", subdirectory: "Fixtures")!.path]
         process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+        process.standardError = FileHandle.standardError
         try process.run()
         defer { if process.isRunning { process.terminate(); process.waitUntilExit() } }
         var metadataData = Data()
@@ -153,7 +153,7 @@ final class WireIntegrationTests: XCTestCase {
         let process = Process(), pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["python3", Bundle.module.url(forResource: "gateway", withExtension: "py", subdirectory: "Fixtures")!.path]
-        process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
+        process.standardOutput = pipe; process.standardError = FileHandle.standardError
         try process.run()
         defer { if process.isRunning { process.terminate(); process.waitUntilExit() } }
         let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
@@ -193,6 +193,54 @@ final class WireIntegrationTests: XCTestCase {
         guest.disconnect(); try await guest.connect()
         let count = try await client.http("api/fixture/tickets")["minted"].number
         XCTAssertEqual(count, 5) // Main RPC, guest RPC, screen, terminal and guest reconnect each consume a fresh ticket.
+    }
+
+    @MainActor func testAuthenticatedFileDownloadUsesExactOwnerAndRefusesRedirects() async throws {
+        let process = Process(), pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["python3", Bundle.module.url(forResource: "gateway", withExtension: "py", subdirectory: "Fixtures")!.path]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.standardError
+        try process.run()
+        defer { if process.isRunning { process.terminate(); process.waitUntilExit() } }
+        var metadataData = Data()
+        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: watchdog)
+        defer { watchdog.cancel() }
+        while metadataData.count < 8192 {
+            guard let byte = try pipe.fileHandleForReading.read(upToCount: 1), !byte.isEmpty else { break }
+            if byte == Data([10]) { break }
+            metadataData.append(byte)
+        }
+        let metadata = try JSONDecoder().decode(JSON.self, from: metadataData)
+        let port = try XCTUnwrap(metadata["port"].number)
+        let certificate = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(metadata["certificate"].string)))
+        let trust = FixtureTrust(certificate: certificate)
+        let session = URLSession(configuration: .ephemeral, delegate: trust, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let endpoint = try GatewayEndpoint(label: "TLS fixture", baseURL: URL(string: "https://127.0.0.1:\(Int(port))/api/plugins/bot-provisioning/v1/gateways/vm")!)
+        let client = GatewayClient(endpoint: endpoint, token: "fixture+token &?", session: session)
+        let file = try XCTUnwrap(ChatAttachment(path: "/workspace/report + one.pdf"))
+        let downloaded = try await client.downloadFile(file, profile: "writer", storedSessionID: "tip")
+        defer { try? FileManager.default.removeItem(at: downloaded.deletingLastPathComponent()) }
+        XCTAssertEqual(try Data(contentsOf: downloaded), Data("%PDF-1.4\nfixture private report\n".utf8))
+        for (path, owner) in [("/workspace/report + one.pdf", "other"), ("/workspace/redirect.pdf", "writer")] {
+            do {
+                _ = try await client.downloadFile(ChatAttachment(path: path)!, profile: owner, storedSessionID: "tip")
+                XCTFail("Foreign owners and redirects must be refused")
+            } catch { XCTAssertTrue(error is GatewayError) }
+        }
+        var login = URLRequest(url: URL(string: "https://127.0.0.1:\(Int(port))/auth/password-login")!)
+        login.httpMethod = "POST"; login.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        login.httpBody = try JSONEncoder().encode(JSON.object(["provider": .string("basic"), "username": .string("fixture-user"), "password": .string("fixture-password"), "next": .string("")]))
+        let (_, loginResponse) = try await session.data(for: login)
+        XCTAssertEqual((loginResponse as? HTTPURLResponse)?.statusCode, 200)
+        var savedCookieChanges = 0
+        let guest = GatewayClient(endpoint: endpoint, token: nil, session: session, onAuthenticationChange: { savedCookieChanges += 1 })
+        let cookieDownload = try await guest.downloadFile(file, profile: "writer", storedSessionID: "tip")
+        defer { try? FileManager.default.removeItem(at: cookieDownload.deletingLastPathComponent()) }
+        XCTAssertEqual(try Data(contentsOf: cookieDownload), try Data(contentsOf: downloaded))
+        XCTAssertEqual(savedCookieChanges, 1)
     }
 
 }

@@ -102,8 +102,10 @@ public struct ChatMessage: Identifiable, Equatable {
     public let role: String
     public var text: String
     public let voice: Bool
-    public init(id: String, role: String, text: String, voice: Bool = false) {
-        self.id = id; self.role = role; self.text = text; self.voice = voice
+    public let toolName: String?
+    public var toolRunning: Bool
+    public init(id: String, role: String, text: String, voice: Bool = false, toolName: String? = nil, toolRunning: Bool = false) {
+        self.id = id; self.role = role; self.text = text; self.voice = voice; self.toolName = toolName; self.toolRunning = toolRunning
     }
     public static func upserting(_ row: JSON, into messages: [ChatMessage]) -> [ChatMessage] {
         guard let message = project([row]).first else { return messages }
@@ -114,7 +116,11 @@ public struct ChatMessage: Identifiable, Equatable {
     }
     public static func project(_ rows: [JSON]) -> [ChatMessage] {
         rows.enumerated().compactMap { index, row in
-            guard ["user", "assistant"].contains(row["role"].string ?? ""), row["display_kind"].string != "hidden" else { return nil }
+            guard row["display_kind"].string != "hidden" else { return nil }
+            if row["role"].string == "tool", let name = row["name"].string {
+                return ChatMessage(id: "tool-" + (row["tool_call_id"].string ?? "history-\(index)"), role: "tool", text: row["context"].string ?? "Completed", toolName: name)
+            }
+            guard ["user", "assistant"].contains(row["role"].string ?? "") else { return nil }
             let text = row["text"].string ?? row["content"].string ?? ""
             guard !text.isEmpty else { return nil }
             return ChatMessage(id: row["display_metadata"]["voice_message_id"].string ?? row["row_id"].number.map { "row-\(Int($0))" } ?? "history-\(index)", role: row["role"].string!, text: text, voice: row["display_kind"].string == "voice_live")

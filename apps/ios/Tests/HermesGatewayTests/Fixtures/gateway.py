@@ -45,12 +45,39 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Sec-WebSocket-Accept", accept)
             self.end_headers()
             self.frames()
+        elif parsed.path.endswith("/api/fs/download"):
+            self.file_download(parsed)
         elif parsed.path == "/api/fixture/tickets" and self.cookie_authorized():
             self.json_reply(200, {"minted": self.server.ticket_count})
         elif self.headers.get("Authorization") == "Bearer fixture+token &?" or self.cookie_authorized():
             self.json_reply(200, {"ok": True, "path": parsed.path, "profile": parse_qs(parsed.query).get("profile", [None])[0]})
         else:
             self.json_reply(401, {"error": "unauthorized"})
+
+    def file_download(self, parsed):
+        query = parse_qs(parsed.query)
+        authorized = self.headers.get("Authorization") == "Bearer fixture+token &?" or self.cookie_authorized()
+        if not authorized or query.get("profile") != ["writer"] or query.get("session_id") != ["tip"]:
+            self.json_reply(403, {"error": "foreign file owner"})
+            return
+        if query.get("path") == ["/workspace/redirect.pdf"]:
+            self.send_response(302)
+            self.send_header("Location", "http://127.0.0.1:1/private")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if query.get("path") != ["/workspace/report + one.pdf"]:
+            self.json_reply(404, {"error": "file missing"})
+            return
+        data = b"%PDF-1.4\nfixture private report\n"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", 'attachment; filename="report.pdf"')
+        self.send_header("Content-Length", str(len(data)))
+        if self.cookie_authorized():
+            self.send_header("Set-Cookie", "__Host-hermes_session_at=fixture-session; Path=/; Max-Age=3600; Secure; HttpOnly")
+        self.end_headers()
+        self.wfile.write(data)
 
     def cookie_authorized(self):
         return "__Host-hermes_session_at=fixture-session" in self.headers.get("Cookie", "")

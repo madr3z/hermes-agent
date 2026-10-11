@@ -129,16 +129,51 @@ import Foundation
         guard let ticket = result["ticket"].string, !ticket.isEmpty else { throw GatewayError.message("Controller did not return a WebSocket ticket. Sign in again.") }
         return ticket
     }
-    public func http(_ path: String, profile: String? = nil, body: JSON? = nil) async throws -> JSON {
-        try await http(path, profile: profile, body: body, at: endpoint)
+    public func fileRequest(path: String, profile: String, storedSessionID: String) throws -> URLRequest {
+        guard !storedSessionID.isEmpty, ChatAttachment(path: path) != nil else { throw GatewayError.message("File owner is unavailable. Reopen Bot Chat.") }
+        var parts = URLComponents(url: endpoint.url(path: "api/fs/download"), resolvingAgainstBaseURL: false)!
+        parts.queryItems = [URLQueryItem(name: "profile", value: profile), URLQueryItem(name: "session_id", value: storedSessionID), URLQueryItem(name: "path", value: path)]
+        parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        var request = URLRequest(url: parts.url!)
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 60
+        return request
     }
-    private func http(_ path: String, profile: String?, body: JSON?, at owner: GatewayEndpoint) async throws -> JSON {
+    public func downloadFile(_ attachment: ChatAttachment, profile: String, storedSessionID: String) async throws -> URL {
+        let request = try fileRequest(path: attachment.path, profile: profile, storedSessionID: storedSessionID)
+        let (temporary, response) = try await session.download(for: request, delegate: FileDownloadScope())
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try onAuthenticationChange?()
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw GatewayError.http(status: status, message: "File download failed (HTTP \(status)). Check this bot's connection and file access.")
+        }
+        let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= 25 * 1024 * 1024 else { throw GatewayError.message("File previews and sharing are limited to 25 MiB.") }
+        try Task.checkCancellation()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-file-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let name = (attachment.name as NSString).lastPathComponent
+        let destination = directory.appendingPathComponent(name.isEmpty || name == "." || name == ".." ? "attachment" : name)
+        do {
+            try FileManager.default.moveItem(at: temporary, to: destination)
+            #if os(iOS)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
+            #endif
+            return destination
+        } catch { try? FileManager.default.removeItem(at: directory); throw error }
+    }
+    public func http(_ path: String, profile: String? = nil, body: JSON? = nil, method: String? = nil) async throws -> JSON {
+        try await http(path, profile: profile, body: body, at: endpoint, method: method)
+    }
+    private func http(_ path: String, profile: String?, body: JSON?, at owner: GatewayEndpoint, method: String? = nil) async throws -> JSON {
         var request = URLRequest(url: owner.url(path: path, profile: profile))
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 60
-        if let body {
-            request.httpMethod = "POST"; request.httpBody = try JSONEncoder().encode(body)
+        request.httpMethod = method ?? (body == nil ? "GET" : "POST")
+        if let body { request.httpBody = try JSONEncoder().encode(body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await session.data(for: request)
@@ -150,5 +185,12 @@ import Foundation
             throw GatewayError.http(status: status, message: detail ?? "Gateway HTTP \(status). Check authentication and service availability.")
         }
         return try JSONDecoder().decode(JSON.self, from: data)
+    }
+}
+
+private final class FileDownloadScope: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // A file response has no reason to change its owner or route.
+        completionHandler(nil)
     }
 }

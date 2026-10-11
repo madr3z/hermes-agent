@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 import HermesGateway
 
 struct ChatView: View {
@@ -6,27 +8,34 @@ struct ChatView: View {
     @State private var chat: ChatStore
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoice = false
+    @State private var showFiles = false
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var importingPhotos = false
     init(bot: Bot, store: PhoneStore) { self.store = store; _chat = State(initialValue: ChatStore(bot: bot)) }
     var body: some View {
         ScrollViewReader { reader in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     if chat.loading && chat.messages.isEmpty { ProgressView("Opening Bot Chat…").frame(maxWidth: .infinity) }
-                    ForEach(chat.messages) { message in MessageBubble(message: message).id(message.id) }
+                    ForEach(chat.messages) { message in ChatMessageView(message: message, client: chat.client, profile: chat.bot.profile, storedSessionID: chat.storedSessionID).id(message.id) }
                     Color.clear.frame(height: 1).id("bottom")
                 }.padding()
             }
             .defaultScrollAnchor(.bottom)
-            .onChange(of: chat.messages.last?.text) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: chat.messages.last(where: { $0.role == "assistant" })?.text) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: chat.messages.count) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
             .safeAreaInset(edge: .bottom) { composer }
         }
         .navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { ConnectorsView(bot: chat.bot, store: store) } label: { Label("Connectors", systemImage: "puzzlepiece.extension") }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { VMControlView(bot: chat.bot, store: store) } label: { Label("VM controls", systemImage: "desktopcomputer") }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("GPT Live", systemImage: "waveform") { showVoice = true }.disabled(!chat.connected).accessibilityIdentifier("startVoice")
+                Button("GPT Live", systemImage: "waveform") { showVoice = true }.disabled(!chat.connected || chat.sending).accessibilityIdentifier("startVoice")
             }
         }
         .task { await chat.open(store: store) }
@@ -35,6 +44,13 @@ struct ChatView: View {
             else if phase == .background { chat.voice.stop() }
         }
         .onDisappear { chat.voice.stop() }
+        .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): urls.forEach { chat.importFile($0) }
+            case .failure(let error): chat.error = error.localizedDescription
+            }
+        }
+        .task(id: photos) { await importPhotos() }
         .sheet(isPresented: $showVoice) { VoiceView(chat: chat) }
     }
     private var composer: some View {
@@ -52,28 +68,49 @@ struct ChatView: View {
                 Spacer()
                 if chat.busy { Button("Stop") { Task { await chat.interrupt() } }.font(.caption) }
             }
+            if !chat.uploads.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack {
+                        ForEach(chat.uploads) { upload in
+                            HStack(spacing: 6) {
+                                Image(systemName: upload.isImage ? "photo" : "doc")
+                                Text(upload.name).lineLimit(1)
+                                Button("Remove", systemImage: "xmark.circle.fill") { chat.removeUpload(upload.id) }.labelStyle(.iconOnly)
+                            }.font(.caption).padding(8).background(.quaternary, in: Capsule())
+                        }
+                    }
+                }.disabled(chat.sending)
+            }
             HStack(alignment: .bottom) {
+                Menu {
+                    PhotosPicker(selection: $photos, maxSelectionCount: 5, matching: .images) { Label("Photos", systemImage: "photo") }
+                    Button("Files", systemImage: "doc") { showFiles = true }
+                } label: { Image(systemName: "plus.circle").font(.title2).padding(.bottom, 8) }
+                .accessibilityLabel("Attach photos or files").disabled(chat.sending || importingPhotos)
                 TextField("Message \(chat.bot.name)", text: $chat.draft, axis: .vertical).lineLimit(1...6).padding(10).background(.background, in: RoundedRectangle(cornerRadius: 16)).accessibilityIdentifier("chatComposer")
                 Button { Task { await chat.send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.largeTitle) }
-                    .disabled(!chat.connected || chat.sending || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!chat.connected || chat.loading || chat.sending || importingPhotos || (chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && chat.uploads.isEmpty))
                     .accessibilityLabel(chat.busy ? "Queue message" : "Send message")
             }
         }.padding(.horizontal).padding(.vertical, 10).background(.bar)
     }
-}
-
-private struct MessageBubble: View {
-    let message: ChatMessage
-    var body: some View {
-        HStack {
-            if message.role == "user" { Spacer(minLength: 36) }
-            VStack(alignment: .leading, spacing: 6) {
-                if message.voice { Label("GPT Live", systemImage: "waveform").font(.caption2).foregroundStyle(.secondary) }
-                Text(message.text).textSelection(.enabled).font(.body)
-            }.padding(12).background(message.role == "user" ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-            if message.role != "user" { Spacer(minLength: 20) }
+    private func importPhotos() async {
+        guard !photos.isEmpty else { return }
+        importingPhotos = true
+        defer { importingPhotos = false }
+        for item in photos {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { throw GatewayError.message("This photo could not be read.") }
+                try Task.checkCancellation()
+                guard data.count <= ChatUpload.maximumBytes else { throw GatewayError.message("Choose a photo no larger than 10 MiB.") }
+                guard let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) else { throw GatewayError.message("This photo format is unavailable.") }
+                chat.addUpload(name: "photo-\(UUID().uuidString.prefix(8)).jpg", data: jpeg, image: true)
+            } catch is CancellationError { return }
+            catch { chat.error = error.localizedDescription }
         }
+        photos = []
     }
+
 }
 
 private struct VoiceView: View {
