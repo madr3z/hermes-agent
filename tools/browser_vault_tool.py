@@ -309,6 +309,12 @@ def browser_vault_save_login(label: str = "", task_id: Optional[str] = None) -> 
     host = origin.split("://", 1)[-1]
     site = label.strip() or host
     answer = prompt(origin, host)  # the prompt names the site by host: the user recognises URLs, not agent labels
+    if answer and answer.get("error_type") == "prompt_unavailable":
+        return json.dumps({"success": False, "error_type": "prompt_unavailable",
+                           "error": "The secure login prompt is unavailable or received no answer. The user did not decline. "
+                                    "For an OAuth connector, use its provider sign-in card in this chat. "
+                                    "For a website login, use Computer or a supported Desktop login prompt. "
+                                    "Do not ask for passwords in chat."})
     if not answer or not answer.get("password") or not answer.get("identifier"):
         return json.dumps({"success": False, "error_type": "save_declined",
                            "error": "The user chose not to save a login for this site. Do not ask again this turn."})

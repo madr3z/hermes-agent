@@ -267,12 +267,18 @@ def _wire_callbacks(sid: str):
 
     def save_login_cb(origin, site):
         # The renderer shows identifier + masked password; the JSON answer goes straight to the vault store.
-        raw = _ask("vault.save_login", sid, {"origin": origin, "site": site}, timeout=180)
+        from tui_gateway import server_requests
+        result = server_requests.send("vault.save_login", sid, {"origin": origin, "site": site}, timeout=180)
+        if result is None or "value" not in result:
+            return {"error_type": "prompt_unavailable"}
+        raw = result["value"]
+        if raw == "":
+            return None  # An explicit empty response is the user's decline.
         try:
-            data = json.loads(raw) if raw else None
+            data = json.loads(raw) if isinstance(raw, str) else raw
         except ValueError:
-            return None
-        return data if isinstance(data, dict) and data.get("password") else None
+            return {"error_type": "prompt_unavailable"}
+        return data if isinstance(data, dict) and data.get("password") else {"error_type": "prompt_unavailable"}
 
     set_save_login_prompt_callback(save_login_cb)
     set_code_prompt_callback(lambda site, hint: _ask(
