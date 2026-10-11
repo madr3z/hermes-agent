@@ -25,22 +25,24 @@ public struct MobileInvitation {
     public let kind: String
     public let profile: String
     public let canPostpone: Bool
-    public init(_ value: JSON, push: MobilePush, allowedGuests: Set<UUID>, now: Date = Date(), accepting: Bool = false) throws {
+    public let messageID: String?
+    public init(_ value: JSON, push: MobilePush, allowedGuests: Set<UUID>, now: Date = Date(), accepting: Bool = false, readingNotification: Bool = false) throws {
         guard value["invitation_id"].string.flatMap(UUID.init(uuidString:)) == push.invitationID,
               let guest = value["guest_id"].string.flatMap(UUID.init(uuidString:)), allowedGuests.contains(guest),
               value["profile"].string == "default", let kind = value["kind"].string,
               ["call", "notification"].contains(kind),
               let expiry = value["expires_at"].number, expiry.isFinite,
               abs(expiry - push.expiresAt.timeIntervalSince1970) < 1,
-              push.isCurrent(at: now),
               let state = value["state"].string,
-              accepting ? state == "accepted" && kind == "call" : state == "pending" else {
+              readingNotification ? kind == "notification" && ["pending", "expired"].contains(state)
+                : push.isCurrent(at: now) && (accepting ? state == "accepted" && kind == "call" : state == "pending") else {
             throw GatewayError.message("This invitation expired, was answered, or no longer belongs to an enabled bot.")
         }
         canPostpone = value["can_postpone"].bool
         id = push.invitationID; guestID = guest; self.kind = kind; self.state = state; profile = "default"
         name = String((value["name"].string ?? "Hermes").prefix(100))
         reason = String((value["reason"].string ?? "").prefix(500))
+        messageID = kind == "notification" ? value["message_id"].string : nil
     }
 }
 

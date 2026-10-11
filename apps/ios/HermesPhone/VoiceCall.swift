@@ -14,6 +14,7 @@ import WebRTC
     private(set) var startedAt: Date?
     private(set) var audioOutput = "Speaker"
     private(set) var hasPendingTranscript = false
+    private var reconnectTask: Task<Void, Never>?
     private var activityTask: Task<Void, Never>?
     private var opening = VoiceOpening()
     private var routeObserver: NSObjectProtocol?
@@ -139,6 +140,7 @@ import WebRTC
         startup = nil; active = false; connecting = false; activity = "Call ended"
         activityTask?.cancel(); activityTask = nil; opening = VoiceOpening()
         if let routeObserver { NotificationCenter.default.removeObserver(routeObserver); self.routeObserver = nil }
+        reconnectTask?.cancel(); reconnectTask = nil
         send(["type": .string("session.close")])
         track?.isEnabled = false; channel?.delegate = nil; channel?.close(); peer?.close()
         channel = nil; peer = nil; track = nil; factory = nil; delegation.cancel()
@@ -154,12 +156,24 @@ import WebRTC
         muted.toggle(); track?.isEnabled = !muted
         send(["type": .string(muted ? "session.input_audio.mute" : "session.input_audio.unmute"), "event_id": .string(UUID().uuidString)])
     }
-    func toggleSpeaker() {
-        do {
-            let audio = AVAudioSession.sharedInstance()
-            try audio.overrideOutputAudioPort(audio.currentRoute.outputs.contains { $0.portType == .builtInSpeaker } ? .none : .speaker)
-            updateAudioOutput()
-        } catch { self.error = "Could not change audio output. Choose a route in Control Center." }
+    func connectionChanged(_ state: RTCIceConnectionState) {
+        switch state {
+        case .disconnected:
+            activityTask?.cancel(); activity = "Reconnecting…"
+            guard reconnectTask == nil else { return }
+            reconnectTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled, let self else { return }
+                self.error = "The voice connection was lost. Your transcript is retained."
+                self.stop()
+            }
+        case .connected, .completed:
+            if reconnectTask != nil { activity = delegation.currentID == nil ? "Listening" : "Working on your request" }
+            reconnectTask?.cancel(); reconnectTask = nil
+        case .failed, .closed:
+            error = "The voice connection ended. Your transcript is retained."; stop()
+        default: break
+        }
     }
     private func updateAudioOutput() {
         let output = AVAudioSession.sharedInstance().currentRoute.outputs.first
@@ -269,13 +283,12 @@ extension VoiceCall: RTCPeerConnectionDelegate, RTCDataChannelDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        if newState == .failed {
-            Task { @MainActor in
-                guard self.peer === peerConnection else { return }
-                self.error = "Voice connection failed."; self.stop()
-            }
+        Task { @MainActor in
+            guard self.peer === peerConnection else { return }
+            self.connectionChanged(newState)
         }
     }
+
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}

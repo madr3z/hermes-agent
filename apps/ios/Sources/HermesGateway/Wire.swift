@@ -123,7 +123,7 @@ public struct ChatMessage: Identifiable, Equatable {
             guard ["user", "assistant"].contains(row["role"].string ?? "") else { return nil }
             let text = row["text"].string ?? row["content"].string ?? ""
             guard !text.isEmpty else { return nil }
-            return ChatMessage(id: row["display_metadata"]["voice_message_id"].string ?? row["row_id"].number.map { "row-\(Int($0))" } ?? "history-\(index)", role: row["role"].string!, text: text, voice: row["display_kind"].string == "voice_live")
+            return ChatMessage(id: row["display_metadata"]["voice_message_id"].string ?? row["display_metadata"]["mobile_message_id"].string ?? row["row_id"].number.map { "row-\(Int($0))" } ?? "history-\(index)", role: row["role"].string!, text: text, voice: row["display_kind"].string == "voice_live")
         }
     }
 }

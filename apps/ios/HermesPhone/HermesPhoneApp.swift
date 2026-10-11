@@ -14,14 +14,20 @@ private enum RosterSheet: Identifiable {
     }
 }
 
+private struct ChatDestination: Hashable {
+    let bot: Bot
+    var messageID: String? = nil
+}
+
 struct RosterView: View {
     @Bindable var store: PhoneStore
     @State private var sheet: RosterSheet?
+    @State private var path: [ChatDestination] = []
     @Bindable private var contact = MobileContact.shared
     @Bindable private var calls = CallPresentation.shared
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if store.endpoints.isEmpty {
                     Section {
@@ -50,7 +56,7 @@ struct RosterView: View {
                             PhoneNotice(title: store.loading ? "Loading bots…" : "No bots to show", message: "Pull down to refresh this gateway.", systemImage: "network")
                         }
                         ForEach(rows) { bot in
-                            NavigationLink(value: bot) {
+                            NavigationLink(value: ChatDestination(bot: bot)) {
                                 HStack(alignment: .top, spacing: 12) {
                                     BotAvatar()
                                     VStack(alignment: .leading, spacing: 5) {
@@ -110,7 +116,9 @@ struct RosterView: View {
                 }
             }
             .navigationTitle("Bots")
-            .navigationDestination(for: Bot.self) { bot in ChatView(bot: bot, store: store) }
+            .navigationDestination(for: ChatDestination.self) { target in
+                ChatView(bot: target.bot, store: store, messageID: target.messageID).id(target)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -131,6 +139,7 @@ struct RosterView: View {
             }
             .refreshable { await store.refresh() }
             .task { await store.refresh() }
+            .task(id: contact.notificationToOpen?.id) { await openNotification() }
             .sheet(item: $sheet) { selected in
                 switch selected {
                 case .gateway(let endpoint): GatewayForm(store: store, existing: endpoint)
@@ -139,6 +148,28 @@ struct RosterView: View {
                 case .mobile(let endpoint): MobileContactView(endpoint: endpoint, store: store)
                 }
             }
+        }
+    }
+    private func openNotification() async {
+        guard let route = contact.notificationToOpen else { return }
+        do {
+            guard let main = store.endpoints.first(where: { $0.id == route.controllerID }) else { throw GatewayError.message("Connect this notification’s controller again.") }
+            let client = try await store.client(for: main.id)
+            let row = try await client.http("api/plugins/bot-provisioning/v1/requests/" + route.invitation.guestID.uuidString.lowercased())
+            guard row["phase"].string == "ready", row["request_id"].string.flatMap(UUID.init(uuidString:)) == route.invitation.guestID else { throw GatewayError.message("This bot’s computer is no longer available.") }
+            let gateway = try main.provisionedGateway(row)
+            let existing = store.endpoints.first { $0.baseURL == gateway.baseURL }
+            if existing == nil || !store.bots.contains(where: { $0.endpointID == existing?.id && $0.profile == route.invitation.profile }) {
+                try await store.addProvisioned(row, main: main)
+            }
+            guard let endpoint = store.endpoints.first(where: { $0.baseURL == gateway.baseURL }),
+                  let bot = store.bots.first(where: { $0.endpointID == endpoint.id && $0.profile == route.invitation.profile }) else { throw GatewayError.message("This bot’s conversation is unavailable.") }
+            guard contact.notificationToOpen?.id == route.id else { return }
+            sheet = nil
+            path = [ChatDestination(bot: bot, messageID: route.invitation.messageID)]
+            contact.notificationToOpen = nil
+        } catch {
+            if contact.notificationToOpen?.id == route.id { contact.error = error.localizedDescription; contact.notificationToOpen = nil }
         }
     }
     private var callDestination: Binding<CallDestination?> {

@@ -5,13 +5,15 @@ import HermesGateway
 
 struct ChatView: View {
     let store: PhoneStore
+    let messageID: String?
+    @State private var locatedNotification = false
     @State private var chat: ChatStore
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var composerFocused: Bool
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var importingPhotos = false
-    init(bot: Bot, store: PhoneStore) { self.store = store; _chat = State(initialValue: ChatStore(bot: bot)) }
+    init(bot: Bot, store: PhoneStore, messageID: String? = nil) { self.store = store; self.messageID = messageID; _chat = State(initialValue: ChatStore(bot: bot)) }
     var body: some View {
         ScrollViewReader { reader in
             ScrollView {
@@ -30,10 +32,21 @@ struct ChatView: View {
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .background(Color(uiColor: .systemBackground))
-            .onChange(of: chat.messages.last(where: { $0.role == "assistant" })?.text) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
-            .onChange(of: chat.messages.count) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: chat.messages.last(where: { $0.role == "assistant" })?.text) { _, _ in if messageID == nil || locatedNotification { reader.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: chat.messages.count) { _, _ in
+                if !locatedNotification, let messageID, chat.messages.contains(where: { $0.id == messageID }) {
+                    reader.scrollTo(messageID, anchor: .center); locatedNotification = true
+                } else { reader.scrollTo("bottom", anchor: .bottom) }
+            }
             .onChange(of: chat.activity.phase) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
             .safeAreaInset(edge: .bottom) { composer }
+            .task {
+                await chat.open(store: store)
+                if let messageID, chat.messages.contains(where: { $0.id == messageID }) {
+                    await Task.yield()
+                    reader.scrollTo(messageID, anchor: .center); locatedNotification = true
+                }
+            }
         }
         .navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -56,7 +69,6 @@ struct ChatView: View {
                 .accessibilityLabel("Settings for \(chat.bot.name)")
             }
         }
-        .task { await chat.open(store: store) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await chat.open(store: store) } }
 

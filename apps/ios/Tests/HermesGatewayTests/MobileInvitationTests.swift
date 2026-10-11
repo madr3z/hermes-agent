@@ -44,4 +44,17 @@ final class MobileInvitationTests: XCTestCase {
         XCTAssertThrowsError(try MobileDeferredCall.validateTime(now.addingTimeInterval(7 * 86400 + 1), now: now))
         XCTAssertThrowsError(try MobileDeferredCall.validateTime(Date(timeIntervalSince1970: .infinity), now: now))
     }
+    func testNotificationCanOpenSavedMessageAfterDeliveryExpiryButCallCannot() throws {
+        let sent = Date().addingTimeInterval(-3600), push = try MobilePush(payload(now: sent))
+        guard case .object(var fields) = resolved(now: sent, state: "expired") else { return XCTFail("Missing fixture") }
+        XCTAssertThrowsError(try MobileInvitation(.object(fields), push: push, allowedGuests: [guest], readingNotification: true))
+        fields["kind"] = .string("notification")
+        fields["message_id"] = .string("hermes-mobile:fixture")
+        let notification = try MobileInvitation(.object(fields), push: push, allowedGuests: [guest], readingNotification: true)
+        XCTAssertEqual(notification.messageID, "hermes-mobile:fixture")
+        XCTAssertThrowsError(try MobileInvitation(.object(fields), push: push, allowedGuests: [] , readingNotification: true))
+        let row: JSON = .object(["row_id": .number(123), "role": .string("assistant"), "content": .string("Your appointment changed."), "display_metadata": .object(["mobile_message_id": .string("hermes-mobile:fixture")])])
+        XCTAssertEqual(ChatMessage.project([row]).first?.id, notification.messageID)
+        XCTAssertEqual(ChatMessage.upserting(row, into: ChatMessage.project([row])).count, 1)
+    }
 }

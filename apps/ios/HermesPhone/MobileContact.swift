@@ -16,11 +16,18 @@ struct MobileContactSettings: Codable {
     var notifications: Bool
 }
 
+struct MobileNotificationRoute {
+    let controllerID: UUID
+    let invitation: MobileInvitation
+    var id: UUID { invitation.id }
+}
+
 @MainActor @Observable final class MobileContact: NSObject {
     static let shared = MobileContact()
     private(set) var settings: [UUID: MobileContactSettings] = [:]
     var error: String?
     var detail: MobileInvitation?
+    var notificationToOpen: MobileNotificationRoute?
     var callPresentation = IncomingCallPresentation()
     var callInvitation: MobilePush? { callPresentation.invitation }
     var postponeTarget: MobilePush?
@@ -158,7 +165,7 @@ struct MobileContactSettings: Codable {
         guard let token = String(data: data, encoding: .utf8), !token.isEmpty else { throw GatewayError.message("Sign in to this controller again.") }
         return GatewayClient(endpoint: record.endpoint, token: token)
     }
-    private func resolve(_ push: MobilePush, accepting: Bool = false) async throws -> MobileInvitation {
+    private func resolve(_ push: MobilePush, accepting: Bool = false, readingNotification: Bool = false) async throws -> MobileInvitation {
         guard let record = settings[push.controllerID], accepting ? record.calls : record.calls || record.notifications else { throw GatewayError.message("Controller is no longer enabled.") }
         let client = try client(push.controllerID, background: record.calls)
         let path = "api/plugins/bot-provisioning/v1/mobile/invitations/" + push.invitationID.uuidString.lowercased()
@@ -168,7 +175,7 @@ struct MobileContactSettings: Codable {
         } else {
             value = try await client.http(path + "/devices/" + record.deviceID.uuidString.lowercased())
         }
-        return try MobileInvitation(value, push: push, allowedGuests: record.bots, accepting: accepting)
+        return try MobileInvitation(value, push: push, allowedGuests: record.bots, accepting: accepting, readingNotification: readingNotification)
     }
     private func action(_ push: MobilePush, _ action: String) async {
         guard let record = settings[push.controllerID], let client = try? client(push.controllerID, background: record.calls) else { return }
@@ -413,9 +420,9 @@ extension MobileContact: PKPushRegistryDelegate, CXProviderDelegate, UNUserNotif
         let value = (try? JSONSerialization.data(withJSONObject: response.notification.request.content.userInfo)).flatMap { try? JSONDecoder().decode(JSON.self, from: $0) }
         Task { @MainActor in
             defer { completionHandler() }
-            guard let value, let incoming = try? MobilePush(value), incoming.isCurrent() else { return }
+            guard let value, let incoming = try? MobilePush(value) else { return }
             if response.notification.request.content.categoryIdentifier == Self.postponeCategory {
-                guard settings[incoming.controllerID]?.calls == true else { return }
+                guard incoming.isCurrent(), settings[incoming.controllerID]?.calls == true else { return }
                 switch response.actionIdentifier {
                 case "ring-15": await postpone(incoming, until: Date().addingTimeInterval(15 * 60))
                 case "ring-60": await postpone(incoming, until: Date().addingTimeInterval(60 * 60))
@@ -424,7 +431,10 @@ extension MobileContact: PKPushRegistryDelegate, CXProviderDelegate, UNUserNotif
                     postponeTarget = incoming; chooseCallTime = true
                 }
             } else if settings[incoming.controllerID]?.notifications == true {
-                do { detail = try await resolve(incoming) } catch { self.error = "This notification expired or its bot is no longer available." }
+                do {
+                    let invitation = try await resolve(incoming, readingNotification: true)
+                    notificationToOpen = MobileNotificationRoute(controllerID: incoming.controllerID, invitation: invitation)
+                } catch { self.error = "This notification’s bot is no longer available. Open its saved conversation from Bots." }
             }
         }
     }

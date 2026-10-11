@@ -19,7 +19,7 @@ final class VoiceConversationTests: XCTestCase {
         XCTAssertNil(opening.event(sessionReady: false))
         let event = opening.event(sessionReady: true)
         XCTAssertEqual(event?["type"]?.string, "session.commentary.append")
-        XCTAssertEqual(event?["content"]?.string, "I’m calling because Your appointment changed.")
+        XCTAssertEqual(event?["content"]?.string, "Your appointment changed.")
         XCTAssertEqual(event?["delegation_id"], .null)
         XCTAssertNil(opening.event(sessionReady: true))
         var outgoing = VoiceOpening()

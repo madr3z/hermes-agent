@@ -30,7 +30,7 @@ struct CallScreen: View {
                 header.padding(.horizontal, 20).padding(.bottom, 20)
                 Divider()
                 transcript
-                controls.padding(.horizontal, 20).padding(.vertical, 20)
+                controls.padding(.horizontal, 20).padding(.vertical, typeSize.isAccessibilitySize ? 8 : 20)
             }
             .background(Color(uiColor: .systemBackground))
             .navigationTitle("Voice call").navigationBarTitleDisplayMode(.inline)
@@ -57,16 +57,16 @@ struct CallScreen: View {
                     .font(.system(size: 30, weight: .medium)).foregroundStyle(.tint)
                     .frame(width: 64, height: 64).background(.tint.opacity(0.1), in: Circle()).accessibilityHidden(true)
             }
-            Text(name).font(.title2.weight(.semibold))
+            Text(name).font(typeSize.isAccessibilitySize ? .headline : .title2.weight(.semibold))
             HStack(spacing: 7) {
                 Circle().fill(ringing ? Color.orange : voice.active ? .green : .secondary).frame(width: 7, height: 7)
                 Text(status).font(.subheadline).foregroundStyle(.secondary)
                 if let startedAt = voice.startedAt, voice.active { Text(startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
             }.accessibilityElement(children: .combine)
             if let reason, !reason.isEmpty {
-                Text(reason).font(.body).multilineTextAlignment(.center).lineLimit(4)
+                Text(reason).font(.body).multilineTextAlignment(.center).lineLimit(typeSize.isAccessibilitySize ? 2 : 4)
                     .padding(.top, 2).accessibilityLabel("Reason for calling: " + reason)
-                if reason.count > 120 { Button("Read full reason") { readingReason = true }.font(.subheadline) }
+                if typeSize.isAccessibilitySize || reason.count > 120 { Button("Read full reason") { readingReason = true }.font(.subheadline) }
             }
         }
     }
@@ -82,9 +82,9 @@ struct CallScreen: View {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         if voice.turns.isEmpty {
                             VStack(spacing: 10) {
-                                Image(systemName: ringing ? "phone.arrow.down.left" : "text.bubble").font(.title2)
+                                if !typeSize.isAccessibilitySize { Image(systemName: ringing ? "phone.arrow.down.left" : "text.bubble").font(.title2) }
                                 Text(ringing ? "Answer to hear why \(name) is calling." : "Your conversation will appear here.")
-                                Text("Speak naturally. You can interrupt at any time.").font(.footnote)
+                                if !typeSize.isAccessibilitySize { Text("Speak naturally. You can interrupt at any time.").font(.footnote) }
                             }.foregroundStyle(.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.vertical, 36)
                         }
                         ForEach(voice.turns) { turn in
@@ -104,23 +104,23 @@ struct CallScreen: View {
                 .onChange(of: followsTranscript) { _, follow in if follow { reader.scrollTo("latest", anchor: .bottom) } }
             }
             if let error = voice.error { Text(error).font(.callout).foregroundStyle(.red).padding(.horizontal, 20).padding(.bottom, 8) }
-            Label(voice.turns.isEmpty ? "Transcripts stay in Bot Chat" : voice.hasPendingTranscript ? "Transcript waiting to sync" : "Transcript saved to Bot Chat", systemImage: voice.hasPendingTranscript ? "arrow.triangle.2.circlepath" : "lock.shield")
+            Text(voice.turns.isEmpty ? "Transcripts stay in Bot Chat" : voice.hasPendingTranscript ? "Transcript waiting to sync" : "Transcript saved to Bot Chat")
                 .font(.caption).foregroundStyle(.secondary).padding(.bottom, 8)
         }.frame(maxHeight: .infinity)
     }
     @ViewBuilder private var controls: some View {
         if ringing {
-            HStack(spacing: 28) {
+            controlLayout {
                 callControl("Decline", icon: "phone.down.fill", colour: .red, action: onEnd)
                 if let onLater { callControl("Ring later", icon: "clock", colour: .secondary, action: onLater) }
                 if let onAnswer { callControl("Answer", icon: "phone.fill", colour: .green, action: onAnswer) }
             }.frame(maxWidth: .infinity)
         } else if voice.active || voice.connecting || preparing {
-            HStack(spacing: 24) {
+            controlLayout {
                 callControl(voice.muted ? "Unmute" : "Mute", icon: voice.muted ? "mic.slash.fill" : "mic.fill", colour: voice.muted ? .orange : .secondary) { voice.toggleMute() }.disabled(!voice.active)
-                VStack(spacing: 8) {
+                controlContentLayout {
                     AudioOutputPicker().frame(width: 56, height: 56).background(Color(uiColor: .secondarySystemBackground), in: Circle())
-                    Text(voice.audioOutput).font(.caption).lineLimit(1)
+                    Text(voice.audioOutput).font(typeSize.isAccessibilitySize ? .body : .caption).lineLimit(1)
                 }.frame(maxWidth: .infinity)
                 callControl("End call", icon: "phone.down.fill", colour: .red, action: onEnd)
             }
@@ -128,12 +128,18 @@ struct CallScreen: View {
             Button("Start call", systemImage: "phone.fill", action: onStart).buttonStyle(.borderedProminent).controlSize(.large)
         } else { Button("Close", action: onClose).buttonStyle(.bordered).controlSize(.large) }
     }
+    private var controlLayout: AnyLayout {
+        typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 24))
+    }
+    private var controlContentLayout: AnyLayout {
+        typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(spacing: 16)) : AnyLayout(VStackLayout(spacing: 8))
+    }
     private func callControl(_ title: String, icon: String, colour: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon).font(.title3).foregroundStyle(colour == .secondary ? Color.primary : .white)
+            controlContentLayout {
+                Image(systemName: icon).font(.system(size: 22)).foregroundStyle(colour == .secondary ? Color.primary : .white)
                     .frame(width: 56, height: 56).background(colour == .secondary ? Color(uiColor: .secondarySystemBackground) : colour, in: Circle())
-                Text(title).font(.caption).foregroundStyle(.primary)
+                Text(title).font(typeSize.isAccessibilitySize ? .body : .caption).foregroundStyle(.primary)
             }.frame(maxWidth: .infinity)
         }.buttonStyle(.plain).accessibilityLabel(title)
     }

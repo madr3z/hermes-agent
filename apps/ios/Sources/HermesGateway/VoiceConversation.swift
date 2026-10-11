@@ -45,7 +45,7 @@ public struct VoiceOpening {
         guard sessionReady, let reason else { return nil }
         self.reason = nil
         return ["type": .string("session.commentary.append"), "event_id": .string(UUID().uuidString),
-                "delegation_id": .null, "content": .string("I’m calling because " + reason)]
+                "delegation_id": .null, "content": .string(reason)]
     }
 }
 
