@@ -6,9 +6,11 @@ import HermesGateway
     var body: some Scene { WindowGroup { RosterView(store: store) } }
 }
 
-private enum RosterSheet: String, Identifiable {
-    case gateway, create
-    var id: String { rawValue }
+private enum RosterSheet: Identifiable {
+    case gateway, create, delete(VMDeletionTarget)
+    var id: String {
+        switch self { case .gateway: return "gateway"; case .create: return "create"; case .delete(let target): return "delete-\(target.id)" }
+    }
 }
 
 struct RosterView: View {
@@ -37,6 +39,10 @@ struct RosterView: View {
                                 }.padding(.vertical, 5)
                             }
                         }
+                        if let owner = store.vmOwners[endpoint.id.uuidString], owner.owns(endpoint), store.vmDeletionControllers.contains(owner.mainID),
+                           let target = VMDeletionTarget(mainID: owner.mainID, requestID: owner.requestID) {
+                            Button("Delete Bot and VM…", role: .destructive) { sheet = .delete(target) }
+                        }
                     }
                 }
                 if let error = store.error { Section { Text(error).foregroundStyle(.red); Button("Retry") { Task { await store.refresh() } } } }
@@ -59,6 +65,7 @@ struct RosterView: View {
                 switch selected {
                 case .gateway: GatewayForm(store: store)
                 case .create: CreateBotView(store: store)
+                case .delete(let target): VMDeletionView(target: target, store: store)
                 }
             }
         }

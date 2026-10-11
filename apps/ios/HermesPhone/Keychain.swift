@@ -21,6 +21,11 @@ struct GatewayKeychain {
               let data = result as? Data, let token = String(data: data, encoding: .utf8) else { throw KeychainError.failed }
         return token
     }
+    static func remove(_ id: UUID) throws {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id.uuidString]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError.failed }
+    }
     enum KeychainError: LocalizedError {
         case failed
         var errorDescription: String? { "Could not access the gateway credential in Keychain." }

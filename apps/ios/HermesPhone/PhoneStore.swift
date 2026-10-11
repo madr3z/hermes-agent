@@ -9,9 +9,12 @@ import HermesGateway
     var error: String?
     var vmOwners: [String: ProvisionedOwner] = [:]
     var clients: [UUID: GatewayClient] = [:]
-    init() {
-        if let data = UserDefaults.standard.data(forKey: "vm-owners"), let saved = try? JSONDecoder().decode([String: ProvisionedOwner].self, from: data) { vmOwners = saved }
-        if let data = UserDefaults.standard.data(forKey: "gateways"), let saved = try? JSONDecoder().decode([GatewayEndpoint].self, from: data) { endpoints = saved }
+    var vmDeletionControllers: Set<UUID> = []
+    private let preferences: UserDefaults
+    init(preferences: UserDefaults = .standard) {
+        self.preferences = preferences
+        if let data = preferences.data(forKey: "vm-owners"), let saved = try? JSONDecoder().decode([String: ProvisionedOwner].self, from: data) { vmOwners = saved }
+        if let data = preferences.data(forKey: "gateways"), let saved = try? JSONDecoder().decode([GatewayEndpoint].self, from: data) { endpoints = saved }
     }
     func add(label: String, address: String, token: String) async throws {
         guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let url = URL(string: address) else { throw GatewayError.message("Enter a gateway URL and access token.") }
@@ -22,7 +25,7 @@ import HermesGateway
         try GatewayKeychain.save(token, id: endpoint.id)
         endpoints.append(endpoint); clients[endpoint.id] = client
         bots += rows["profiles"].array.map { Bot(endpointID: endpoint.id, row: $0) }
-        UserDefaults.standard.set(try JSONEncoder().encode(endpoints), forKey: "gateways")
+        preferences.set(try JSONEncoder().encode(endpoints), forKey: "gateways")
     }
     func client(for id: UUID) async throws -> GatewayClient {
         if let client = clients[id], client.connected { return client }
@@ -33,7 +36,7 @@ import HermesGateway
     }
     func refresh() async {
         guard !loading else { return }
-        loading = true; error = nil
+        loading = true; error = nil; vmDeletionControllers.removeAll()
         defer { loading = false }
         for endpoint in endpoints {
             do {
@@ -41,6 +44,10 @@ import HermesGateway
                 let result = try await client.request("profiles.list", ["include_sessions": .bool(true)])
                 bots.removeAll { $0.endpointID == endpoint.id }
                 bots += result["profiles"].array.map { Bot(endpointID: endpoint.id, row: $0) }
+                if vmOwners.values.contains(where: { $0.mainID == endpoint.id }),
+                   let capabilities = try? await client.http("api/plugins/bot-provisioning/v1/capabilities"), capabilities["vm_delete"].bool {
+                    vmDeletionControllers.insert(endpoint.id)
+                }
             } catch { self.error = "\(endpoint.label): \(error.localizedDescription)" }
         }
     }
@@ -59,7 +66,7 @@ import HermesGateway
             for row in rows {
                 guard let owner = ProvisionedOwner.matchingRegistryRow(row, main: main, gateway: endpoint) else { continue }
                 vmOwners[id.uuidString] = owner
-                UserDefaults.standard.set(try JSONEncoder().encode(vmOwners), forKey: "vm-owners")
+                preferences.set(try JSONEncoder().encode(vmOwners), forKey: "vm-owners")
                 return owner
             }
         }
@@ -73,6 +80,27 @@ import HermesGateway
         }
         guard let endpoint = endpoints.first(where: { $0.baseURL == url }), let owner = ProvisionedOwner.matchingRegistryRow(row, main: main, gateway: endpoint) else { throw GatewayError.message("Missing provisioned VM identity.") }
         vmOwners[endpoint.id.uuidString] = owner
-        UserDefaults.standard.set(try JSONEncoder().encode(vmOwners), forKey: "vm-owners")
+        preferences.set(try JSONEncoder().encode(vmOwners), forKey: "vm-owners")
     }
+    func recordManagedOwner(_ row: JSON, mainID: UUID) throws {
+        guard let main = endpoints.first(where: { $0.id == mainID }) else { return }
+        for endpoint in endpoints {
+            if let owner = ProvisionedOwner.matchingRegistryRow(row, main: main, gateway: endpoint) { vmOwners[endpoint.id.uuidString] = owner }
+        }
+        preferences.set(try JSONEncoder().encode(vmOwners), forKey: "vm-owners")
+    }
+    func removeDeletedVM(mainID: UUID, requestID: String, removeCredential: (UUID) throws -> Void = GatewayKeychain.remove) throws {
+        let removed = Set(endpoints.compactMap { endpoint -> UUID? in
+            guard endpoint.id != mainID, let owner = vmOwners[endpoint.id.uuidString], owner.mainID == mainID,
+                  owner.requestID == requestID, owner.owns(endpoint) else { return nil }
+            return endpoint.id
+        })
+        for id in removed { try removeCredential(id) }
+        for id in removed { clients.removeValue(forKey: id)?.disconnect(); vmOwners.removeValue(forKey: id.uuidString) }
+        endpoints.removeAll { removed.contains($0.id) }
+        bots.removeAll { removed.contains($0.endpointID) }
+        preferences.set(try JSONEncoder().encode(endpoints), forKey: "gateways")
+        preferences.set(try JSONEncoder().encode(vmOwners), forKey: "vm-owners")
+    }
+
 }

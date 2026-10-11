@@ -15,6 +15,7 @@ struct CreateBotView: View {
     @State private var requests: [JSON] = []
     @State private var error: String?
     @State private var working = false
+    @State private var deleting: VMDeletionTarget?
     @State private var submission = BotCreationSubmission()
     @State private var password = ""
     @State private var passwordConfirmation = ""
@@ -73,6 +74,10 @@ struct CreateBotView: View {
                                 Text(request["name"].string ?? "Bot").font(.headline)
                                 Text(request["phase"].string ?? "Unknown").foregroundStyle(.secondary)
                                 if let message = request["error"]["message"].string { Text(message).foregroundStyle(.red) }
+                                if capabilities["vm_delete"].bool, request["phase"].string != "deleted", let gatewayID,
+                                   let id = request["request_id"].string, let target = VMDeletionTarget(mainID: gatewayID, requestID: id) {
+                                    Button("Delete Bot and VM…", role: .destructive) { deleting = target }.disabled(working)
+                                }
                                 if request["phase"].string == "ready" {
                                     Button("Connect Bot") { Task { await connect(request) } }.disabled(working)
                                 }
@@ -83,6 +88,7 @@ struct CreateBotView: View {
             }
             .navigationTitle("Create Bot").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .sheet(item: $deleting, onDismiss: { Task { await refreshRequests() } }) { target in VMDeletionView(target: target, store: store) }
             .onDisappear { password = ""; passwordConfirmation = "" }
             .onChange(of: gatewayID) { _, _ in password = ""; passwordConfirmation = "" }
             .task { if gatewayID == nil { gatewayID = mainEndpoints.first?.id } }
@@ -148,7 +154,11 @@ struct CreateBotView: View {
     private func connect(_ request: JSON) async {
         guard let main = store.endpoints.first(where: { $0.id == gatewayID }) else { return }
         working = true; defer { working = false }
-        do { try await store.addProvisioned(request, main: main); dismiss() }
+        do {
+            try await store.addProvisioned(request, main: main)
+            if capabilities["vm_delete"].bool { store.vmDeletionControllers.insert(main.id) }
+            dismiss()
+        }
         catch { self.error = error.localizedDescription }
     }
 }
