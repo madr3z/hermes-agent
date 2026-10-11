@@ -7,7 +7,7 @@ struct BotAvatar: View {
             .font(.title2.weight(.medium))
             .foregroundStyle(.tint)
             .frame(width: size, height: size)
-            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
             .accessibilityHidden(true)
     }
 }
@@ -16,13 +16,35 @@ struct BotIdentityLabel: View {
     let name: String
     let detail: String
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             BotAvatar()
             VStack(alignment: .leading, spacing: 4) {
-                Text(name).font(.headline)
+                Text(name).font(.title3.weight(.semibold))
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
             }
-        }.padding(.vertical, 4)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct PhoneFeatureRow: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.medium)).foregroundStyle(.tint)
+                .frame(width: 30, height: 30)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.body.weight(.medium)).foregroundStyle(.primary)
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }.padding(.vertical, 7)
     }
 }
 
@@ -31,13 +53,14 @@ struct PhoneNotice: View {
     let message: String
     var systemImage = "exclamationmark.triangle"
     var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage).foregroundStyle(.tint)
+                .font(.body).padding(.top, 2).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(message).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
             }
-        } icon: {
-            Image(systemName: systemImage).foregroundStyle(.tint)
+            Spacer(minLength: 0)
         }
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)

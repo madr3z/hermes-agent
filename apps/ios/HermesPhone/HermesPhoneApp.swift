@@ -35,8 +35,11 @@ struct RosterView: View {
                     }.listRowBackground(Color.clear)
                 } else {
                     Section {
-                        Text("Your bots keep working when you close Hermes.")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("A little help, always here.").font(.title2.weight(.semibold))
+                            Text("Pick a bot to keep the conversation going.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }.padding(.vertical, 8)
                         if store.loading { ProgressView("Refreshing bots…") }
                     }.listRowBackground(Color.clear)
                 }
@@ -51,14 +54,14 @@ struct RosterView: View {
                                 HStack(alignment: .top, spacing: 12) {
                                     BotAvatar()
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(bot.name).font(.headline)
+                                        Text(bot.name).font(.headline).foregroundStyle(.primary)
                                         Text(bot.preview.isEmpty ? "Start a conversation" : bot.preview)
                                             .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                                         if bot.profile != bot.name {
-                                            Text("Profile: \(bot.profile)").font(.caption).foregroundStyle(.secondary)
+                                            Text(bot.profile).font(.caption).foregroundStyle(.tertiary)
                                         }
                                     }
-                                }.padding(.vertical, 6)
+                                }.padding(.vertical, 12)
                             }
                             .accessibilityHint("Opens the saved conversation with \(bot.name)")
                         }
@@ -66,7 +69,7 @@ struct RosterView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(endpoint.label).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                Text(endpoint.baseURL.path.contains("/gateways/") ? "Bot gateway" : "Controller")
+                                Label(endpoint.baseURL.path.contains("/gateways/") ? "Bot computer" : "Controller", systemImage: endpoint.baseURL.path.contains("/gateways/") ? "desktopcomputer" : "network")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -93,7 +96,7 @@ struct RosterView: View {
                     }
                 }
                 Section {
-                    Label("Conversations stay on your gateway. Access is saved securely on this iPhone.", systemImage: "lock.shield")
+                    Label("Your conversations stay on your gateway.", systemImage: "lock.shield")
                         .font(.footnote).foregroundStyle(.secondary)
                 }.listRowBackground(Color.clear)
             }
@@ -179,8 +182,8 @@ struct GatewayForm: View {
                 Section {
                     PhoneNotice(title: existing == nil ? "Connect to Hermes" : "Reconnect your controller", message: "Use the HTTPS address of your Hermes controller.", systemImage: "network")
                 }
-                Section("Gateway") {
-                    TextField("Gateway name", text: $label).disabled(existing != nil).accessibilityIdentifier("gatewayName")
+                Section("Your controller") {
+                    TextField("Name, e.g. Home", text: $label).disabled(existing != nil).accessibilityIdentifier("gatewayName")
                     TextField("https://hermes.example.com", text: $address).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(existing != nil).accessibilityIdentifier("gatewayURL")
                 }.disabled(connecting)
                 Section("Controller login") {
@@ -205,7 +208,7 @@ struct GatewayForm: View {
                 }.buttonStyle(.borderedProminent).frame(maxWidth: .infinity).listRowBackground(Color.clear).disabled(connecting || address.isEmpty || (method == .password ? username.isEmpty || password.isEmpty : token.isEmpty)).accessibilityIdentifier("saveGateway")
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(existing == nil ? "Connect Gateway" : "Sign in again").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(existing == nil ? "Connect to Hermes" : "Sign in again").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connecting) } }
             .onChange(of: address) { _, _ in clearSecrets(); providers = []; provider = "" }
             .onChange(of: method) { _, _ in clearSecrets() }

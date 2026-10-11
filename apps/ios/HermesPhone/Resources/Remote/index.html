@@ -6,8 +6,8 @@ html,body { margin:0; height:100%; overflow:hidden; background:#101419; color:#f
 body { display:flex; flex-direction:column; }
 #surface { flex:1; min-height:0; overflow:hidden; touch-action:none; }
 #tools { display:flex; gap:5px; overflow-x:auto; padding:8px; flex-shrink:0; }
-button { background:#273340; color:white; border:0; border-radius:7px; padding:10px 12px; font-size:15px; white-space:nowrap; }
+button { background:#273340; color:white; border:0; border-radius:12px; min-width:44px; min-height:44px; padding:10px 14px; font-size:15px; white-space:nowrap; }
 button.selected { background:#246bcc; }
-#keyboard { font-size:16px; height:40px; resize:none; background:#fff; color:#111; }
+#keyboard { font-size:16px; min-height:44px; resize:none; background:#fff; color:#111; }
 .xterm { height:100%; padding:0 4px; }
 </style></head><body><div id="surface"></div><textarea id="keyboard" hidden autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Type on remote desktop" placeholder="Type on remote desktop"></textarea><div id="tools" aria-label="Remote keyboard and viewport controls"></div><script src="renderer.js"></script></body></html>

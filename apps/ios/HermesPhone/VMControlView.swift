@@ -16,21 +16,38 @@ struct VMControlView: View {
             DisclosureGroup {
                 powerPanel
             } label: {
-                Label("VM power · \(power.phase.capitalized)", systemImage: "power")
+                Label("\(control.bot.name) · \(power.phase.capitalized)", systemImage: "desktopcomputer")
                     .font(.subheadline.weight(.medium)).frame(minHeight: 44)
             }.padding(.horizontal).background(Color(uiColor: .secondarySystemBackground))
             Picker("Remote view", selection: $control.mode) {
                 ForEach(RemoteControl.Mode.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8)
             remoteStatus
-            RemoteSurface(control: control).frame(maxWidth: .infinity, maxHeight: .infinity)
+            RemoteSurface(control: control)
+                .overlay {
+                    if !control.connected {
+                        VStack(spacing: 14) {
+                            Image(systemName: control.mode == .display ? "desktopcomputer" : "terminal")
+                                .font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
+                            Text(control.working ? "Connecting to your computer…" : "Your bot’s computer")
+                                .font(.headline)
+                            Text(control.working ? "Opening a secure remote view." : "Reconnect to view the screen. Your bot keeps working when you leave.")
+                                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            if control.working { ProgressView() }
+                        }
+                        .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .allowsHitTesting(false)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             if let error = control.error { PhoneNotice(title: "Remote connection", message: error).padding(12) }
             if control.mode == .display {
                 Button("Screen gestures and keyboard", systemImage: "hand.pinch") { showHelp = true }.font(.subheadline).frame(minHeight: 44)
             }
         }
         .background(Color(uiColor: .systemBackground))
-        .navigationTitle("\(control.bot.name) VM").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Computer").navigationBarTitleDisplayMode(.inline)
         .task {
             async let vmStatus: () = power.load(bot: control.bot, store: store)
             async let remote: () = control.open(store: store)

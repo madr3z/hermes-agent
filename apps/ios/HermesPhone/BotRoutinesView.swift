@@ -42,10 +42,11 @@ struct BotRoutinesView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(job.displayName(profile: bot.profile)).font(.headline)
                             Text(job.schedule).font(.subheadline).foregroundStyle(.secondary)
+                            if !job.prompt.isEmpty { Text(job.prompt).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
                             Label(job.enabled ? job.state.capitalized : "Paused", systemImage: job.enabled ? "clock" : "pause.circle")
                                 .font(.subheadline).foregroundStyle(.secondary)
                             if let next = job.nextRun, job.enabled { Text("Next: \(routineDate(next))").font(.subheadline).foregroundStyle(.secondary) }
-                        }.padding(.vertical, 3)
+                        }.padding(.vertical, 9)
                     }
                     .swipeActions {
                         Button("Delete", role: .destructive) { removal = job }

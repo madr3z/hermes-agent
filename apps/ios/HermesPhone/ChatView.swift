@@ -25,7 +25,7 @@ struct ChatView: View {
                     LoginHandoffCards(chat: chat)
                     ChatActivityView(activity: chat.activity, botName: chat.bot.name).id("activity")
                     Color.clear.frame(height: 1).id("bottom")
-                }.padding(.horizontal, 16).padding(.vertical, 20)
+                }.padding(.horizontal, 20).padding(.vertical, 24)
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
@@ -50,11 +50,10 @@ struct ChatView: View {
                     .accessibilityLabel("Voice call with \(chat.bot.name)")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    NavigationLink { ConnectorsView(bot: chat.bot, store: store) } label: { Label("Connectors", systemImage: "puzzlepiece.extension") }
-                    NavigationLink { BotToolsView(bot: chat.bot, store: store, runtimeID: chat.runtimeID) } label: { Label("Bot tools", systemImage: "slider.horizontal.3") }
-                    NavigationLink { VMControlView(bot: chat.bot, store: store) } label: { Label("VM screen and terminal", systemImage: "desktopcomputer") }
-                } label: { Label("Bot options", systemImage: "ellipsis.circle") }
+                NavigationLink {
+                    BotToolsView(bot: chat.bot, store: store, runtimeID: chat.runtimeID)
+                } label: { Image(systemName: "slider.horizontal.3") }
+                .accessibilityLabel("Settings for \(chat.bot.name)")
             }
         }
         .task { await chat.open(store: store) }
@@ -80,6 +79,7 @@ struct ChatView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             if let error = chat.voice.error { PhoneNotice(title: "Voice call", message: error, systemImage: "phone.badge.exclamationmark") }
+            if !chat.connected || chat.busy {
             HStack {
                 Label(chat.status, systemImage: chat.connected ? "checkmark.circle" : "network")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -89,6 +89,7 @@ struct ChatView: View {
                     Button("Stop", systemImage: "stop.circle") { Task { await chat.interrupt() } }
                         .font(.subheadline).frame(minHeight: 44)
                 }
+            }
             }
             if importingPhotos { ProgressView("Preparing photos…").font(.subheadline) }
             if !chat.uploads.isEmpty {
@@ -114,8 +115,8 @@ struct ChatView: View {
                 } label: { Image(systemName: "plus").font(.title3).frame(width: 44, height: 44) }
                 .accessibilityLabel("Attach photos or files").disabled(chat.sending || importingPhotos)
                 TextField("Message \(chat.bot.name)", text: $chat.draft, axis: .vertical)
-                    .lineLimit(1...6).padding(.horizontal, 14).padding(.vertical, 12)
-                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22))
+                    .lineLimit(1...6).padding(.vertical, 12)
+                    .accessibilityLabel("Message \(chat.bot.name)")
                     .focused($composerFocused).accessibilityIdentifier("chatComposer")
                 Button { Task { await chat.send() } } label: {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 34)).frame(width: 44, height: 44)
@@ -123,7 +124,10 @@ struct ChatView: View {
                 .disabled(!chat.connected || chat.loading || chat.sending || importingPhotos || (chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && chat.uploads.isEmpty))
                 .accessibilityLabel(chat.busy ? "Queue message" : "Send message")
             }
-        }.padding(.horizontal, 12).padding(.vertical, 8).background(.bar)
+            .padding(.horizontal, 6)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28))
+            .overlay { RoundedRectangle(cornerRadius: 28).strokeBorder(Color.primary.opacity(0.07)) }
+        }.padding(.horizontal, 16).padding(.vertical, 10).background(.bar)
     }
     private func importPhotos() async {
         guard !photos.isEmpty else { return }

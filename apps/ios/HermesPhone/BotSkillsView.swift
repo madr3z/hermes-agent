@@ -33,12 +33,14 @@ struct BotSkillsView: View {
             ForEach(Array(Set(visible.map(\.category))).sorted(), id: \.self) { category in
                 Section(category) {
                     ForEach(visible.filter { $0.category == category }) { skill in
-                        Text(skill.name).font(.body).textSelection(.enabled)
+                        Label { Text(skill.name).textSelection(.enabled) } icon: {
+                            Image(systemName: "text.book.closed").foregroundStyle(.tint).accessibilityHidden(true)
+                        }.padding(.vertical, 6)
                     }
                 }
             }
         }
-        .navigationTitle("Installed skills").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Skills").navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a skill or category")
         .task { await load() }
         .refreshable { await load() }

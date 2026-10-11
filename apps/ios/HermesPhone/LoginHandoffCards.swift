@@ -19,28 +19,10 @@ struct LoginHandoffCards: View {
                 }.disabled(login.working || !chat.connected)
             }
             ForEach(login.requests) { request in
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("Sign in · \(request.name)", systemImage: "person.badge.key.fill").font(.headline)
-                    Text("For \(chat.bot.name) · \(chat.bot.profile)").font(.subheadline).foregroundStyle(.secondary)
-                    Text(request.detail).font(.callout)
-                    Text(request.scopes.isEmpty ? "Review the requested permissions on the provider's consent screen." : "Permissions: " + request.scopes.joined(separator: ", ")).font(.footnote).foregroundStyle(.secondary)
-                    if let identity = request.verifiedIdentity { Text("Verified Google account: " + identity).font(.footnote) }
-                    if !request.accountReference.isEmpty { Text("Account slot: \(request.accountReference)").font(.caption).textSelection(.enabled) }
-                    if !request.userCode.isEmpty {
-                        Text(request.userCode).font(.title2.monospaced()).textSelection(.enabled).accessibilityLabel("Device code \(request.userCode)")
-                        Text("Enter this code only for the sign-in you requested for this bot.").font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if request.status == "authorized" {
-                        Label(request.continued ? "Task continuation submitted" : "Authorization saved on this bot", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                        if !request.continued { Button("Confirm account and continue task") { Task { await login.act("continue", request: request, chat: chat) } }.buttonStyle(.borderedProminent).controlSize(.large) }
-                    } else {
-                        ViewThatFits(in: .horizontal) {
-                            HStack { signInButtons(request) }
-                            VStack(alignment: .leading) { signInButtons(request) }
-                        }
-                    }
-                    Text("API authorization stays on this bot. For other website logins, use this bot's VM controls.").font(.caption).foregroundStyle(.secondary)
-                }.padding().frame(maxWidth: .infinity, alignment: .leading).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+                LoginHandoffCard(request: request, botName: chat.bot.name, working: login.working,
+                    signIn: { Task { await login.signIn(request, chat: chat) } },
+                    cancel: { Task { await login.act("cancel", request: request, chat: chat) } },
+                    continueTask: { Task { await login.act("continue", request: request, chat: chat) } })
             }
             if login.working { ProgressView("Preparing secure sign-in…") }
             if let error = login.error { PhoneNotice(title: "Sign-in needs attention", message: error) }
@@ -54,13 +36,64 @@ struct LoginHandoffCards: View {
         }
         .onDisappear { login.closeBrowser() }
     }
-    @ViewBuilder private func signInButtons(_ request: LoginHandoff) -> some View {
-        Button(request.canRetry ? "Retry sign-in" : "Sign in") { Task { await login.signIn(request, chat: chat) } }
-            .buttonStyle(.borderedProminent).controlSize(.large).disabled(login.working)
-        Button("Cancel", role: .cancel) { Task { await login.act("cancel", request: request, chat: chat) } }
-            .buttonStyle(.bordered).controlSize(.large)
-    }
+}
 
+struct LoginHandoffCard: View {
+    let request: LoginHandoff
+    let botName: String
+    let working: Bool
+    let signIn: () -> Void
+    let cancel: () -> Void
+    let continueTask: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: request.status == "authorized" ? "checkmark.shield" : "person.badge.key")
+                    .font(.title2).foregroundStyle(.tint).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(request.status == "authorized" ? "Account connected" : "Sign in to continue").font(.headline)
+                    Text(request.name + " · " + botName).font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            Text(request.detail).font(.body).fixedSize(horizontal: false, vertical: true)
+            if let identity = request.verifiedIdentity {
+                Label(identity, systemImage: "checkmark.seal").font(.subheadline)
+            }
+            if !request.userCode.isEmpty {
+                Text(request.userCode).font(.title2.monospaced().weight(.semibold))
+                    .textSelection(.enabled).accessibilityLabel("Device code \(request.userCode)")
+                Text("Enter this code only for the sign-in you requested.").font(.footnote).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("Permissions and account") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(request.scopes.isEmpty ? "Review the permissions on the provider’s consent screen." : request.scopes.joined(separator: ", "))
+                    if !request.accountReference.isEmpty { Text("Account: \(request.accountReference)").textSelection(.enabled) }
+                    Text("Authorization stays on this bot. Use Computer for other website logins.")
+                }.font(.footnote).foregroundStyle(.secondary).padding(.top, 6)
+            }.font(.subheadline)
+            if request.status == "authorized" {
+                if request.continued {
+                    Label("Task continuation submitted", systemImage: "checkmark.circle").font(.subheadline)
+                } else {
+                    Button("Confirm account and continue", action: continueTask)
+                        .buttonStyle(.borderedProminent).controlSize(.large).disabled(working)
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { actions }
+                    VStack(alignment: .leading, spacing: 12) { actions }
+                }
+            }
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
+        .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(Color.accentColor.opacity(0.15)) }
+    }
+    @ViewBuilder private var actions: some View {
+        Button(request.canRetry ? "Retry sign-in" : "Sign in", action: signIn)
+            .buttonStyle(.borderedProminent).controlSize(.large).disabled(working)
+        Button("Cancel", role: .cancel, action: cancel).buttonStyle(.bordered).controlSize(.large)
+    }
 }
 
 @MainActor @Observable private final class ChatLoginController: NSObject, ASWebAuthenticationPresentationContextProviding {

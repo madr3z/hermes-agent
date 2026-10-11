@@ -32,6 +32,7 @@ private struct BotConnectorsView: View {
                     if let notice = connectors.notice { PhoneNotice(title: "Connection update", message: notice, systemImage: "info.circle") }
                 }
             }
+            mcpSection
             Section {
                 Button("Add iCloud account", systemImage: "icloud") { sheet = .icloud }
                 Menu("Add another account", systemImage: "person.crop.circle.badge.plus") {
@@ -44,7 +45,6 @@ private struct BotConnectorsView: View {
                 Text("Each account has its own ID and credentials. Labels can repeat. The connector must be installed on this bot’s VM.")
             }
             .disabled(connectors.api == nil || connectors.working || connectors.loading)
-            mcpSection
             pluginSection
             hostedSection
         }
@@ -76,44 +76,62 @@ private struct BotConnectorsView: View {
         } message: { Text("This disconnects this account and removes its local OAuth grant and unshared account credentials. Other accounts are kept. It does not revoke access at the provider.") }
     }
     private var mcpSection: some View {
-        Section("MCP servers") {
+        Section("Connected accounts") {
             ForEach(connectors.servers) { server in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(server.label).font(.headline)
-                    Text(server.provider).font(.caption).foregroundStyle(.secondary)
-                    if let identity = server.verifiedIdentity {
-                        Text("Verified account: " + identity).font(.footnote)
-                    } else if !server.requestedIdentity.isEmpty {
-                        Text("Requested account: " + server.requestedIdentity + " · Identity not verified").font(.footnote).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: server.provider.contains("icloud") ? "icloud" : "puzzlepiece.extension")
+                            .font(.title3).foregroundStyle(.tint)
+                            .frame(width: 40, height: 40)
+                            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(server.label).font(.headline)
+                            if let identity = server.verifiedIdentity {
+                                Label(identity, systemImage: "checkmark.seal").font(.subheadline).foregroundStyle(.secondary)
+                            } else if !server.requestedIdentity.isEmpty {
+                                Text(server.requestedIdentity).font(.subheadline).foregroundStyle(.secondary)
+                                Text("Account not yet verified").font(.caption).foregroundStyle(.secondary)
+                            } else { Text(server.provider).font(.subheadline).foregroundStyle(.secondary) }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Status: " + server.status).font(.footnote).foregroundStyle(.secondary)
-                    Text("Account ID: " + server.id).font(.caption2.monospaced()).textSelection(.enabled)
-                    Text(server.target).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Label(server.enabled ? "Enabled · \(server.transport)" : "Disabled", systemImage: server.enabled ? "checkmark.circle" : "pause.circle").font(.subheadline).foregroundStyle(.secondary)
+                    Label(!server.enabled ? "Disabled" : server.auth == "oauth" && !server.authorized ? "Sign-in required" : server.status.capitalized,
+                          systemImage: !server.enabled ? "pause.circle" : server.auth == "oauth" && !server.authorized ? "person.crop.circle.badge.exclamationmark" : "link")
+                        .font(.subheadline).foregroundStyle(.secondary)
                     if server.auth == "oauth" {
-                        Text(server.authorized ? "Saved OAuth authorization" : "Sign-in required")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        Button(server.authorized ? "Reconnect" : "Sign in") { sheet = .oauth(server) }.font(.subheadline).buttonStyle(.borderless).frame(minHeight: 44)
+                        Button(server.authorized ? "Reconnect account" : "Sign in", systemImage: "person.crop.circle") { sheet = .oauth(server) }
+                            .font(.subheadline).buttonStyle(.bordered).controlSize(.large)
                     }
-                    if let plugin = server.plugin {
-                        Text("Managed by plugin \(plugin)").font(.footnote).foregroundStyle(.secondary)
-                    } else {
-                        HStack {
-                            Button("Test") { test(server) }
-                            if server.transport == "http", server.auth != "oauth" {
-                                Button("Credentials") { sheet = .credential(server) }
+                    DisclosureGroup("Connection details") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            LabeledContent("Provider", value: server.provider)
+                            LabeledContent("Transport", value: server.transport)
+                            Text("Account ID: " + server.id).font(.caption.monospaced()).textSelection(.enabled)
+                            Text(server.target).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            if server.auth == "oauth", server.authorized { Text("OAuth authorization saved").font(.caption) }
+                            if let plugin = server.plugin { Text("Managed by plugin \(plugin)").font(.footnote) }
+                            else {
+                                ViewThatFits(in: .horizontal) {
+                                    HStack { accountActions(server) }
+                                    VStack(alignment: .leading) { accountActions(server) }
+                                }
                             }
-                            Spacer()
-                            Button("Remove", role: .destructive) { removal = server }
-                        }.font(.subheadline).buttonStyle(.borderless).frame(minHeight: 44)
-                    }
-                }.padding(.vertical, 4)
+                        }.padding(.top, 8)
+                    }.font(.subheadline).tint(.secondary)
+                }.padding(.vertical, 10)
             }
             sectionError("MCP servers")
-            if connectors.servers.isEmpty, connectors.sectionErrors["MCP servers"] == nil, !connectors.loading { Text("No MCP servers configured.").foregroundStyle(.secondary) }
-            Button("Add MCP server", systemImage: "plus.circle") { sheet = .mcp }.disabled(connectors.api == nil || connectors.working || connectors.loading)
+            if connectors.servers.isEmpty, connectors.sectionErrors["MCP servers"] == nil, !connectors.loading { PhoneNotice(title: "Bring your accounts along", message: "Connect a service below so this bot can work with it.", systemImage: "puzzlepiece.extension") }
 
         }.disabled(connectors.working)
+    }
+    @ViewBuilder private func accountActions(_ server: MCPConnection) -> some View {
+        Button("Test connection") { test(server) }.frame(minHeight: 44).buttonStyle(.borderless)
+        if server.transport == "http", server.auth != "oauth" {
+            Button("Credentials") { sheet = .credential(server) }.frame(minHeight: 44).buttonStyle(.borderless)
+        }
+        Button("Remove…", role: .destructive) { removal = server }.frame(minHeight: 44).buttonStyle(.borderless)
     }
     private var pluginSection: some View {
         Section("Plugins") {

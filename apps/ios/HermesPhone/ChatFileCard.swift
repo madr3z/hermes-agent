@@ -21,8 +21,16 @@ struct ChatFileCard: View {
                     .accessibilityLabel("Preview \(attachment.name)")
             }
             HStack(alignment: .top) {
-                Image(systemName: attachment.isImage ? "photo" : "doc")
-                Text(attachment.name).font(.subheadline.weight(.medium)).lineLimit(2)
+                Image(systemName: attachment.isImage ? "photo" : "doc.text")
+                    .font(.title3).foregroundStyle(.tint)
+                    .frame(width: 36, height: 36)
+                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(attachment.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+                    Text(downloading ? "Downloading…" : localURL == nil ? "File from your bot" : "Ready to preview")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 0)
                 if downloading { ProgressView().controlSize(.small) }
             }
@@ -36,7 +44,7 @@ struct ChatFileCard: View {
                 }
             }.font(.subheadline).buttonStyle(.bordered).controlSize(.large)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
-        }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
             .quickLookPreview($previewURL)
             .task(id: ownerKey + ":\(requestID)") {
                 removeLocalFile()

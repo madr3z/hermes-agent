@@ -41,7 +41,9 @@ private struct BotModelPage: View {
             if let inventory {
                 Section("Current model") {
                     LabeledContent("Provider", value: inventory.currentProvider?["name"].string ?? inventory.provider)
-                    Text(inventory.model.isEmpty ? "No model selected" : inventory.model).textSelection(.enabled)
+                    Label {
+                        Text(inventory.model.isEmpty ? "No model selected" : inventory.model).font(.title3.weight(.semibold)).textSelection(.enabled)
+                    } icon: { Image(systemName: "cpu").foregroundStyle(.tint) }.padding(.vertical, 6)
                     if let warning = inventory.currentProvider?["warning"].string { Text(warning).font(.subheadline).foregroundStyle(.secondary) }
                 }
                 if let usage = inventory.currentProvider?["usage"], usage != .null { BotUsageSection(usage: usage) }
@@ -63,7 +65,7 @@ private struct BotModelPage: View {
                 if inventory.availableModels.isEmpty { Text("No selectable models are available from this provider.").foregroundStyle(.secondary) }
             }
         }
-        .navigationTitle("Model and status").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Model and usage").navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a model")
         .task(id: runtimeID) { await load() }
         .refreshable { await load() }

@@ -10,19 +10,28 @@ struct ChatMessageView: View {
     var body: some View {
         if let name = message.toolName {
             DisclosureGroup {
-                Text(message.text).font(.callout.monospaced()).textSelection(.enabled)
+                ScrollView(.horizontal) {
+                    Text(message.text).font(.callout.monospaced()).textSelection(.enabled)
+                        .fixedSize(horizontal: true, vertical: false)
+                }.padding(.top, 8)
             } label: {
                 HStack(spacing: 8) {
                     if message.toolRunning { ProgressView().controlSize(.mini) }
                     else { Image(systemName: "checkmark.circle").foregroundStyle(.secondary) }
-                    Text(name.replacingOccurrences(of: "_", with: " ")).font(.caption.weight(.medium))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(name.replacingOccurrences(of: "_", with: " ").capitalized).font(.subheadline.weight(.medium))
+                        Text(message.toolRunning ? "Working…" : "View result").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-            }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
         } else {
             HStack(alignment: .top) {
                 if message.role == "user" { Spacer(minLength: 36) }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(message.role == "user" ? "You" : botName).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        if message.role != "user" { Image(systemName: "sparkles").foregroundStyle(.tint).accessibilityHidden(true) }
+                        Text(message.role == "user" ? "You" : botName).foregroundStyle(.secondary)
+                    }.font(.caption.weight(.semibold))
                     if message.voice { Label("GPT Live", systemImage: "waveform").font(.caption).foregroundStyle(.secondary) }
                     let content = ChatContent.parse(message.text)
                     ForEach(content.blocks) { block in
@@ -32,8 +41,8 @@ struct ChatMessageView: View {
                     ForEach(content.attachments) { attachment in
                         ChatFileCard(attachment: attachment, client: client, profile: profile, storedSessionID: storedSessionID)
                     }
-                }.padding(message.role == "user" ? 14 : 0)
-                    .background(message.role == "user" ? Color.accentColor.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 18))
+                }.padding(message.role == "user" ? 16 : 0)
+                    .background(message.role == "user" ? Color.accentColor.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 20))
                 if message.role != "user" { Spacer(minLength: 12) }
             }
         }
@@ -43,7 +52,7 @@ struct ChatMessageView: View {
 private struct ChatMarkdown: View {
     let text: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(text.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
                 let heading = line.prefix(while: { $0 == "#" }).count
                 let isHeading = (1...6).contains(heading) && line.dropFirst(heading).hasPrefix(" ")
@@ -52,10 +61,15 @@ private struct ChatMarkdown: View {
                 let body = isHeading ? String(line.dropFirst(heading + 1)) : quote || list ? String(line.dropFirst(2)) : line
                 HStack(alignment: .top, spacing: 8) {
                     if list { Text("•") }
-                    if quote { Rectangle().fill(.secondary).frame(width: 2) }
+                    if quote { RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.4)).frame(width: 3) }
                     Text((try? AttributedString(markdown: body, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(body))
-                        .font(isHeading ? .headline : .body).textSelection(.enabled)
+                        .font(isHeading ? (heading <= 2 ? .title3.weight(.semibold) : .headline) : .body)
+                        .lineSpacing(4)
+                        .foregroundStyle(quote ? .secondary : .primary)
+                        .textSelection(.enabled)
+                        .accessibilityAddTraits(isHeading ? .isHeader : [])
                 }.fixedSize(horizontal: false, vertical: true)
+                .padding(.top, isHeading ? 4 : 0)
             }
         }
         .environment(\.openURL, OpenURLAction { url in
@@ -71,12 +85,14 @@ private struct ChatCodeBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(block.language.isEmpty ? "Code" : block.language).font(.caption).foregroundStyle(.secondary)
+                Label(block.language.isEmpty ? "Code" : block.language, systemImage: "chevron.left.forwardslash.chevron.right")
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 Spacer()
                 Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") { UIPasteboard.general.string = block.text; copied = true }.font(.subheadline).frame(minHeight: 44)
                     .accessibilityLabel(copied ? "Code copied" : "Copy code")
             }
             ScrollView(.horizontal) { Text(block.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: true, vertical: false) }
-        }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        }.padding(14).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .onChange(of: block.text) { _, _ in copied = false }
     }
 }
