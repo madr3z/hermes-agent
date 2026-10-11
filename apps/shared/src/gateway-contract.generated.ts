@@ -4317,6 +4317,12 @@ export interface McpOauthCallbackResult {
   session_id?: string | null
   error_message?: string | null
 }
+/** The shared catalog payload, with installed state scoped to the requested profile. */
+export interface PluginsCatalogResult {
+  entries: Record<string, unknown>[]
+  removed: Record<string, unknown>[]
+  generated_at: string
+}
 export type PluginsListParams = Record<string, never>
 export interface PluginsListResult {
   plugins: LegacyPluginRow[]
@@ -5287,6 +5293,8 @@ export interface RpcMethods {
   'pet.thumb': { params: PetThumbParams; result: PetThumbResult }
   /** Cheapest liveness probe; answered on the WS reader thread even while every agent is mid-turn. */
   ping: { params: PingParams; result: PingResult }
+  /** Curated plugin catalog with installed state for the selected profile. */
+  'plugins.catalog': { params: ProfileParams; result: PluginsCatalogResult }
   /** Loaded plugin manager entries (legacy flat view); the Plugins Hub uses plugins.manage list. */
   'plugins.list': { params: PluginsListParams; result: PluginsListResult }
   /** Plugins Hub backend: list installed plugins, toggle, git-install, re-pin a catalog install, or remove a user install. */
@@ -5674,6 +5682,7 @@ export const RPC_METHODS = [
   'pet.select',
   'pet.thumb',
   'ping',
+  'plugins.catalog',
   'plugins.list',
   'plugins.manage',
   'preview.restart',

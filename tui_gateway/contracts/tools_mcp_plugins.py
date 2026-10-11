@@ -563,6 +563,18 @@ method("mcp.servers.oauth.callback", params=McpOauthCallbackParams, result=McpOa
 # ── plugins ───────────────────────────────────────────────────────────────────────────────────
 
 
+class PluginsCatalogResult(Result):
+    """The shared catalog payload, with installed state scoped to the requested profile."""
+
+    entries: list[dict[str, JsonValue]]
+    removed: list[dict[str, JsonValue]]
+    generated_at: str
+
+
+method("plugins.catalog", params=ProfileParams, result=PluginsCatalogResult,
+       doc="Curated plugin catalog with installed state for the selected profile.")
+
+
 class PluginsListParams(Params):
     pass
 

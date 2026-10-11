@@ -2419,6 +2419,24 @@
       }
     },
     {
+      "name": "plugins.catalog",
+      "summary": "Curated plugin catalog with installed state for the selected profile.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ProfileParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/PluginsCatalogResult"
+        }
+      }
+    },
+    {
       "name": "plugins.list",
       "summary": "Loaded plugin manager entries (legacy flat view); the Plugins Hub uses plugins.manage list.",
       "params": [
@@ -22554,6 +22572,39 @@
         ],
         "title": "PluginsAction",
         "type": "string"
+      },
+      "PluginsCatalogResult": {
+        "additionalProperties": false,
+        "description": "The shared catalog payload, with installed state scoped to the requested profile.",
+        "properties": {
+          "entries": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "removed": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "removed",
+          "generated_at"
+        ],
+        "title": "PluginsCatalogResult",
+        "type": "object"
       },
       "PluginsListParams": {
         "additionalProperties": false,
