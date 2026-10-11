@@ -32,6 +32,8 @@ def server_configs_with_sources(config_servers: Mapping[str, dict]) -> tuple[dic
 def summarize_server(name: str, cfg: dict, plugin: str | None = None) -> dict[str, Any]:
     from hermes_cli.mcp_config import _oauth_tokens_present
     from tools.mcp_tool_common import mcp_server_enabled
+    from tools.connectors.account_instances import account_instance_summary
+    from hermes_constants import get_hermes_home
 
     cfg = cfg if isinstance(cfg, dict) else {}
     transport = "http" if cfg.get("url") else ("stdio" if cfg.get("command") else "unknown")
@@ -39,7 +41,12 @@ def summarize_server(name: str, cfg: dict, plugin: str | None = None) -> dict[st
     headers = cfg.get("headers") or {}
     if not auth and isinstance(headers, dict) and any(str(key).lower() == "authorization" for key in headers):
         auth = "header"
+    account = account_instance_summary(name, cfg, get_hermes_home())
+    if account["provider"] == "google-gmail":
+        from tools.connectors.login_handoff_google import verified_identity
+        account["verified_identity"] = verified_identity(get_hermes_home().resolve(), name, cfg)
     return {
+        **account,
         "name": name,
         "transport": transport,
         "url": cfg.get("url"),

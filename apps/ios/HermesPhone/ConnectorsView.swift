@@ -34,9 +34,14 @@ private struct BotConnectorsView: View {
             }
             Section {
                 Button("Add iCloud account", systemImage: "icloud") { sheet = .icloud }
-                Button("Add another account", systemImage: "person.crop.circle.badge.plus") { sheet = .stdioAccount }
+                Menu("Add another account", systemImage: "person.crop.circle.badge.plus") {
+                    Button("HTTPS / OAuth / bearer") { sheet = .mcp }
+                    Button("Command / API key") { sheet = .stdioAccount }
+                    Button("iCloud") { sheet = .icloud }
+                    Button("Google / Gmail · Advanced setup") { sheet = .google }
+                }
             } header: { Text("Add an account") } footer: {
-                Text("Use a separate name and credentials for each account. The connector must be installed on this bot’s VM.")
+                Text("Each account has its own ID and credentials. Labels can repeat. The connector must be installed on this bot’s VM.")
             }
             .disabled(connectors.api == nil || connectors.working || connectors.loading)
             mcpSection
@@ -50,6 +55,7 @@ private struct BotConnectorsView: View {
         .toolbar { Button("Refresh", systemImage: "arrow.clockwise") { Task { await connectors.load(store: store) } }.disabled(connectors.loading || connectors.working) }
         .sheet(item: $sheet) { selection in
             switch selection {
+            case .google: GoogleAccountConnectorView(connectors: connectors, store: store)
             case .mcp: AddMCPView(connectors: connectors, store: store)
             case .icloud: ICloudConnectorView(connectors: connectors, store: store)
             case .stdioAccount: StdioAccountConnectorView(connectors: connectors, store: store)
@@ -60,26 +66,34 @@ private struct BotConnectorsView: View {
             case .pluginSettings(let plugin): PluginSettingsView(plugin: plugin, connectors: connectors, store: store)
             }
         }
-        .confirmationDialog("Remove \(removal?.name ?? "MCP server") from \(bot.name)?", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } }), titleVisibility: .visible) {
+        .confirmationDialog("Remove \(removal?.label ?? "MCP server") from \(bot.name)?", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } }), titleVisibility: .visible) {
             if let selected = removal {
                 Button("Remove server", role: .destructive) {
                     removal = nil
                     Task { _ = await connectors.mutate(store: store) { try await $0.call("mcp.servers.remove", ["name": .string(selected.name)]) } }
                 }
             }
-        } message: { Text("This removes the saved server configuration. It does not delete an account at the provider.") }
+        } message: { Text("This disconnects this account and removes its local OAuth grant and unshared account credentials. Other accounts are kept. It does not revoke access at the provider.") }
     }
     private var mcpSection: some View {
         Section("MCP servers") {
             ForEach(connectors.servers) { server in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(server.name).font(.headline)
+                    Text(server.label).font(.headline)
+                    Text(server.provider).font(.caption).foregroundStyle(.secondary)
+                    if let identity = server.verifiedIdentity {
+                        Text("Verified account: " + identity).font(.footnote)
+                    } else if !server.requestedIdentity.isEmpty {
+                        Text("Requested account: " + server.requestedIdentity + " · Identity not verified").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Text("Status: " + server.status).font(.footnote).foregroundStyle(.secondary)
+                    Text("Account ID: " + server.id).font(.caption2.monospaced()).textSelection(.enabled)
                     Text(server.target).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     Label(server.enabled ? "Enabled · \(server.transport)" : "Disabled", systemImage: server.enabled ? "checkmark.circle" : "pause.circle").font(.subheadline).foregroundStyle(.secondary)
                     if server.auth == "oauth" {
                         Text(server.authorized ? "Saved OAuth authorization" : "Sign-in required")
                             .font(.footnote).foregroundStyle(.secondary)
-                        Button(server.authorized ? "Check sign-in" : "Sign in") { sheet = .oauth(server) }.font(.subheadline).buttonStyle(.borderless).frame(minHeight: 44)
+                        Button(server.authorized ? "Reconnect" : "Sign in") { sheet = .oauth(server) }.font(.subheadline).buttonStyle(.borderless).frame(minHeight: 44)
                     }
                     if let plugin = server.plugin {
                         Text("Managed by plugin \(plugin)").font(.footnote).foregroundStyle(.secondary)
@@ -144,15 +158,16 @@ private struct BotConnectorsView: View {
                 guard result["ok"].bool else { throw GatewayError.message(result["error"].string ?? "The server test failed.") }
                 return result
             }
-            if ok { connectors.notice = "\(server.name) responded to the test. Its tools can be used in a new session." }
+            if ok { connectors.notice = "\(server.label) responded to the test. Its tools can be used in a new session." }
         }
     }
 }
 
 private enum ConnectorSheet: Identifiable {
-    case mcp, icloud, stdioAccount, customPlugin, catalog, oauth(MCPConnection), credential(MCPConnection), pluginSettings(InstalledPlugin)
+    case mcp, icloud, google, stdioAccount, customPlugin, catalog, oauth(MCPConnection), credential(MCPConnection), pluginSettings(InstalledPlugin)
     var id: String {
         switch self {
+        case .google: return "google"
         case .mcp: return "mcp"
         case .icloud: return "icloud"
         case .stdioAccount: return "stdio-account"

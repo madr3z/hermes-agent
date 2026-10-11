@@ -37,6 +37,8 @@ def _login_handoff_rpc(rid, params, action):
             if action == "list":
                 config = _load_cfg()
                 required = (config.get("model") or {}).get("provider") == "openai-codex"
+                if params.get("account_name"):
+                    login.create_mcp(home, chat, params["account_name"])
                 return _ok(rid, {"requests": login.list_requests(home, chat, required=required)})
             request_id = params["request_id"]
             if action == "start":

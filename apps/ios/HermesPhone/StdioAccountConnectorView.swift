@@ -6,6 +6,8 @@ struct StdioAccountConnectorView: View {
     let store: PhoneStore
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
+    @State private var provider = "custom-mcp"
+    @State private var identity = ""
     @State private var command = ""
     @State private var arguments = ""
     @State private var entries: [StdioEnvironmentEntry] = [.init()]
@@ -18,7 +20,9 @@ struct StdioAccountConnectorView: View {
                 }
                 Group {
                     Section("Stdio account") {
-                        TextField("Unique account name", text: $name)
+                        TextField("Account label", text: $name)
+                        TextField("Provider, e.g. custom-mcp", text: $provider)
+                        TextField("Expected account identity (optional)", text: $identity)
                         TextField("Command installed on this VM", text: $command)
                         TextField("Arguments, one per line", text: $arguments, axis: .vertical).lineLimit(2...6)
                         Text("The command runs on this bot's VM and can access its files. Install the server there first. Keep credentials out of the command and arguments.").font(.footnote).foregroundStyle(.secondary)
@@ -38,7 +42,7 @@ struct StdioAccountConnectorView: View {
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .disabled(setup.installer != nil || setup.saved || connectors.working)
                 StdioSetupActions(setup: setup, connectors: connectors, store: store, plan: {
-                    try StdioAccountPlan(name: name, command: command, arguments: arguments, secrets: entries, existingNames: connectors.servers.map(\.name))
+                    try StdioAccountPlan(name: name, command: command, arguments: arguments, provider: provider, requestedIdentity: identity, secrets: entries, existingNames: connectors.servers.map(\.name))
                 }, clearSecrets: { entries.removeAll() })
             }
             .scrollDismissesKeyboard(.interactively)

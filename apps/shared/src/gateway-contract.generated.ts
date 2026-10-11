@@ -1911,6 +1911,7 @@ export interface ClientCapabilitiesResult {
 export interface LoginHandoffParams {
   session_id: string
   profile?: string | null
+  account_name?: string | null
 }
 export interface LoginHandoffListResult {
   requests: LoginHandoffRequest[]
@@ -1924,6 +1925,7 @@ export interface LoginHandoffRequest {
   status: string
   detail: string
   account_ref: string
+  verified_identity?: string | null
   user_code: string
   verification_url: string
   auth_url: string
@@ -1933,6 +1935,7 @@ export interface LoginHandoffRequest {
 export interface LoginHandoffActionParams {
   session_id: string
   profile?: string | null
+  account_name?: string | null
   request_id: string
   client_redirect_uri?: string | null
 }
@@ -1942,6 +1945,7 @@ export interface LoginHandoffActionResult {
 export interface LoginHandoffCallbackParams {
   session_id: string
   profile?: string | null
+  account_name?: string | null
   request_id: string
   client_redirect_uri?: string | null
   code?: string | null
@@ -4230,12 +4234,29 @@ export interface McpCatalogEntry {
   requires: string[]
   transport: string
 }
+export interface GmailAccountPlanParams {
+  profile?: string | null
+  label: string
+  email: string
+  controller_origin: string
+}
+export interface GmailAccountPlanResult {
+  name: string
+  config: Record<string, unknown>
+  secret_slots: Record<string, string>
+}
 export interface McpServersListResult {
   servers: McpServerSummary[]
 }
 /** ``tui_gateway/mcp_rpc_helpers.summarize_server`` — a server's config without secret values. */
 export interface McpServerSummary {
   name: string
+  account_instance_id?: string | null
+  server_name?: string | null
+  provider?: string | null
+  label?: string | null
+  requested_identity?: string | null
+  verified_identity?: string | null
   transport: string
   url?: string | null
   command?: string | null
@@ -5265,6 +5286,8 @@ export interface RpcMethods {
   'login.handoff.continue': { params: LoginHandoffActionParams; result: LoginHandoffActionResult }
   'login.handoff.list': { params: LoginHandoffParams; result: LoginHandoffListResult }
   'login.handoff.start': { params: LoginHandoffActionParams; result: LoginHandoffActionResult }
+  /** Prepare one account's read-only Gmail config without installing, saving credentials or signing in. */
+  'mcp.accounts.gmail.plan': { params: GmailAccountPlanParams; result: GmailAccountPlanResult }
   /** Curated MCP presets with per-profile installed/enabled state and the env keys each needs. */
   'mcp.catalog': { params: ProfileParams; result: McpCatalogResult }
   /** Add a server to the profile's config from a catalog preset and/or an explicit config. */
@@ -5694,6 +5717,7 @@ export const RPC_METHODS = [
   'login.handoff.continue',
   'login.handoff.list',
   'login.handoff.start',
+  'mcp.accounts.gmail.plan',
   'mcp.catalog',
   'mcp.servers.add',
   'mcp.servers.list',

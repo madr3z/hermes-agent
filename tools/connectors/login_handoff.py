@@ -79,14 +79,17 @@ def public(record):
     from hermes_constants import get_hermes_home, profile_name_for_home
     record = dict(record, auth_url="", owner_profile=profile_name_for_home(get_hermes_home()) or "owning bot")
     active = _ACTIVE.get(record["id"])
-    if active and active.get("oauth") and record["status"] == "awaiting_human":
-        record["auth_url"] = active["oauth"].auth_url
-    return {key: record[key] for key in (
-        "id", "provider", "name", "owner_profile", "scopes", "auth_url", "status", "detail", "account_ref", "user_code", "verification_url", "expires_at", "continued")}
+    if active and record["status"] == "awaiting_human":
+        record["auth_url"] = active["oauth"].auth_url if active.get("oauth") else active.get("auth_url", "")
+    return {**{key: record[key] for key in (
+        "id", "provider", "name", "owner_profile", "scopes", "auth_url", "status", "detail", "account_ref", "user_code", "verification_url", "expires_at", "continued")},
+        "verified_identity": record.get("verified_identity")}
 
 
 def list_requests(home: Path, chat: str, *, required: bool):
     _observe_mcp(home, chat)
+    from tools.connectors.login_handoff_google import observe
+    observe(home, chat)
     with _LOCK, _database(home) as db:
         records = [_recover(json.loads(row[0])) for row in db.execute(
             "SELECT body FROM requests WHERE chat=?", (chat,))]
@@ -109,7 +112,7 @@ def start(home: Path, chat: str, request_id: str, *, client_redirect_uri=None):
         if (record.get("instance") and record["instance"] != _INSTANCE
                 and record["status"] == "awaiting_human"):
             raise ValueError("This request is active on another gateway process")
-        if record["provider"] == "mcp" and not client_redirect_uri:
+        if record["provider"] in {"mcp", "google-gmail"} and not client_redirect_uri:
             raise ValueError("Use a native client callback for remote MCP sign-in")
         if record.get("instance") == _INSTANCE and request_id in _ACTIVE:
             previous = _ACTIVE[request_id]
@@ -120,6 +123,9 @@ def start(home: Path, chat: str, request_id: str, *, client_redirect_uri=None):
             if oauth is not None:
                 from tools.connectors.mcp_oauth import cancel_attempt
                 cancel_attempt(oauth.flow)
+            if previous.get("google_gmail"):
+                from tools.connectors.google_gmail_login import cancel as cancel_google
+                cancel_google(previous)
             previous["cancelled"] = True
         import psutil
         record.update(status="awaiting_human", detail="Preparing provider sign-in…", user_code="",
@@ -142,6 +148,9 @@ def cancel(home: Path, chat: str, request_id: str):
                 and record["status"] == "awaiting_human"):
             raise ValueError("Cancel on the gateway process that owns this sign-in")
         if attempt := _ACTIVE.get(request_id):
+            if record["provider"] == "google-gmail":
+                from tools.connectors.google_gmail_login import cancel as cancel_google
+                cancel_google(attempt)
             if oauth := attempt.get("oauth"):
                 from tools.connectors.mcp_oauth import cancel_attempt
                 if cancel_attempt(oauth.flow):
@@ -154,17 +163,38 @@ def cancel(home: Path, chat: str, request_id: str):
         return public(record)
 
 
+def cancel_server_requests(home: Path, name: str):
+    """Retire this profile's sign-in requests before deleting the account grant."""
+    with _LOCK, _database(home) as db:
+        records = [json.loads(row[0]) for row in db.execute("SELECT body FROM requests")]
+        for record in records:
+            if record["provider"] not in {"mcp", "google-gmail"} or record["name"] != name:
+                continue
+            attempt = _ACTIVE.pop(record["id"], None)
+            if attempt is not None:
+                attempt["cancelled"] = True
+                if attempt.get("google_gmail"):
+                    from tools.connectors.google_gmail_login import cancel as cancel_google
+                    cancel_google(attempt)
+                if oauth := attempt.get("oauth"):
+                    from tools.connectors.mcp_oauth import cancel_attempt
+                    cancel_attempt(oauth.flow)
+            record.update(status="canceled", detail="This account was removed. The task has not resumed.",
+                          user_code="", grant_ref="")
+            _write(db, record)
+
+
 def continuation(home: Path, chat: str, request_id: str):
     with _LOCK, _database(home) as db:
         record = _read(db, request_id, chat)
         if record["status"] != "authorized":
             raise ValueError("Sign in before continuing")
         changed = record["provider"] == PROVIDER and local_account(home) != record["account_ref"]
-        if record["provider"] == "mcp":
+        if record["provider"] in {"mcp", "google-gmail"}:
             from hermes_cli.mcp_config import _get_mcp_servers, _oauth_tokens_present
             cfg = _get_mcp_servers().get(record["name"]) or {}
             if (hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest() != record["config_ref"]
-                    or not _oauth_tokens_present(record["name"])
+                    or (record["provider"] == "mcp" and not _oauth_tokens_present(record["name"]))
                     or _mcp_grant_ref(home, record["name"]) != record.get("grant_ref")):
                 changed = True
         if changed:
@@ -236,7 +266,8 @@ def _worker(home: Path, chat: str, request_id: str, attempt: dict, client_redire
 
 
 def _worker_for(record):
-    return _mcp_worker if record["provider"] == "mcp" else _worker
+    from tools.connectors.login_handoff_google import worker as google_worker
+    return {"mcp": _mcp_worker, "google-gmail": google_worker}.get(record["provider"], _worker)
 
 
 def create_mcp(home: Path, chat: str, name: str):
@@ -244,16 +275,18 @@ def create_mcp(home: Path, chat: str, name: str):
     from urllib.parse import urlparse
     cfg = _get_mcp_servers().get(name) or {}
     url = urlparse(cfg.get("url", ""))
-    if url.scheme != "https" or not url.hostname or cfg.get("auth") != "oauth":
+    google = (cfg.get("account_instance") or {}).get("provider") == "google-gmail"
+    if not google and (url.scheme != "https" or not url.hostname or cfg.get("auth") != "oauth"):
         raise ValueError("Chat sign-in requires a configured HTTPS MCP OAuth server")
+    provider = "google-gmail" if google else "mcp"
     with _LOCK, _database(home) as db:
         rows = db.execute("SELECT body FROM requests WHERE chat=?", (chat,))
         for row in rows:
             existing = _recover(json.loads(row[0]))
-            if existing["provider"] == "mcp" and existing["name"] == name and not existing["continued"]:
+            if existing["provider"] == provider and existing["name"] == name and not existing["continued"]:
                 return public(existing)
-        record = {"id": uuid.uuid4().hex, "chat": chat, "provider": "mcp", "name": name,
-                  "scopes": [], "status": "awaiting_human", "detail": "Authorize the intended account at " + url.hostname,
+        record = {"id": uuid.uuid4().hex, "chat": chat, "provider": provider, "name": name,
+                  "scopes": [], "status": "awaiting_human", "detail": "Authorize the requested Google account" if google else "Authorize the intended account at " + url.hostname,
                   "account_ref": name, "user_code": "", "verification_url": "", "expires_at": 0.0,
                   "continued": False, "config_ref": hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()}
         _write(db, record)
@@ -312,6 +345,14 @@ def callback(home, chat, request_id, params):
     with _LOCK, _database(home) as db:
         record = _read(db, request_id, chat)
         attempt = _ACTIVE.get(request_id)
+        if record["provider"] == "google-gmail":
+            if record["status"] != "awaiting_human" or not attempt or _ACTIVE.get(request_id) is not attempt:
+                raise ValueError("No active Google authorization for this chat")
+            from tools.connectors.login_handoff_google import callback as google_callback
+            record = google_callback(home, chat, record, attempt, params)
+            _write(db, record)
+            _ACTIVE.pop(request_id, None)
+            return public(record)
         if record["status"] != "awaiting_human" or not attempt or not attempt.get("oauth"):
             raise ValueError("No active authorization for this chat")
         flow = attempt["oauth"].flow
@@ -322,6 +363,11 @@ def callback(home, chat, request_id, params):
 
 
 def _mcp_grant_ref(home: Path, name: str):
+    from hermes_cli.mcp_config import _get_mcp_servers
+    config = _get_mcp_servers().get(name) or {}
+    if (config.get("account_instance") or {}).get("provider") == "google-gmail":
+        from tools.connectors.google_gmail_login import grant_ref
+        return grant_ref(home, name, config)
     from tools.mcp_oauth import HermesTokenStorage
     storage = HermesTokenStorage(name, hermes_home=home)
     snapshot = storage.snapshot()

@@ -11,6 +11,7 @@ export interface LoginHandoffRequest {
   status: string
   detail: string
   account_ref: string
+  verified_identity?: string
   user_code: string
   verification_url: string
   auth_url: string
@@ -114,6 +115,10 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
   }
 
   const signIn = async (request: LoginHandoffRequest) => {
+    if (request.provider === 'google-gmail') {
+      setError('This optional self-hosted Google connector uses the iPhone callback. Finish its sign-in on your iPhone.')
+      return
+    }
     const current = generation.current
     const attempt = ++attemptGeneration.current
     const active = () => current === generation.current && attempt === attemptGeneration.current
@@ -185,6 +190,9 @@ export function LoginHandoffCards({ gateway, sessionId }: LoginHandoffCardsProps
               ? `Permissions: ${request.scopes.join(', ')}`
               : 'Review the requested permissions on the provider consent screen.'}
           </p>
+          {request.verified_identity && (
+            <p className="mt-1 text-xs">Verified account: {request.verified_identity}</p>
+          )}
           {request.account_ref && (
             <p className="mt-1 text-xs text-muted-foreground">Account slot: {request.account_ref}</p>
           )}

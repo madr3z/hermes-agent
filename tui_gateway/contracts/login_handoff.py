@@ -6,6 +6,7 @@ from .registry import method
 class LoginHandoffParams(Params):
     session_id: str
     profile: str | None = None
+    account_name: str | None = None
 
 
 class LoginHandoffActionParams(LoginHandoffParams):
@@ -29,6 +30,7 @@ class LoginHandoffRequest(Payload):
     status: str
     detail: str
     account_ref: str
+    verified_identity: str | None = None
     user_code: str
     verification_url: str
     auth_url: str

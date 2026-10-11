@@ -8,9 +8,21 @@ public struct MCPConnection: Identifiable, Sendable {
     public let authorized: Bool
     public let enabled: Bool
     public let plugin: String?
-    public var id: String { name }
+    public let accountInstanceID: String?
+    public let provider: String
+    public let label: String
+    public let requestedIdentity: String
+    public let verifiedIdentity: String?
+    public let status: String
+    public var id: String { accountInstanceID ?? name }
     public init(_ row: JSON) {
         name = row["name"].string ?? ""
+        accountInstanceID = row["account_instance_id"].string
+        provider = row["provider"].string ?? "custom-mcp"
+        label = row["label"].string ?? name
+        requestedIdentity = row["requested_identity"].string ?? ""
+        verifiedIdentity = row["verified_identity"].string
+        status = row["runtime_status"].string ?? "configured"
         transport = row["transport"].string ?? "unknown"
         target = row["url"].string ?? row["command"].string ?? ""
         auth = row["auth"].string ?? "none"
@@ -80,20 +92,26 @@ public struct CatalogPlugin: Identifiable, Sendable {
 
 public struct MCPConnectionDraft: Sendable {
     public var name = ""
+    public let accountInstanceID: UUID
+    public var provider = "custom-mcp"
+    public var requestedIdentity = ""
+    public var serverName: String { "account-" + accountInstanceID.uuidString.replacingOccurrences(of: "-", with: "").lowercased() }
     public var transport = "http"
     public var target = ""
     public var arguments = ""
     public var bearer = ""
     public var oauth = false
-    public init() {}
+    public init(accountInstanceID: UUID = UUID()) { self.accountInstanceID = accountInstanceID }
     public func parameters(existingNames: [String] = []) throws -> [String: JSON] {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard name.range(of: "^[a-z][a-z0-9-]{0,63}$", options: .regularExpression) != nil else {
-            throw GatewayError.message("Use a unique name with lowercase letters, digits or hyphens. Start with a letter.")
+        guard !name.isEmpty, name.count <= 120, name.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {
+            throw GatewayError.message("Enter an account label of 1 to 120 printable characters.")
         }
-        let credentialKey = name.uppercased().replacingOccurrences(of: "[^A-Z0-9_]", with: "_", options: .regularExpression).trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-        guard !existingNames.contains(where: { $0.uppercased().replacingOccurrences(of: "[^A-Z0-9_]", with: "_", options: .regularExpression).trimmingCharacters(in: CharacterSet(charactersIn: "_")) == credentialKey }) else {
-            throw GatewayError.message("This name or its credential slot is already in use. Choose a distinct account name.")
+        guard provider.range(of: "^[a-z0-9][a-z0-9._-]{0,95}$", options: .regularExpression) != nil else {
+            throw GatewayError.message("Use a provider ID with lowercase letters, digits, dots, underscores or hyphens.")
+        }
+        guard !existingNames.contains(serverName) else {
+            throw GatewayError.message("This account was already saved. Refresh before starting another setup.")
         }
         let target = target.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else { throw GatewayError.message("Enter the server URL or command.") }
@@ -108,7 +126,11 @@ public struct MCPConnectionDraft: Sendable {
         } else {
             config = ["command": .string(target), "args": .array(arguments.components(separatedBy: .newlines).filter { !$0.isEmpty }.map(JSON.string))]
         }
-        var params: [String: JSON] = ["name": .string(name), "config": .object(config)]
+        config["account_instance"] = .object([
+            "id": .string(accountInstanceID.uuidString.lowercased()), "provider": .string(provider),
+            "label": .string(name), "requested_identity": .string(requestedIdentity.trimmingCharacters(in: .whitespacesAndNewlines))
+        ])
+        var params: [String: JSON] = ["name": .string(serverName), "config": .object(config)]
         if transport == "http", !oauth, !bearer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             params["bearer_token"] = .string(bearer.trimmingCharacters(in: .whitespacesAndNewlines))
         }
@@ -161,7 +183,13 @@ public struct PluginInstallReview: Identifiable, Sendable {
         return try await request(method, params)
     }
     public func mcpServers() async throws -> [MCPConnection] {
-        try await call("mcp.servers.list")["servers"].array.map(MCPConnection.init)
+        let rows = try await call("mcp.servers.list")["servers"].array
+        let statuses = try await call("mcp.servers.status")["servers"].array
+        return rows.map { row in
+            guard case .object(var fields) = row else { return MCPConnection(row) }
+            fields["runtime_status"] = statuses.first { $0["name"] == row["name"] }?["status"]
+            return MCPConnection(.object(fields))
+        }
     }
     public func plugins() async throws -> [InstalledPlugin] {
         try await call("plugins.manage", ["action": .string("list")])["plugins"].array.map(InstalledPlugin.init)

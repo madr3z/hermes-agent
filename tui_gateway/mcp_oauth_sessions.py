@@ -158,6 +158,22 @@ def cancel_flow(session_id: str, server_name: str, hermes_home: str) -> dict[str
     return {"ok": True, "status": flow.snapshot()["status"]}
 
 
+def cancel_server_flows(server_name: str, hermes_home: str) -> None:
+    """Removal cancels only this named account's outstanding callback workers."""
+    from hermes_constants import hermes_home_key
+
+    with _sessions_lock:
+        ids = [sid for sid, rec in _sessions.items() if rec["server_name"] == server_name
+               and hermes_home_key(rec["hermes_home"]) == hermes_home_key(hermes_home)]
+    for sid in ids:
+        cancel_flow(sid, server_name, hermes_home)
+    for sid in ids:
+        with _sessions_lock:
+            flow = _sessions[sid]["flow"]
+        if not flow._worker_done.wait(timeout=5):
+            raise RuntimeError("Sign-in is stopping. Retry removal after it stops; the account is still configured.")
+
+
 def deliver_callback_flow(
     session_id: str, server_name: str, *, code: Optional[str], state: Optional[str],
     error: Optional[str] = None, iss: Optional[str] = None) -> dict[str, Any]:

@@ -12,16 +12,16 @@ struct MCPOAuthView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(server.name) {
+                Section(server.label) {
                     Text("Authorize this named server on \(connectors.bot.name). Tokens stay on the bot's gateway.")
-                    Text("Choose the intended provider account. Use a separate server name for each account.").font(.footnote).foregroundStyle(.secondary)
+                    Text("Choose the intended provider account. This signs in only the selected account ID.").font(.footnote).foregroundStyle(.secondary)
                     if signIn.working { ProgressView(signIn.message) }
                     if let error = signIn.error { Text(error).foregroundStyle(.red) }
                     if signIn.approved { Label("Authorization saved on gateway", systemImage: "checkmark.circle") }
                     Button(signIn.approved ? "Check sign-in" : "Sign in") {
                         guard let api = connectors.api else { return }
                         signIn.start(name: server.name, api: api) {
-                            connectors.notice = "Authorization saved for \(server.name). Its tools apply in a new session."
+                            connectors.notice = "Authorization saved for \(server.label). Its tools apply in a new session."
                             await connectors.load(store: store)
                         }
                     }.disabled(signIn.working || connectors.api == nil)

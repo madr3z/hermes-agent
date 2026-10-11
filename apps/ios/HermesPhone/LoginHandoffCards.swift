@@ -9,12 +9,22 @@ struct LoginHandoffCards: View {
     @State private var login = ChatLoginController()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if !login.accounts.isEmpty {
+                Menu("Sign in to an account", systemImage: "person.badge.key") {
+                    ForEach(login.accounts) { account in
+                        Button(account.label + (account.requestedIdentity.isEmpty ? "" : " · " + account.requestedIdentity)) {
+                            Task { await login.select(account, chat: chat) }
+                        }
+                    }
+                }.disabled(login.working || !chat.connected)
+            }
             ForEach(login.requests) { request in
                 VStack(alignment: .leading, spacing: 10) {
                     Label("Sign in · \(request.name)", systemImage: "person.badge.key.fill").font(.headline)
                     Text("For \(chat.bot.name) · \(chat.bot.profile)").font(.subheadline).foregroundStyle(.secondary)
                     Text(request.detail).font(.callout)
                     Text(request.scopes.isEmpty ? "Review the requested permissions on the provider's consent screen." : "Permissions: " + request.scopes.joined(separator: ", ")).font(.footnote).foregroundStyle(.secondary)
+                    if let identity = request.verifiedIdentity { Text("Verified Google account: " + identity).font(.footnote) }
                     if !request.accountReference.isEmpty { Text("Account slot: \(request.accountReference)").font(.caption).textSelection(.enabled) }
                     if !request.userCode.isEmpty {
                         Text(request.userCode).font(.title2.monospaced()).textSelection(.enabled).accessibilityLabel("Device code \(request.userCode)")
@@ -36,6 +46,7 @@ struct LoginHandoffCards: View {
             if let error = login.error { PhoneNotice(title: "Sign-in needs attention", message: error) }
         }
         .task(id: chat.runtimeID) {
+            await login.loadAccounts(chat: chat)
             while !Task.isCancelled {
                 await login.refresh(chat: chat)
                 do { try await Task.sleep(for: .seconds(2)) } catch { break }
@@ -54,6 +65,7 @@ struct LoginHandoffCards: View {
 
 @MainActor @Observable private final class ChatLoginController: NSObject, ASWebAuthenticationPresentationContextProviding {
     var requests: [LoginHandoff] = []
+    var accounts: [MCPConnection] = []
     var error: String?
     var working = false
     private var operation = UUID()
@@ -62,6 +74,22 @@ struct LoginHandoffCards: View {
     private func call(_ action: String, chat: ChatStore, extra: [String: JSON] = [:]) async throws -> JSON {
         guard let client = chat.client, let runtimeID = chat.runtimeID else { throw GatewayError.message("Reconnect to the bot first.") }
         return try await client.request("login.handoff." + action, ["session_id": .string(runtimeID), "profile": .string(chat.bot.profile)].merging(extra) { _, new in new })
+    }
+    func loadAccounts(chat: ChatStore) async {
+        guard let client = chat.client else { accounts = []; return }
+        let runtime = chat.runtimeID
+        do {
+            let api = BotConnectorsClient(profile: chat.bot.profile) { try await client.request($0, $1) }
+            let rows = try await api.mcpServers()
+            guard chat.runtimeID == runtime else { return }
+            accounts = rows.filter { $0.auth == "oauth" || $0.provider == "google-gmail" }
+        } catch { accounts = [] }
+    }
+    func select(_ account: MCPConnection, chat: ChatStore) async {
+        do {
+            _ = try await call("list", chat: chat, extra: ["account_name": .string(account.name)])
+            await refresh(chat: chat)
+        } catch { self.error = "This account cannot start native sign-in. Check its connector and registered callback." }
     }
     func refresh(chat: ChatStore) async {
         guard chat.connected else { return }
@@ -89,7 +117,7 @@ struct LoginHandoffCards: View {
         let runtime = chat.runtimeID
         do {
             var extra: [String: JSON] = ["request_id": .string(request.id)]
-            if request.provider == "mcp" { extra["client_redirect_uri"] = .string(MCPOAuthSession.callbackURI) }
+            if ["mcp", "google-gmail"].contains(request.provider) { extra["client_redirect_uri"] = .string(MCPOAuthSession.callbackURI) }
             _ = try await call("start", chat: chat, extra: extra)
             for _ in 0..<30 {
                 try Task.checkCancellation()

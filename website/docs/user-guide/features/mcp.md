@@ -1102,3 +1102,26 @@ The gateway does NOT need to be running for read operations (listing conversatio
 - [CLI Commands](../../reference/cli-commands.md)
 - [Slash Commands](../../reference/slash-commands.md)
 - [FAQ](../../reference/faq.md)
+
+
+### Separate accounts on private bots
+
+The iPhone Connectors screen can add several instances of an MCP connector. Each
+instance has an immutable account ID, its own server name, and separate secret
+slots. Labels can repeat. Actions use the selected account ID, not its label.
+A requested email is not a verified identity. The screen shows a verified email
+only after the provider validates it and while the accepted grant remains valid.
+Removing an account disconnects that instance and removes its local grant and
+unshared credentials. It does not revoke consent at the provider. Existing
+legacy server names and credentials remain in place. A connector that permits
+only one account still has that limit. Start a new conversation to use newly
+installed tools.
+
+Google/Gmail advanced setup is optional. The self-hosted adapter requires the
+pinned Workspace MCP installation on the bot and an existing Google Web OAuth
+client with the exact private HTTPS callback. It is not the default one-click
+Google sign-in path. Its native callback currently runs on iPhone. No Google
+project or domain is created by Hermes. The existing hosted connector path
+manages OAuth for you, but its current execution contract cannot select several
+Gmail accounts independently. Do not treat its account inventory as proof of
+account-specific execution.

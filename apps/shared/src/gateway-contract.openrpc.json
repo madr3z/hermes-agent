@@ -1807,6 +1807,24 @@
       }
     },
     {
+      "name": "mcp.accounts.gmail.plan",
+      "summary": "Prepare one account's read-only Gmail config without installing, saving credentials or signing in.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/GmailAccountPlanParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/GmailAccountPlanResult"
+        }
+      }
+    },
+    {
       "name": "mcp.catalog",
       "summary": "Curated MCP presets with per-profile installed/enabled state and the env keys each needs.",
       "params": [
@@ -14675,6 +14693,70 @@
         "title": "GatewayReadyPayload",
         "type": "object"
       },
+      "GmailAccountPlanParams": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "controller_origin": {
+            "title": "Controller Origin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "email",
+          "controller_origin"
+        ],
+        "title": "GmailAccountPlanParams",
+        "type": "object"
+      },
+      "GmailAccountPlanResult": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "secret_slots": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Secret Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "config",
+          "secret_slots"
+        ],
+        "title": "GmailAccountPlanResult",
+        "type": "object"
+      },
       "GoalContractSnapshot": {
         "additionalProperties": false,
         "description": "``hermes_cli/goals.py::GoalContract.to_dict``.",
@@ -17822,6 +17904,18 @@
             "default": null,
             "title": "Profile"
           },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Account Name"
+          },
           "request_id": {
             "title": "Request Id",
             "type": "string"
@@ -17877,6 +17971,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Account Name"
           },
           "request_id": {
             "title": "Request Id",
@@ -17985,6 +18091,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Account Name"
           }
         },
         "required": [
@@ -18030,6 +18148,18 @@
           "account_ref": {
             "title": "Account Ref",
             "type": "string"
+          },
+          "verified_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Verified Identity"
           },
           "user_code": {
             "title": "User Code",
@@ -18777,6 +18907,78 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "account_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Account Instance Id"
+          },
+          "server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Server Name"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Provider"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Label"
+          },
+          "requested_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Identity"
+          },
+          "verified_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Verified Identity"
           },
           "transport": {
             "title": "Transport",

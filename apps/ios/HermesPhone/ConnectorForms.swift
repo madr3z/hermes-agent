@@ -13,7 +13,9 @@ struct AddMCPView: View {
             Form {
                 Section { BotIdentityLabel(name: connectors.bot.name, detail: "MCP server") }
                 Section("Server details") {
-                    TextField("Unique name, e.g. gmail-work", text: $draft.name).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("mcpAccountName")
+                    TextField("Account label, e.g. Work mail", text: $draft.name).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("mcpAccountName")
+                    TextField("Provider, e.g. custom-mcp", text: $draft.provider).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Expected account identity (optional)", text: $draft.requestedIdentity).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Picker("Transport", selection: $draft.transport) { Text("HTTPS").tag("http"); Text("Command on bot VM").tag("stdio") }
                     TextField(draft.transport == "http" ? "https://provider.example/mcp" : "Command on the bot VM", text: $draft.target)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -25,13 +27,12 @@ struct AddMCPView: View {
                         if !draft.oauth { SecureField("Bearer token (optional)", text: $draft.bearer).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive() }
                     }
                 }
-                Section { Text("Use one named server per account. Credentials stay on the selected bot's gateway. For OAuth servers, save first, then choose Sign in. Some providers require sign-in on your Mac.").font(.footnote) }
+                Section { Text("Each account gets its own ID and credentials. Labels can repeat. Requested identity is not verified identity. Credentials stay on the selected bot's gateway. For OAuth servers, save first, then choose Sign in. Some providers require sign-in on your Mac.").font(.footnote) }
                 if let error { PhoneNotice(title: "Check these details", message: error) }
                 if let error = connectors.error { PhoneNotice(title: "Could not save", message: error) }
                 Button {
                     do {
-                        _ = try draft.parameters()
-                        guard !connectors.servers.contains(where: { $0.name == draft.name.trimmingCharacters(in: .whitespacesAndNewlines) }) else { throw GatewayError.message("This name is already in use. Choose a distinct name for the account.") }
+                        _ = try draft.parameters(existingNames: connectors.servers.map(\.name))
                         error = nil; confirming = true
                     } catch { self.error = error.localizedDescription }
                 } label: { Label("Review server", systemImage: "checkmark.circle") }
@@ -64,7 +65,7 @@ struct MCPCredentialView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(server.name) {
+                Section(server.label) {
                     SecureField("Bearer token", text: $value).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
                     Text("Save a new credential on \(connectors.bot.name). The current credential is never sent to this phone.").font(.footnote)
                 }

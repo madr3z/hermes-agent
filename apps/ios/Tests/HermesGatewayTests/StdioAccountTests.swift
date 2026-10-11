@@ -10,13 +10,13 @@ import XCTest
         XCTAssertEqual(Set(slots).count, 3)
         for plan in plans {
             let slot = try XCTUnwrap(plan.secrets.keys.first)
-            XCTAssertTrue(slot.hasPrefix("MCP_\(plan.name.uppercased())_"))
+            XCTAssertTrue(slot.hasPrefix("MCP_\(plan.name.uppercased().replacingOccurrences(of: "-", with: "_"))_"))
             XCTAssertEqual(plan.parameters["config"]?["env"]["API_KEY"], .string("${\(slot)}"))
             XCTAssertFalse(String(decoding: try JSONEncoder().encode(JSON.object(plan.parameters)), as: UTF8.self).contains("fixture-"))
         }
         let duplicateAttempt = try StdioAccountPlan(name: "personal", command: "/opt/server", secrets: [.init(name: "API_KEY", value: "new")])
         XCTAssertNotEqual(Set(duplicateAttempt.secrets.keys), Set(plans[0].secrets.keys))
-        XCTAssertThrowsError(try StdioAccountPlan(name: "personal", command: "/opt/server", secrets: [], existingNames: ["personal"]))
+        XCTAssertNoThrow(try StdioAccountPlan(name: "personal", command: "/opt/server", secrets: [], existingNames: ["personal"]))
         XCTAssertThrowsError(try StdioAccountPlan(name: "work", command: "/opt/server", secrets: [.init(name: "API_KEY", value: "x"), .init(name: "API_KEY", value: "y")]))
     }
     func testICloudPresetIsReadOnlyByDefaultAndSendRequiresExplicitRecipientPolicy() throws {

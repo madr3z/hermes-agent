@@ -8,6 +8,7 @@ public struct LoginHandoff: Identifiable, Sendable {
     public let status: String
     public let detail: String
     public let accountReference: String
+    public let verifiedIdentity: String?
     public let scopes: [String]
     public let userCode: String
     public let authorizationURL: URL?
@@ -20,6 +21,7 @@ public struct LoginHandoff: Identifiable, Sendable {
         status = row["status"].string ?? "failed"
         detail = row["detail"].string ?? ""
         accountReference = row["account_ref"].string ?? ""
+        verifiedIdentity = row["verified_identity"].string
         scopes = row["scopes"].array.compactMap(\.string)
         userCode = row["user_code"].string ?? ""
         authorizationURL = Self.secureURL(row["auth_url"].string)

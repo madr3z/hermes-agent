@@ -1524,6 +1524,13 @@ def _(rid, params: dict) -> dict:
 # ─── MCP catalog + per-profile server lifecycle (mcp.servers.*) ─────────────
 # Gateway mirrors of the dashboard REST surface (hermes_cli/web_routers/mcp.py) so a
 # desktop plugin can manage MCP servers for ANY profile. Persistence: hermes_cli/mcp_config.py.
+@_scoped_rpc("mcp.accounts.gmail.plan")
+def _(rid, params: dict) -> dict:
+    from tui_gateway.mcp_rpc_accounts import gmail_plan
+
+    return _ok(rid, gmail_plan(params))
+
+
 @_scoped_rpc("mcp.catalog")
 def _(rid, params: dict) -> dict:
     """``{servers: [{name, description, installed, enabled, requires: [env keys], transport}]}`` per profile."""
@@ -1644,13 +1651,10 @@ def _(rid, params: dict) -> dict:
 
 @_mcp_rpc("remove")
 def _(rid, params: dict) -> dict:
-    """Remove a server from the profile's config.yaml → ``{ok: true, removed: true}``."""
-    name = _str_arg(params, "name")
-    if err := _mcp_plugin_write_error(rid, name, _mcp_server_rows()[1]):
-        return err
-    if not _tools_mod("hermes_cli.mcp_config")._remove_mcp_server(name):
-        return _err(rid, 4064, f"server '{name}' not found")
-    return _ok(rid, {"ok": True, "removed": True})
+    """Disconnect one account and remove its local config, OAuth and owned secrets."""
+    from tui_gateway.mcp_rpc_accounts import remove_server
+
+    return remove_server(rid, params)
 
 
 @_mcp_rpc("oauth.start")

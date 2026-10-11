@@ -359,6 +359,22 @@ method("mcp.catalog", params=ProfileParams, result=McpCatalogResult,
        doc="Curated MCP presets with per-profile installed/enabled state and the env keys each needs.")
 
 
+class GmailAccountPlanParams(ProfileParams):
+    label: str
+    email: str
+    controller_origin: str
+
+
+class GmailAccountPlanResult(Result):
+    name: str
+    config: dict[str, JsonValue]
+    secret_slots: dict[str, str]
+
+
+method("mcp.accounts.gmail.plan", params=GmailAccountPlanParams, result=GmailAccountPlanResult,
+       doc="Prepare one account's read-only Gmail config without installing, saving credentials or signing in.")
+
+
 class McpServerSource(WireEnum):
     config = "config"
     plugin = "plugin"
@@ -368,6 +384,12 @@ class McpServerSummary(Result):
     """``tui_gateway/mcp_rpc_helpers.summarize_server`` — a server's config without secret values."""
 
     name: str
+    account_instance_id: str | None = None
+    server_name: str | None = None
+    provider: str | None = None
+    label: str | None = None
+    requested_identity: str | None = None
+    verified_identity: str | None = None
     transport: str
     url: str | None = None
     command: str | None = None

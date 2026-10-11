@@ -22,6 +22,23 @@ def _prepare_config(server, rid, params):
                 return config, entry, server._err(rid, 4063, f"Unknown MCP catalog entry or preset: {preset}")
     if not config.get("url") and not config.get("command"):
         return config, entry, server._err(rid, 4063, "config must specify a 'url' (http) or 'command' (stdio), or a valid 'preset'")
+    if metadata := config.get("account_instance"):
+        from tools.connectors.account_instances import account_instance_params
+
+        canonical = account_instance_params(metadata["provider"], metadata["label"], config,
+                                            account_instance_id=metadata["id"],
+                                            requested_identity=metadata.get("requested_identity", ""))
+        if canonical["name"] != name:
+            return config, entry, server._err(rid, 4063, "Account ID must match its immutable server name")
+        config = canonical["config"]
+        if metadata["provider"] == "google-gmail":
+            from tools.connectors.google_gmail_login import _binding
+            from hermes_constants import get_hermes_home
+            _binding(get_hermes_home().resolve(), name, config)
+            port = config["env"]["WORKSPACE_MCP_PORT"]
+            if any(str((cfg.get("env") or {}).get("WORKSPACE_MCP_PORT", "")) == str(port)
+                   for cfg in server._mcp_server_rows()[0].values()):
+                return config, entry, server._err(rid, 4090, "This Google callback port is already in use. Prepare another account.")
     return config, entry, None
 
 

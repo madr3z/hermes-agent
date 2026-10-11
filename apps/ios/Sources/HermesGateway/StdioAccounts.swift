@@ -11,13 +11,28 @@ public struct StdioAccountPlan: Sendable {
     public let name: String
     public let parameters: [String: JSON]
     public let secrets: [String: String]
-    public init(name: String, command: String, arguments: String = "", environment: [String: String] = [:], secrets entries: [StdioEnvironmentEntry], existingNames: [String] = []) throws {
+    public init(parameters: [String: JSON], secrets: [String: String]) throws {
+        guard let name = parameters["name"]?.string,
+              let rawID = parameters["config"]?["account_instance"]["id"].string,
+              let id = UUID(uuidString: rawID),
+              name == "account-" + id.uuidString.replacingOccurrences(of: "-", with: "").lowercased() else {
+            throw GatewayError.message("The account setup has no valid stable ID.")
+        }
+        let prefix = "MCP_ACCOUNT_" + id.uuidString.replacingOccurrences(of: "-", with: "").uppercased() + "_"
+        guard secrets.keys.allSatisfy({ $0.hasPrefix(prefix) }),
+              secrets.values.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 4096 && !$0.contains(where: { "\n\r\0".contains($0) }) }) else {
+            throw GatewayError.message("Use non-empty single-line credentials for this account's own secret slots.")
+        }
+        self.name = name; self.parameters = parameters; self.secrets = secrets
+    }
+    public init(name: String, command: String, arguments: String = "", environment: [String: String] = [:], provider: String = "custom-mcp", requestedIdentity: String = "", secrets entries: [StdioEnvironmentEntry], existingNames: [String] = []) throws {
         var draft = MCPConnectionDraft()
+        draft.provider = provider; draft.requestedIdentity = requestedIdentity
         draft.name = name; draft.transport = "stdio"; draft.target = command; draft.arguments = arguments
         var params = try draft.parameters(existingNames: existingNames)
         let account = params["name"]!.string!
         // A fresh setup owns fresh slots. A concurrent same-name add must not rotate another account's keys.
-        let prefix = "MCP_" + account.uppercased().replacingOccurrences(of: "-", with: "_") + "_" + UUID().uuidString.replacingOccurrences(of: "-", with: "") + "_"
+        let prefix = "MCP_ACCOUNT_" + draft.accountInstanceID.uuidString.replacingOccurrences(of: "-", with: "").uppercased() + "_"
         guard entries.count <= 16 else { throw GatewayError.message("Use at most 16 environment entries.") }
         var env = environment.mapValues(JSON.string)
         var secrets: [String: String] = [:]
@@ -81,7 +96,7 @@ public struct ICloudAccountDraft: Sendable {
             "ICLOUD_MCP_READ_ONLY": String(readOnly), "ICLOUD_MCP_ENABLE_MAIL_WRITE": String(!readOnly && mailWrite),
             "ICLOUD_MCP_ENABLE_MAIL_SEND": String(mailSend), "ICLOUD_MCP_SMTP_ALLOWED_RECIPIENTS": policy,
             "ICLOUD_MCP_DEFAULT_TZ": timeZone
-        ], secrets: [.init(name: "ICLOUD_PASSWORD", value: password)], existingNames: existingNames)
+        ], provider: "icloud", requestedIdentity: email, secrets: [.init(name: "ICLOUD_PASSWORD", value: password)], existingNames: existingNames)
     }
     private static func validAddress(_ value: String) -> Bool {
         value.range(of: "^[A-Za-z0-9.!#$%&'+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$", options: .regularExpression) != nil
@@ -105,11 +120,9 @@ public struct ICloudAccountDraft: Sendable {
         guard canRetry, let plan else { throw GatewayError.message("Refresh the account list before starting another setup.") }
         do {
             let names = try await client.mcpServers().map(\.name)
-            var draft = MCPConnectionDraft(); draft.name = plan.name; draft.transport = "stdio"; draft.target = "/validation-only"
-            do { _ = try draft.parameters(existingNames: names) }
-            catch {
+            if names.contains(plan.name) {
                 canRetry = false
-                throw GatewayError.message("This account name is already in use. Existing accounts were kept. Close this setup and choose a new name; any credentials from an earlier partial attempt remain on this bot.")
+                throw GatewayError.message("This account was already saved. Refresh the list. Any credentials from an earlier partial attempt remain on this bot.")
             }
             if !checkedSlots {
                 let inventory = try await http("api/env", "GET", nil)
