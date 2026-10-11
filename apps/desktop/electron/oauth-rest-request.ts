@@ -4,6 +4,7 @@ import { readJsonErrorBody, readStatusCode } from './api-transport'
 import { isGatewayAuthRejection } from './connection-config'
 import { type NativeAccessTokenOptions, NativeAuthChangedError } from './native-access-token'
 import { shouldRotateNativeTokenAfterRejection } from './native-auth-decisions'
+import { type ResolveOauthPartitionOptions, resolveOauthTicketBaseUrl } from './oauth-partition'
 
 export interface OauthRestRequestDeps<T> {
   ensureNativeAccessToken: (baseUrl: string, options?: NativeAccessTokenOptions) => Promise<string | null>
@@ -54,6 +55,7 @@ export async function requestWithOauthFallback<T>(baseUrl: string, deps: OauthRe
 }
 
 export interface MintGatewayWsTicketDeps {
+  oauthScope?: ResolveOauthPartitionOptions
   ensureNativeAccessToken: OauthRestRequestDeps<unknown>['ensureNativeAccessToken']
   fetchJson: (url: string, token: string | null, options: any) => Promise<any>
   fetchJsonViaOauthSession: (url: string, options: any) => Promise<any>
@@ -132,6 +134,15 @@ export async function mintGatewayWsTicket(
   deps: MintGatewayWsTicketDeps,
   headers: Record<string, string> = {}
 ): Promise<string> {
+  const ticketBaseUrl = resolveOauthTicketBaseUrl(baseUrl, deps.oauthScope)
+
+  // The HTTP transport resolves the controller's headers at its own URL.
+  // Guest-only headers must not override that controller's request settings.
+  if (ticketBaseUrl !== baseUrl) {
+    headers = {}
+  }
+
+  baseUrl = ticketBaseUrl
   const url = `${baseUrl}/api/auth/ws-ticket`
   // replayOn401: a ticket that was never issued has no effect to double.
   const options = { method: 'POST', timeoutMs: 8_000, headers, replayOn401: true }

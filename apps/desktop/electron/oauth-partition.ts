@@ -184,6 +184,39 @@ function managedCookieParent(requestNorm: string, connections: unknown[], wanted
   return null
 }
 
+/** Managed VM sockets use the proxy, but their tickets belong to the controller. */
+export function resolveOauthTicketBaseUrl(baseUrl: string, opts: ResolveOauthPartitionOptions = {}): string {
+  const requestNorm = normalizeForMatch(baseUrl)
+  const connections = opts.registry?.connections
+
+  if (!requestNorm || !Array.isArray(connections)) {
+    return baseUrl
+  }
+
+  const managed = connections.some(
+    entry =>
+      entryField(entry, 'provisionedVm') !== undefined && normalizeForMatch(entryField(entry, 'url')) === requestNorm
+  )
+
+  if (!managed) {
+    return baseUrl
+  }
+
+  const main = managedCookieParent(requestNorm, connections, '')
+  const mainBase = main?.url?.replace(/\/$/, '')
+
+  // Reuse the cookie-owner rules, including alias rejection. The controller
+  // mint URL must resolve to that same jar when the HTTP layer reads it.
+  if (
+    !mainBase ||
+    resolveOauthPartition(`${mainBase}/api/auth/ws-ticket`, opts) !== resolveOauthPartition(baseUrl, opts)
+  ) {
+    throw new Error("Could not verify the managed VM's owning controller. Check its gateway registration.")
+  }
+
+  return mainBase
+}
+
 /**
  * Decide the Electron session partition a cookie-authenticated request against
  * `requestUrl` must ride. See the module header for the rules.

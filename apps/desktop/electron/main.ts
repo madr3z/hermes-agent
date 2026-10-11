@@ -8052,8 +8052,7 @@ async function readGatewayFileDataUrl(connection: GatewayFileConnection, request
   return dataUrl
 }
 
-// Recover a Cloud cookie only after a confirmed cookie-auth ticket 401.
-// Each caller still mints its own single-use ticket after the shared recovery.
+// A confirmed Cloud cookie 401 shares recovery; ticket minting stays per caller.
 const recoverCloudCookieSession = createCloudSessionRecovery({
   hasNativeSession,
   onRecovered: baseUrl => rememberLog(`[cloud] saved gateway session recovered for ${hostLabelFromBaseUrl(baseUrl)}`),
@@ -8074,13 +8073,23 @@ const recoverCloudCookieSession = createCloudSessionRecovery({
   }
 })
 
-// Native bearer first (including one forced 401 rotation), OAuth cookie second.
-// Transient ticket POST failures keep their bounded retry before Cloud recovery.
 async function mintGatewayWsTicket(baseUrl: string, headers: Record<string, string> = {}): Promise<string> {
   return recoverCloudCookieSession(baseUrl, () =>
     withTransientRetries(
       (): Promise<string> =>
-        mintOauthGatewayWsTicket(baseUrl, { ensureNativeAccessToken, fetchJson, fetchJsonViaOauthSession }, headers),
+        mintOauthGatewayWsTicket(
+          baseUrl,
+          {
+            ensureNativeAccessToken,
+            fetchJson,
+            fetchJsonViaOauthSession,
+            oauthScope: {
+              registry: readDesktopConnectionsRegistry(),
+              v1RemoteUrl: readDesktopConnectionConfig()?.remote?.url
+            }
+          },
+          headers
+        ),
       {
         isRetryable: (error: Error): boolean =>
           !(error instanceof NativeAuthChangedError) && !isGatewayAuthRejection(error)
@@ -8089,19 +8098,11 @@ async function mintGatewayWsTicket(baseUrl: string, headers: Record<string, stri
   )
 }
 
-// Build a fresh WS URL for the *current* connection. Critical for reconnects:
-// OAuth WS tickets are single-use with a ~30s TTL, so the ticket baked into
-// the cached connection's wsUrl is stale on the second connect. The renderer
-// calls this immediately before every gateway.connect() so each WS upgrade
-// carries a freshly-minted ticket. For local/token connections this just
-// reuses the static token (no minting needed).
+// OAuth tickets are single-use with a ~30s TTL. Re-mint immediately before
+// each gateway.connect(); local/token connections reuse their static token.
 async function freshGatewayWsUrl(profile) {
-  // Mint for the requested profile's backend, NOT always the primary. The
-  // renderer re-mints right before every gateway.connect(); when swapping to a
-  // pooled profile we must return THAT backend's ws URL, otherwise the connect
-  // silently lands back on the primary (default) backend and writes sessions to
-  // the wrong profile's DB. A null/empty profile resolves to the primary, so
-  // legacy callers and single-profile users are unchanged.
+  // Resolve the requested profile so a pooled profile cannot write sessions
+  // to the primary profile's DB. A null/empty profile selects the primary.
   const connection = await ensureBackend(profile)
 
   if (connection.authMode === 'oauth') {
@@ -8113,7 +8114,6 @@ async function freshGatewayWsUrl(profile) {
     return wsUrl
   }
 
-  // Local/token: the cached wsUrl already carries the (long-lived) token.
   rememberRemoteWsHeaders(connection.wsUrl, connection.headers)
 
   return connection.wsUrl
