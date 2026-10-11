@@ -18,15 +18,16 @@ import HermesGateway
     var connected = false
     var client: GatewayClient?
     var voice = VoiceCall()
+    var activity: ChatActivityState
     private var streamID: String?
     private var buffered: [JSON] = []
     private var invalidation: Task<Void, Never>?
     private var needsCanonicalRefresh = false
     private var activityRevision = 0
-    init(bot: Bot) { self.bot = bot }
+    init(bot: Bot) { self.bot = bot; activity = ChatActivityState(profile: bot.profile) }
     func open(store: PhoneStore) async {
         guard !loading, !sending else { return }
-        loading = true; error = nil
+        loading = true; error = nil; activity.disconnect(); activityRevision += 1
         defer {
             loading = false
             if needsCanonicalRefresh { scheduleCanonicalRefresh() }
@@ -34,17 +35,20 @@ import HermesGateway
         do {
             let client = try await store.client(for: bot.endpointID)
             self.client = client
-            client.onEvent = { [weak self] event in
-                guard let self else { return }
+            client.onEvent = { [weak self, weak client] event in
+                guard let self, let client, self.client === client else { return }
                 let route = ChatEventRoute.route(event, runtimeID: self.runtimeID, profile: self.bot.profile)
                 if self.loading && route == .session { self.buffered.append(event) }
                 else { self.receive(event) }
             }
-            client.onDisconnect = { [weak self] message in
-                self?.connected = false; self?.error = message; self?.voice.stop()
+            client.onDisconnect = { [weak self, weak client] message in
+                guard let self, let client, self.client === client else { return }
+                self.connected = false; self.error = message; self.voice.stop()
+                self.activity.disconnect(); self.activityRevision += 1
             }
             let snapshot = try await CanonicalChat.open(profile: bot.profile) { try await client.request($0, $1) }
             try await cleanupImages(client: client)
+            guard self.client === client, client.connected else { throw GatewayError.message("Gateway disconnected. Reconnect Bot Chat.") }
             bindSnapshot(snapshot)
             messages = ChatMessage.project(snapshot["messages"].array)
             busy = snapshot["running"].bool || snapshot["inflight"]["streaming"].bool
@@ -62,7 +66,7 @@ import HermesGateway
             loading = false
             if hadBuffered { await refreshSnapshot() }
             await voice.recoverTranscripts(client: client, profile: bot.profile, runtimeID: runtimeID ?? "")
-        } catch { self.error = error.localizedDescription; connected = false }
+        } catch { self.error = error.localizedDescription; connected = false; activity.disconnect() }
     }
     func params(_ extra: [String: JSON] = [:]) -> [String: JSON] {
         ["session_id": .string(runtimeID ?? ""), "profile": .string(bot.profile)].merging(extra) { _, new in new }
@@ -74,6 +78,7 @@ import HermesGateway
         let selected = uploads.map(\.id)
         sending = true; error = nil
         var pendingID: String?
+        var activitySubmission: UUID?
         defer {
             sending = false
             if needsCanonicalRefresh && !busy { scheduleCanonicalRefresh() }
@@ -88,12 +93,16 @@ import HermesGateway
             let id = UUID().uuidString; pendingID = id
             messages.append(ChatMessage(id: id, role: "user", text: visible))
             busy = true; status = "Sending…"
+            activityRevision += 1
+            let submission = activity.beginSubmission(); activitySubmission = submission
             let result = try await client.request("prompt.submit", ["session_id": .string(runtimeID), "profile": .string(bot.profile), "text": .string(prompt), "queued": .bool(true)])
+            activity.submissionAccepted(submission, result: result)
             pendingImageCleanup.removeAll { $0.runtime == runtimeID }
             uploads.removeAll { selected.contains($0.id) }
             if draft == text { draft = "" }
             status = result["status"].string == "queued" ? "Queued on the gateway" : "Working on the gateway"
         } catch {
+            if let activitySubmission { activity.submissionFailed(activitySubmission, message: error.localizedDescription) }
             if let pendingID { messages.removeAll { $0.id == pendingID } }
             self.error = error.localizedDescription
             do { try await cleanupImages(client: client) }
@@ -109,17 +118,24 @@ import HermesGateway
             await refreshSnapshot()
         }
     }
-    func bindSnapshot(_ snapshot: JSON) {
+    func bindSnapshot(_ snapshot: JSON, restoreActivity: Bool = true) {
         let next = snapshot["session_id"].string
-        if runtimeID != next {
+        let changedRuntime = runtimeID != next
+        if changedRuntime {
             for index in uploads.indices { uploads[index].staged = nil }
         }
         runtimeID = next
         storedSessionID = snapshot["stored_session_id"].string
+        if changedRuntime || restoreActivity { activity.bind(runtimeID: next, snapshot: snapshot) }
     }
     func interrupt() async {
-        guard let client, connected else { return }
-        do { _ = try await client.request("session.interrupt", params()) }
+        guard let client, let runtimeID, connected else { return }
+        do {
+            let result = try await client.request("session.interrupt", params())
+            guard self.client === client, self.runtimeID == runtimeID, connected, client.connected else { return }
+            activity.interrupted(result)
+            if activity.phase == .cancelled { activityRevision += 1; busy = false; status = "Connected" }
+        }
         catch { self.error = error.localizedDescription }
     }
     func startVoice() async {
@@ -127,11 +143,12 @@ import HermesGateway
         await voice.start(client: client, profile: bot.profile, runtimeID: runtimeID, history: messages.filter { ["user", "assistant"].contains($0.role) })
     }
     private func refreshSnapshot() async {
-        guard let client, let runtimeID else { return }
+        guard let client, let runtimeID, connected, client.connected else { return }
         let revision = activityRevision
         do {
             let snapshot = try await client.request("session.activate", params())
-            guard self.runtimeID == runtimeID, activityRevision == revision else { return }
+            guard self.client === client, client.connected, self.runtimeID == runtimeID, activityRevision == revision else { return }
+            activity.bind(runtimeID: runtimeID, snapshot: snapshot)
             messages = ChatMessage.project(snapshot["messages"].array)
             busy = snapshot["running"].bool || snapshot["inflight"]["streaming"].bool
             streamID = nil
@@ -146,6 +163,7 @@ import HermesGateway
         needsCanonicalRefresh = true
         if reclaimed {
             connected = false; busy = false; status = "Reconnecting Bot Chat…"; voice.stop()
+            activity.disconnect()
         }
         invalidation?.cancel()
         invalidation = Task { [weak self] in
@@ -158,7 +176,8 @@ import HermesGateway
                 let snapshot = try await CanonicalChat.open(profile: self.bot.profile) { try await client.request($0, $1) }
                 guard !Task.isCancelled else { return }
                 try await self.cleanupImages(client: client)
-                self.bindSnapshot(snapshot)
+                guard self.client === client, client.connected else { return }
+                self.bindSnapshot(snapshot, restoreActivity: self.activityRevision == revision)
                 self.connected = true
                 self.needsCanonicalRefresh = false
                 if self.activityRevision == revision {
@@ -186,6 +205,7 @@ import HermesGateway
         case .session: break
         }
         activityRevision += 1
+        activity.receive(event)
         let payload = event["payload"]
         switch event["type"].string {
         case "message.start": busy = true; streamID = nil
