@@ -12,9 +12,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useBots } from './i18n'
 
 /** The durable request belongs to the captured main gateway, not this dialog's lifetime. */
-export function VmCreate() {
+interface VmCreateProps {
+  client?: ReturnType<typeof host.botProvisioning>
+  initialCapabilities?: BotVmCapabilities
+}
+
+export function VmCreate({ client: suppliedClient, initialCapabilities }: VmCreateProps = {}) {
   const b = useBots().vm
-  const [client] = useState(() => host.botProvisioning())
+  const [client] = useState(() => suppliedClient ?? host.botProvisioning())
   const [capabilities, setCapabilities] = useState<BotVmCapabilities | null>(null)
   const [requests, setRequests] = useState<BotVmStatus[]>([])
   const [name, setName] = useState('')
@@ -46,13 +51,20 @@ export function VmCreate() {
       }
     }
 
-    void client
-      .capabilities()
+    void (initialCapabilities ? Promise.resolve(initialCapabilities) : client.capabilities())
       .then(result => {
         if (!active) {
           return
         }
+
         setCapabilities(result)
+
+        if (!result.available) {
+          setError(b.unavailable)
+
+          return
+        }
+
         setResources({
           cpu: result.resources.cpu.default,
           memory_mib: result.resources.memory_mib.default,
@@ -70,12 +82,13 @@ export function VmCreate() {
       active = false
       clearTimeout(timer)
     }
-  }, [client, b.unavailable])
+  }, [client, b.unavailable, initialCapabilities])
 
   const create = async () => {
     if (flight.current) {
       return
     }
+
     flight.current = true
     setBusy(true)
     setError('')
@@ -152,7 +165,7 @@ export function VmCreate() {
       </label>
       <p className="text-xs text-(--ui-text-secondary)">{b.exclusions}</p>
       {copy && capabilities ? <p className="text-xs">{capabilities.credential_keys.join(', ')}</p> : null}
-      <Button disabled={busy || !capabilities || (!valid && !pending.current)} onClick={() => void create()}>
+      <Button disabled={busy || !capabilities?.available || (!valid && !pending.current)} onClick={() => void create()}>
         {pending.current ? b.retry : b.create}
       </Button>
       {error ? (

@@ -1,4 +1,5 @@
 export interface VmMessages extends Record<string, string> {
+  createProfile: string
   title: string
   description: string
   name: string
@@ -56,6 +57,7 @@ export interface VmMessages extends Record<string, string> {
 }
 
 export const vmEn: VmMessages = {
+  createProfile: 'Create a profile on an existing gateway',
   storageFailed: 'Unable to save the operation for safe retry. No command was sent.',
   recover: 'Review VM state',
   recoverConfirm:
@@ -116,6 +118,7 @@ export const vmEn: VmMessages = {
 }
 
 export const vmJa: VmMessages = {
+  createProfile: '既存のゲートウェイにプロファイルを作成',
   storageFailed: '安全な再試行用に操作を保存できません。コマンドは送信されていません。',
   recover: 'VM の状態を確認',
   recoverConfirm: 'VM の状態を更新し、結果不明の操作を確認します。次の電源操作は新しいコマンドです。',
@@ -174,6 +177,7 @@ export const vmJa: VmMessages = {
 }
 
 export const vmZh: VmMessages = {
+  createProfile: '在现有网关上创建配置文件',
   storageFailed: '无法保存操作以安全重试。未发送命令。',
   recover: '检查虚拟机状态',
   recoverConfirm: '刷新状态并确认命令结果未知。之后的电源操作将是新命令，可能中断工作。',
@@ -231,6 +235,7 @@ export const vmZh: VmMessages = {
 }
 
 export const vmZhHant: VmMessages = {
+  createProfile: '在現有閘道上建立設定檔',
   storageFailed: '無法儲存操作以安全重試。未傳送命令。',
   recover: '檢查虛擬機狀態',
   recoverConfirm: '重新整理狀態並確認命令結果未知。之後的電源操作將是新命令，可能中斷工作。',

@@ -414,6 +414,11 @@ The mount comes back on the next WSL restart; repeat the two commands then.
 
 ## Provisioned Linux VMs
 
+**Create Bot** opens Linux VM creation with CPU, RAM and disk settings when connected
+to a configured main gateway. From a provisioned guest, creation still belongs to
+its registered main gateway. Profile creation on an existing gateway is an explicit
+choice; gateways without provisioning keep their ordinary profile flow.
+
 For a VM created through **Create Linux VM** on a configured main gateway, open
 its bot context menu and choose **Remote VM**. The pane combines the existing
 screen viewer and its **Take control** / hand-back controls with a guest terminal
