@@ -15,8 +15,11 @@ struct CreateBotView: View {
     @State private var requests: [JSON] = []
     @State private var error: String?
     @State private var working = false
-    @State private var requestID: String?
-    @State private var submittedBody: JSON?
+    @State private var submission = BotCreationSubmission()
+    @State private var password = ""
+    @State private var passwordConfirmation = ""
+    private var requestID: String? { submission.requestID }
+    private var validationError: String? { BotCreationSubmission.validationError(name: name, password: password, confirmation: passwordConfirmation, capabilities: capabilities) }
     private let route = "api/plugins/bot-provisioning/v1/"
     private var mainEndpoints: [GatewayEndpoint] { store.endpoints.filter { !$0.baseURL.path.contains("/gateways/") } }
     var body: some View {
@@ -30,22 +33,32 @@ struct CreateBotView: View {
                 }
                 if capabilities["available"].bool {
                     Section("Bot") {
-                        TextField("Name", text: $name).autocorrectionDisabled()
+                        TextField("Name", text: $name).autocorrectionDisabled().textInputAutocapitalization(.never)
                         TextField("Personality and purpose (optional)", text: $soul, axis: .vertical).lineLimit(3...6)
-                    }.disabled(requestID != nil)
+                    }.disabled(working || requestID != nil)
+                    Section("Linux login") {
+                        LabeledContent("Username", value: BotCreationSubmission.usernameError(name, capabilities: capabilities) == nil ? name : "Enter a valid bot name")
+                        Text("The bot name is also its Linux username. This login is separate from the controller login.").font(.footnote).foregroundStyle(.secondary)
+                        SecureField("VM password", text: $password).textContentType(.newPassword).privacySensitive()
+                        SecureField("Confirm VM password", text: $passwordConfirmation).textContentType(.newPassword).privacySensitive()
+                        if requestID != nil {
+                            Text(submission.needsPassword ? "Request not found. Re-enter the original password to retry the same request." : "Check the saved request first. A found receipt recovers without a password.").font(.footnote).foregroundStyle(.secondary)
+                        }
+                        if let validationError, requestID == nil || submission.needsPassword { Text(validationError).font(.footnote).foregroundStyle(.secondary) }
+                    }.disabled(working)
                     Section("Linux VM") {
                         Stepper("CPU: \(cpu) cores", value: $cpu, in: resourceRange("cpu", fallback: 1...4))
                         Stepper("Memory: \(memory) MiB", value: $memory, in: resourceRange("memory_mib", fallback: 2048...8192), step: 512)
                         Stepper("Disk: \(disk) GiB", value: $disk, in: resourceRange("disk_gib", fallback: 20...100), step: 10)
-                    }.disabled(requestID != nil)
+                    }.disabled(working || requestID != nil)
                     Section {
                         Toggle("Copy provider credentials", isOn: $copyCredentials)
                         Text("Copies the controller's available provider API keys on the server. OAuth grants, messaging tokens and cluster credentials are excluded. Keys never pass through this phone.").font(.footnote).foregroundStyle(.secondary)
                         if copyCredentials { Text(capabilities["credential_keys"].array.compactMap(\.string).joined(separator: ", ")).font(.caption) }
-                    }.disabled(requestID != nil)
+                    }.disabled(working || requestID != nil)
                     Section {
-                        Button(requestID == nil ? "Create Bot" : "Retry Same Request") { Task { await submit() } }
-                            .disabled(working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button(requestID == nil ? "Create Bot" : submission.needsPassword && validationError == nil ? "Retry Same Request" : "Check Request") { Task { await submit() } }
+                            .disabled(working || (requestID == nil && validationError != nil))
                         if requestID != nil { Text("This request keeps the same ID when retried, so it cannot create a second VM.").font(.footnote) }
                     }
                 } else {
@@ -70,6 +83,8 @@ struct CreateBotView: View {
             }
             .navigationTitle("Create Bot").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .onDisappear { password = ""; passwordConfirmation = "" }
+            .onChange(of: gatewayID) { _, _ in password = ""; passwordConfirmation = "" }
             .task { if gatewayID == nil { gatewayID = mainEndpoints.first?.id } }
             .task(id: gatewayID) {
                 await load()
@@ -88,20 +103,20 @@ struct CreateBotView: View {
     private func load() async {
         guard let gatewayID else { return }
         working = true; error = nil; capabilities = .null
-        if submittedBody == nil, let data = UserDefaults.standard.data(forKey: "provision-request-\(gatewayID)"),
-           let saved = try? JSONDecoder().decode(JSON.self, from: data) {
-            submittedBody = saved; requestID = saved["request_id"].string
+        submission.restore(gatewayID: gatewayID)
+        if let saved = submission.pending {
             name = saved["name"].string ?? ""; soul = saved["soul"].string ?? ""
             copyCredentials = saved["credentials"]["copy"].bool
         }
         defer { working = false }
         do {
             let client = try await store.client(for: gatewayID)
+            if submission.pending != nil, let _ = try await submission.recover(client: client) { clearForm() }
             capabilities = try await client.http(route + "capabilities")
             cpu = Int(capabilities["resources"]["cpu"]["default"].number ?? 2)
             memory = Int(capabilities["resources"]["memory_mib"]["default"].number ?? 2048)
             disk = Int(capabilities["resources"]["disk_gib"]["default"].number ?? 20)
-            if let saved = submittedBody {
+            if let saved = submission.pending {
                 cpu = Int(saved["resources"]["cpu"].number ?? Double(cpu))
                 memory = Int(saved["resources"]["memory_mib"].number ?? Double(memory))
                 disk = Int(saved["resources"]["disk_gib"].number ?? Double(disk))
@@ -118,19 +133,17 @@ struct CreateBotView: View {
         guard let gatewayID, !working else { return }
         working = true; error = nil
         defer { working = false }
-        if submittedBody == nil {
-            requestID = UUID().uuidString.lowercased()
-            submittedBody = .object(["request_id": .string(requestID!), "name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "resources": .object(["cpu": .number(Double(cpu)), "memory_mib": .number(Double(memory)), "disk_gib": .number(Double(disk))]), "credentials": .object(["copy": .bool(copyCredentials), "source_profile": .string("default")]), "soul": .string(soul)])
-            // Persist an uncertain request before sending; a process exit must not turn retry into another VM.
-            if let data = try? JSONEncoder().encode(submittedBody) { UserDefaults.standard.set(data, forKey: "provision-request-\(gatewayID)") }
-        }
+        let body = JSON.object(["name": .string(name), "resources": .object(["cpu": .number(Double(cpu)), "memory_mib": .number(Double(memory)), "disk_gib": .number(Double(disk))]), "credentials": .object(["copy": .bool(copyCredentials), "source_profile": .string("default")]), "soul": .string(soul)])
+        let submittedPassword = password, submittedConfirmation = passwordConfirmation
         do {
             let client = try await store.client(for: gatewayID)
-            _ = try await client.http(route + "requests", body: submittedBody)
+            _ = try await submission.submit(body: body, password: submittedPassword, confirmation: submittedConfirmation, capabilities: capabilities, client: client)
+            clearForm()
             await refreshRequests()
-            UserDefaults.standard.removeObject(forKey: "provision-request-\(gatewayID)")
-            submittedBody = nil; requestID = nil; name = ""; soul = ""; copyCredentials = false
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = submittedPassword.isEmpty ? error.localizedDescription : error.localizedDescription.replacingOccurrences(of: submittedPassword, with: "[redacted]") }
+    }
+    private func clearForm() {
+        name = ""; soul = ""; copyCredentials = false; password = ""; passwordConfirmation = ""
     }
     private func connect(_ request: JSON) async {
         guard let main = store.endpoints.first(where: { $0.id == gatewayID }) else { return }

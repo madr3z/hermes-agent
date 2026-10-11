@@ -18,7 +18,7 @@ The Swift package contains transport and ownership behavior tests. The local wir
 
 ## Connection and ownership
 
-Enter an HTTPS gateway base URL and its access token. Tokens are stored in Keychain as `WhenUnlockedThisDeviceOnly`; only gateway labels/URLs and provisioning retry bodies are stored in preferences. An invalid token is never saved as a working connection. The WebSocket follows the existing `serve` query-token contract; no credential-bearing URL is logged. HTTP uses bearer auth.
+Enter an HTTPS gateway base URL and its access token. Tokens are stored in Keychain as `WhenUnlockedThisDeviceOnly`; only gateway labels/URLs and non-secret provisioning retry settings are stored in preferences. An invalid token is never saved as a working connection. The WebSocket follows the existing `serve` query-token contract; no credential-bearing URL is logged. HTTP uses bearer auth.
 
 - `profiles.list(include_sessions:true)` supplies the roster.
 - Opening a bot resolves `session.list(title:"Bot Chat",include_hidden:true,profile)` every time, resumes its `resolved_id`, and uses the returned **runtime** ID for later RPC calls.
@@ -44,7 +44,9 @@ The main gateway needs the provisioning plugin:
 - `POST /api/plugins/bot-provisioning/v1/requests`
 - `GET /api/plugins/bot-provisioning/v1/requests`
 
-The form consumes backend CPU/memory/disk bounds and defaults. Copy Credentials is off by default and copies server-side allowlisted provider API keys only. The request UUID and exact body survive an uncertain send. Ready results supply `{id,label,base_url,profile:"default"}`; the phone accepts only the same-origin provisioning proxy path. The main token stays in Keychain and is used to access that proxy; no guest token is returned to the phone.
+The form consumes backend CPU/memory/disk bounds and defaults. Copy Credentials is off by default and copies server-side allowlisted provider API keys only. The bot name is the exact Linux username: 1–32 ASCII characters, starting with a lowercase letter, followed by lowercase letters, digits, `_` or `-`. Server-advertised reserved usernames are rejected. The user chooses and confirms a VM password of 8–256 UTF-8 bytes without NUL, CR or LF. The confirmation stays on the phone; only the HTTPS POST carries top-level `linux_password`. This VM login is separate from controller authentication.
+
+The request UUID and exact non-secret settings survive an uncertain send. Passwords stay in transient secure form state and never enter preferences or saved retry bodies. Accepted submission or leaving the form clears the password fields. Recovery and retries first GET the saved request ID. A found receipt recovers without a password. Only a 404 permits explicit re-entry of the original password and POST with the same UUID and settings. Other lookup failures block POST; a changed password or body receives the server's generic 409. A controller without the Linux account capability cannot create a new bot from this form. Ready results supply `{id,label,base_url,profile:"default"}`; the phone accepts only the same-origin provisioning proxy path. The main token stays in Keychain and is used to access that proxy; no guest token is returned to the phone.
 
 A missing plugin or unavailable service is shown as unavailable, not as a created VM. The running Infra pilot is not changed by this client implementation.
 
