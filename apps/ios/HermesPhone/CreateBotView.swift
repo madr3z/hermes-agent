@@ -26,6 +26,9 @@ struct CreateBotView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    PhoneNotice(title: "A bot with its own machine", message: "Give your bot a purpose, then choose its VM resources and login.", systemImage: "sparkles")
+                }
                 Section("Controller") {
                     Picker("Gateway", selection: $gatewayID) {
                         Text("Choose gateway").tag(UUID?.none)
@@ -37,7 +40,7 @@ struct CreateBotView: View {
                         TextField("Name", text: $name).autocorrectionDisabled().textInputAutocapitalization(.never)
                         TextField("Personality and purpose (optional)", text: $soul, axis: .vertical).lineLimit(3...6)
                     }.disabled(working || requestID != nil)
-                    Section("Linux login") {
+                    Section("VM login") {
                         LabeledContent("Username", value: BotCreationSubmission.usernameError(name, capabilities: capabilities) == nil ? name : "Enter a valid bot name")
                         Text("The bot name is also its Linux username. This login is separate from the controller login.").font(.footnote).foregroundStyle(.secondary)
                         SecureField("VM password", text: $password).textContentType(.newPassword).privacySensitive()
@@ -47,14 +50,14 @@ struct CreateBotView: View {
                         }
                         if let validationError, requestID == nil || submission.needsPassword { Text(validationError).font(.footnote).foregroundStyle(.secondary) }
                     }.disabled(working)
-                    Section("Linux VM") {
+                    Section("VM resources") {
                         Stepper("CPU: \(cpu) cores", value: $cpu, in: resourceRange("cpu", fallback: 1...4))
                         Stepper("Memory: \(memory) MiB", value: $memory, in: resourceRange("memory_mib", fallback: 2048...8192), step: 512)
                         Stepper("Disk: \(disk) GiB", value: $disk, in: resourceRange("disk_gib", fallback: 20...100), step: 10)
                     }.disabled(working || requestID != nil)
                     Section {
-                        Toggle("Copy provider credentials", isOn: $copyCredentials)
-                        Text("Copies the controller's available provider API keys on the server. OAuth grants, messaging tokens and cluster credentials are excluded. Keys never pass through this phone.").font(.footnote).foregroundStyle(.secondary)
+                        Toggle("Copy main provider API keys", isOn: $copyCredentials)
+                        Text("Copies the main controller’s available provider API keys on the server. Model settings are separate. Codex requires sign-in on each bot. Keys never pass through this phone.").font(.footnote).foregroundStyle(.secondary)
                         if copyCredentials { Text(capabilities["credential_keys"].array.compactMap(\.string).joined(separator: ", ")).font(.caption) }
                     }.disabled(working || requestID != nil)
                     Section {
@@ -63,10 +66,10 @@ struct CreateBotView: View {
                         if requestID != nil { Text("This request keeps the same ID when retried, so it cannot create a second VM.").font(.footnote) }
                     }
                 } else {
-                    Section { Text("Create Bot requires the provisioning service on this gateway. Existing bots remain available from the roster.").foregroundStyle(.secondary) }
+                    Section { PhoneNotice(title: gatewayID == nil ? "Choose a controller" : working ? "Checking availability…" : "Bot creation unavailable", message: "The controller must have the provisioning service enabled.", systemImage: "desktopcomputer") }
                 }
-                if working { ProgressView() }
-                if let error { Section { Text(error).foregroundStyle(.red); Button("Refresh") { Task { await load() } }.disabled(working) } }
+                if working { ProgressView("Checking controller…") }
+                if let error { Section { PhoneNotice(title: "Could not complete the request", message: error); Button("Refresh") { Task { await load() } }.disabled(working) } }
                 if !requests.isEmpty {
                     Section("Provisioning requests") {
                         ForEach(requests, id: \.self) { request in
@@ -86,6 +89,7 @@ struct CreateBotView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Create Bot").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .sheet(item: $deleting, onDismiss: { Task { await refreshRequests() } }) { target in VMDeletionView(target: target, store: store) }

@@ -20,20 +20,28 @@ private struct BotConnectorsView: View {
     var body: some View {
         List {
             Section {
-                Text("Connections belong to \(bot.name). Credentials stay on this bot's gateway.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                if connectors.loading { ProgressView("Loading connections…") }
-                if connectors.working { ProgressView("Saving on gateway…") }
-                if let error = connectors.error { Text(error).foregroundStyle(.red).font(.callout) }
-                if let notice = connectors.notice { Text(notice).foregroundStyle(.secondary).font(.callout) }
+                BotIdentityLabel(name: bot.name, detail: "Connections for this bot")
+            } footer: {
+                Text("Credentials stay on this bot’s gateway. New tools apply in a new session.")
             }
+            if connectors.loading || connectors.working || connectors.error != nil || connectors.notice != nil {
+                Section {
+                    if connectors.loading { ProgressView("Loading connections…") }
+                    if connectors.working { ProgressView("Saving on gateway…") }
+                    if let error = connectors.error { PhoneNotice(title: "Could not complete the request", message: error) }
+                    if let notice = connectors.notice { PhoneNotice(title: "Connection update", message: notice, systemImage: "info.circle") }
+                }
+            }
+            Section {
+                Button("Add iCloud account", systemImage: "icloud") { sheet = .icloud }
+                Button("Add another account", systemImage: "person.crop.circle.badge.plus") { sheet = .stdioAccount }
+            } header: { Text("Add an account") } footer: {
+                Text("Use a separate name and credentials for each account. The connector must be installed on this bot’s VM.")
+            }
+            .disabled(connectors.api == nil || connectors.working || connectors.loading)
             mcpSection
             pluginSection
             hostedSection
-            Section("iCloud") {
-                Button("Add iCloud account", systemImage: "icloud") { sheet = .icloud }.disabled(connectors.api == nil || connectors.working || connectors.loading)
-                Text("Mail and calendar access runs on this bot through the iCloud MCP runtime. Each named account has its own credential slot. Setup will show if the bot runtime needs an install or update.")
-            }.font(.footnote).foregroundStyle(.secondary)
         }
         .navigationTitle("Connectors")
         .navigationBarTitleDisplayMode(.inline)
@@ -67,11 +75,11 @@ private struct BotConnectorsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(server.name).font(.headline)
                     Text(server.target).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Text(server.enabled ? "Enabled · \(server.transport)" : "Disabled").font(.caption)
+                    Label(server.enabled ? "Enabled · \(server.transport)" : "Disabled", systemImage: server.enabled ? "checkmark.circle" : "pause.circle").font(.subheadline).foregroundStyle(.secondary)
                     if server.auth == "oauth" {
                         Text(server.authorized ? "Saved OAuth authorization" : "Sign-in required")
                             .font(.footnote).foregroundStyle(.secondary)
-                        Button(server.authorized ? "Check sign-in" : "Sign in") { sheet = .oauth(server) }.font(.caption).buttonStyle(.borderless)
+                        Button(server.authorized ? "Check sign-in" : "Sign in") { sheet = .oauth(server) }.font(.subheadline).buttonStyle(.borderless).frame(minHeight: 44)
                     }
                     if let plugin = server.plugin {
                         Text("Managed by plugin \(plugin)").font(.footnote).foregroundStyle(.secondary)
@@ -79,20 +87,18 @@ private struct BotConnectorsView: View {
                         HStack {
                             Button("Test") { test(server) }
                             if server.transport == "http", server.auth != "oauth" {
-                                Button("Credential") { sheet = .credential(server) }
+                                Button("Credentials") { sheet = .credential(server) }
                             }
                             Spacer()
                             Button("Remove", role: .destructive) { removal = server }
-                        }.font(.caption).buttonStyle(.borderless)
+                        }.font(.subheadline).buttonStyle(.borderless).frame(minHeight: 44)
                     }
                 }.padding(.vertical, 4)
             }
             sectionError("MCP servers")
             if connectors.servers.isEmpty, connectors.sectionErrors["MCP servers"] == nil, !connectors.loading { Text("No MCP servers configured.").foregroundStyle(.secondary) }
-            Button("Add MCP server", systemImage: "plus") { sheet = .mcp }.disabled(connectors.api == nil || connectors.working || connectors.loading)
-            Button("Add stdio account with credentials") { sheet = .stdioAccount }.disabled(connectors.api == nil || connectors.working || connectors.loading)
-            Text("Use distinct names such as gmail-personal, gmail-work and gmail-third for separate credential slots. Account access depends on the MCP provider. New tools apply in a new session.")
-                .font(.footnote).foregroundStyle(.secondary)
+            Button("Add MCP server", systemImage: "plus.circle") { sheet = .mcp }.disabled(connectors.api == nil || connectors.working || connectors.loading)
+
         }.disabled(connectors.working)
     }
     private var pluginSection: some View {
@@ -129,7 +135,7 @@ private struct BotConnectorsView: View {
         }
     }
     @ViewBuilder private func sectionError(_ key: String) -> some View {
-        if let error = connectors.sectionErrors[key] { Text(error).font(.footnote).foregroundStyle(.secondary) }
+        if let error = connectors.sectionErrors[key] { PhoneNotice(title: "\(key) unavailable", message: error, systemImage: "info.circle") }
     }
     private func test(_ server: MCPConnection) {
         Task {

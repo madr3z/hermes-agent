@@ -6,22 +6,24 @@ struct ChatMessageView: View {
     let client: GatewayClient?
     let profile: String
     let storedSessionID: String?
+    var botName = "Hermes"
     var body: some View {
         if let name = message.toolName {
             DisclosureGroup {
-                Text(message.text).font(.caption.monospaced()).textSelection(.enabled)
+                Text(message.text).font(.callout.monospaced()).textSelection(.enabled)
             } label: {
                 HStack(spacing: 8) {
                     if message.toolRunning { ProgressView().controlSize(.mini) }
                     else { Image(systemName: "checkmark.circle").foregroundStyle(.secondary) }
                     Text(name.replacingOccurrences(of: "_", with: " ")).font(.caption.weight(.medium))
                 }
-            }.padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+            }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
         } else {
             HStack(alignment: .top) {
                 if message.role == "user" { Spacer(minLength: 36) }
                 VStack(alignment: .leading, spacing: 10) {
-                    if message.voice { Label("GPT Live", systemImage: "waveform").font(.caption2).foregroundStyle(.secondary) }
+                    Text(message.role == "user" ? "You" : botName).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    if message.voice { Label("GPT Live", systemImage: "waveform").font(.caption).foregroundStyle(.secondary) }
                     let content = ChatContent.parse(message.text)
                     ForEach(content.blocks) { block in
                         if block.kind == .code { ChatCodeBlock(block: block) }
@@ -30,7 +32,8 @@ struct ChatMessageView: View {
                     ForEach(content.attachments) { attachment in
                         ChatFileCard(attachment: attachment, client: client, profile: profile, storedSessionID: storedSessionID)
                     }
-                }.padding(12).background(message.role == "user" ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+                }.padding(message.role == "user" ? 14 : 0)
+                    .background(message.role == "user" ? Color.accentColor.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 18))
                 if message.role != "user" { Spacer(minLength: 12) }
             }
         }
@@ -64,14 +67,16 @@ private struct ChatMarkdown: View {
 
 private struct ChatCodeBlock: View {
     let block: ChatContent.Block
+    @State private var copied = false
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(block.language.isEmpty ? "Code" : block.language).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }.font(.caption)
+                Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") { UIPasteboard.general.string = block.text; copied = true }.font(.subheadline).frame(minHeight: 44)
+                    .accessibilityLabel(copied ? "Code copied" : "Copy code")
             }
             ScrollView(.horizontal) { Text(block.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: true, vertical: false) }
-        }.padding(10).background(.background.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
+        }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 }

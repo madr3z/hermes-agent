@@ -7,22 +7,29 @@ struct VMControlView: View {
     @State private var power = VMPowerControl()
     @State private var confirming: VMPowerAction?
     @State private var showPaste = false
+    @State private var showHelp = false
     @State private var pasted = ""
     @Environment(\.scenePhase) private var scenePhase
     init(bot: Bot, store: PhoneStore) { self.store = store; _control = State(initialValue: RemoteControl(bot: bot)) }
     var body: some View {
         VStack(spacing: 0) {
-            powerPanel
+            DisclosureGroup {
+                powerPanel
+            } label: {
+                Label("VM power · \(power.phase.capitalized)", systemImage: "power")
+                    .font(.subheadline.weight(.medium)).frame(minHeight: 44)
+            }.padding(.horizontal).background(Color(uiColor: .secondarySystemBackground))
             Picker("Remote view", selection: $control.mode) {
                 ForEach(RemoteControl.Mode.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8)
             remoteStatus
             RemoteSurface(control: control).frame(maxWidth: .infinity, maxHeight: .infinity)
-            if let error = control.error { Text(error).font(.caption).foregroundStyle(.red).padding(8) }
+            if let error = control.error { PhoneNotice(title: "Remote connection", message: error).padding(12) }
             if control.mode == .display {
-                Text("Tap to click; drag to move. Two fingers tap for right click and drag to scroll. Use 1:1 and Pan for detail, or rotate the phone.").font(.caption2).foregroundStyle(.secondary).padding(8)
+                Button("Screen gestures and keyboard", systemImage: "hand.pinch") { showHelp = true }.font(.subheadline).frame(minHeight: 44)
             }
         }
+        .background(Color(uiColor: .systemBackground))
         .navigationTitle("\(control.bot.name) VM").navigationBarTitleDisplayMode(.inline)
         .task {
             async let vmStatus: () = power.load(bot: control.bot, store: store)
@@ -48,6 +55,24 @@ struct VMControlView: View {
                 }
             }
         } message: { Text("Stop and restart interrupt work in the guest. The same VM and disk are retained.") }
+        .sheet(isPresented: $showHelp) {
+            NavigationStack {
+                List {
+                    Section("View the screen") {
+                        Label("Pinch to zoom. Choose Fit to see the whole screen, or 1:1 for detail.", systemImage: "hand.pinch")
+                        Label("Turn on Pan to move around a zoomed screen. You can also rotate your iPhone.", systemImage: "hand.draw")
+                    }
+                    Section("Control the desktop") {
+                        Label("Choose Take control before using the desktop. Hand back returns control to the bot.", systemImage: "cursorarrow")
+                        Text("Tap to click. Drag to move. Tap with two fingers for right click; drag with two fingers to scroll.")
+                        Text("Use Keyboard for text, Ctrl and navigation keys for shortcuts, or Paste to send text you review first.")
+                    }
+                    Section { Text("Closing this screen disconnects the viewer. The bot and its machine keep running.").foregroundStyle(.secondary) }
+                }
+                .navigationTitle("Screen controls").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showHelp = false } } }
+            }
+        }
         .sheet(isPresented: $showPaste) {
             NavigationStack {
                 Form { TextField("Paste text", text: $pasted, axis: .vertical).lineLimit(4...12) }
@@ -67,12 +92,9 @@ struct VMControlView: View {
                 Button("Refresh", systemImage: "arrow.clockwise") { Task { await power.refresh() } }.labelStyle(.iconOnly).disabled(power.working)
             }
             if power.supported {
-                HStack {
-                    ForEach(VMPowerAction.allCases) { action in
-                        Button(action.rawValue.capitalized) { confirming = action }.buttonStyle(.bordered).disabled(!power.allowed(action))
-                    }
-                    Spacer()
-                    if power.working { ProgressView() }
+                ViewThatFits(in: .horizontal) {
+                    HStack { powerActions }
+                    VStack(alignment: .leading) { powerActions }
                 }
                 if let pending = power.pending {
                     HStack {
@@ -84,23 +106,40 @@ struct VMControlView: View {
                 }
                 let resources = power.vm["resources"]
                 if let cpu = resources["cpu"].number, let memory = resources["memory_mib"].number, let disk = resources["disk_gib"].number {
-                    Text("\(Int(cpu)) CPU · \(Int(memory)) MiB · \(Int(disk)) GiB").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(Int(cpu)) CPU · \(Int(memory)) MiB · \(Int(disk)) GiB disk").font(.caption).foregroundStyle(.secondary)
                 }
             } else { Text("VM power controls require a provisioned VM and a controller that supports them.").font(.caption).foregroundStyle(.secondary) }
             if let error = power.error { Text(error).font(.caption).foregroundStyle(.red) }
-        }.padding(.horizontal).padding(.vertical, 8).background(.bar)
+        }.padding(.vertical, 8)
+    }
+    @ViewBuilder private var powerActions: some View {
+        ForEach(VMPowerAction.allCases) { action in
+            Button(action.rawValue.capitalized, role: action == .start ? nil : .destructive) { confirming = action }
+                .buttonStyle(.bordered).controlSize(.large).disabled(!power.allowed(action))
+        }
+        if power.working { ProgressView() }
     }
     private var remoteStatus: some View {
-        HStack {
-            Text(control.connection).font(.caption)
-            Spacer()
-            if control.mode == .display {
-                if !control.desktopRunning { Button("Start desktop") { Task { await control.startDesktop() } }.disabled(control.working || !control.status["installed"].bool) }
-                else if control.controlling { Button("Hand back") { Task { await control.releaseControl() } } }
-                else { Button("Take control") { Task { await control.takeControl() } }.disabled(!control.connected) }
+        VStack(alignment: .leading, spacing: 4) {
+            Label(control.connection, systemImage: control.connected ? "checkmark.circle" : "network")
+                .font(.caption).foregroundStyle(.secondary)
+            ScrollView(.horizontal) {
+                HStack(spacing: 12) {
+                    if control.mode == .display {
+                        if !control.desktopRunning {
+                            Button("Start desktop", systemImage: "desktopcomputer") { Task { await control.startDesktop() } }
+                                .disabled(control.working || !control.status["installed"].bool)
+                        } else if control.controlling {
+                            Button("Hand back", systemImage: "arrow.uturn.backward") { Task { await control.releaseControl() } }
+                        } else {
+                            Button("Take control", systemImage: "cursorarrow") { Task { await control.takeControl() } }.disabled(!control.connected)
+                        }
+                    }
+                    Button("Paste", systemImage: "doc.on.clipboard") { showPaste = true }
+                        .disabled(!control.connected || (control.mode == .display && !control.controlling))
+                    Button("Reconnect", systemImage: "arrow.clockwise") { Task { await control.reconnect(store: store) } }.disabled(control.working)
+                }.font(.subheadline).buttonStyle(.bordered).controlSize(.large)
             }
-            Button("Paste") { showPaste = true }.disabled(!control.connected || (control.mode == .display && !control.controlling))
-            Button("Reconnect") { Task { await control.reconnect(store: store) } }.disabled(control.working)
-        }.font(.caption).padding(.horizontal).padding(.bottom, 8)
+        }.padding(.horizontal).padding(.bottom, 8)
     }
 }

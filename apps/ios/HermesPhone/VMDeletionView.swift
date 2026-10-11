@@ -12,11 +12,10 @@ struct VMDeletionView: View {
         NavigationStack {
             Form {
                 Section("Managed bot") {
-                    Text(deletion.name).font(.headline)
-                    Text(deletion.phase.capitalized).foregroundStyle(.secondary)
+                    BotIdentityLabel(name: deletion.name, detail: deletion.phase.capitalized)
                 }
-                Section {
-                    Text("Deleting this bot stops it and removes its VM, workspace and files. This cannot be undone. Existing backups are retained.")
+                Section("Permanent deletion") {
+                    PhoneNotice(title: "Delete the bot and its machine", message: "This stops the bot and permanently removes its VM, workspace and files. Existing backups are retained.", systemImage: "trash")
                     if deletion.supported {
                         Button(deletion.receipt["phase"].string == "failed" ? "Try deletion again…" : "Delete Bot and VM…", role: .destructive) { confirming = true }.disabled(!deletion.canConfirm)
                         if deletion.missingReceipt {
@@ -28,7 +27,7 @@ struct VMDeletionView: View {
                     if deletion.working { ProgressView() }
                     if ["queued", "deleting"].contains(deletion.receipt["phase"].string ?? "") { Text("Deletion continues on the controller if you close this screen.").font(.footnote) }
                     if let message = deletion.receipt["error"]["message"].string { Text(message).foregroundStyle(.red) }
-                    if let message = deletion.error ?? error { Text(message).foregroundStyle(.red) }
+                    if let message = deletion.error ?? error { PhoneNotice(title: "Deletion needs attention", message: message) }
                 }
             }
             .navigationTitle("Delete managed bot").navigationBarTitleDisplayMode(.inline)

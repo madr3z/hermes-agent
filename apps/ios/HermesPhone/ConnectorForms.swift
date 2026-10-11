@@ -11,7 +11,8 @@ struct AddMCPView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Server for \(connectors.bot.name)") {
+                Section { BotIdentityLabel(name: connectors.bot.name, detail: "MCP server") }
+                Section("Server details") {
                     TextField("Unique name, e.g. gmail-work", text: $draft.name).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("mcpAccountName")
                     Picker("Transport", selection: $draft.transport) { Text("HTTPS").tag("http"); Text("Command on bot VM").tag("stdio") }
                     TextField(draft.transport == "http" ? "https://provider.example/mcp" : "Command on the bot VM", text: $draft.target)
@@ -25,16 +26,18 @@ struct AddMCPView: View {
                     }
                 }
                 Section { Text("Use one named server per account. Credentials stay on the selected bot's gateway. For OAuth servers, save first, then choose Sign in. Some providers require sign-in on your Mac.").font(.footnote) }
-                if let error { Text(error).foregroundStyle(.red) }
-                if let error = connectors.error { Text(error).foregroundStyle(.red) }
-                Button("Review server") {
+                if let error { PhoneNotice(title: "Check these details", message: error) }
+                if let error = connectors.error { PhoneNotice(title: "Could not save", message: error) }
+                Button {
                     do {
                         _ = try draft.parameters()
                         guard !connectors.servers.contains(where: { $0.name == draft.name.trimmingCharacters(in: .whitespacesAndNewlines) }) else { throw GatewayError.message("This name is already in use. Choose a distinct name for the account.") }
                         error = nil; confirming = true
                     } catch { self.error = error.localizedDescription }
-                }.disabled(connectors.working)
+                } label: { Label("Review server", systemImage: "checkmark.circle") }
+                .buttonStyle(.borderedProminent).frame(maxWidth: .infinity).listRowBackground(Color.clear).disabled(connectors.working)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add MCP server").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connectors.working) } }
             .confirmationDialog("Save \(draft.name) on \(connectors.bot.name)?", isPresented: $confirming, titleVisibility: .visible) {
@@ -65,7 +68,7 @@ struct MCPCredentialView: View {
                     SecureField("Bearer token", text: $value).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
                     Text("Save a new credential on \(connectors.bot.name). The current credential is never sent to this phone.").font(.footnote)
                 }
-                if let error = connectors.error { Text(error).foregroundStyle(.red) }
+                if let error = connectors.error { PhoneNotice(title: "Could not save", message: error) }
                 Button("Save credential") {
                     let submitted = value; value = ""
                     Task {
@@ -73,6 +76,7 @@ struct MCPCredentialView: View {
                     }
                 }.disabled(value.isEmpty || connectors.working)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Server credential").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connectors.working) } }
         }.interactiveDismissDisabled(connectors.working).onDisappear { value = "" }
@@ -95,12 +99,13 @@ struct CustomPluginView: View {
                     TextField("Full commit SHA (40 hex characters)", text: $sha).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Text("A custom source is not part of the reviewed Hermes catalog. This installs code on \(connectors.bot.name).").font(.footnote)
                 }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { PhoneNotice(title: "Check these details", message: error) }
                 Button("Review installation") {
                     do { review = try PluginInstallReview(repo: repo, sha: sha); error = nil }
                     catch { self.error = error.localizedDescription }
                 }.disabled(connectors.working)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Install plugin").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .sheet(item: $review) { PluginInstallReviewView(review: $0, connectors: connectors, store: store) }
@@ -129,6 +134,7 @@ struct PluginCatalogView: View {
                 }
             }
             .searchable(text: $query)
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Hermes catalog").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .sheet(item: $review) { PluginInstallReviewView(review: $0, connectors: connectors, store: store) }
@@ -152,13 +158,14 @@ struct PluginInstallReviewView: View {
                 }
                 Section {
                     Text("Installing allows this plugin to run on the bot's VM. Review the source and its capabilities before you continue. Existing Hermes scan and compatibility checks still apply.").font(.footnote)
-                    if let error = connectors.error { Text(error).foregroundStyle(.red) }
+                    if let error = connectors.error { PhoneNotice(title: "Could not save", message: error) }
                     if connectors.working { ProgressView("Installing…") }
                     Button("Install on \(connectors.bot.name)") {
                         Task { if await connectors.mutate(store: store, body: { try await $0.install(review) }) { dismiss() } }
                     }.disabled(connectors.working)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Review installation").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connectors.working) } }
         }.interactiveDismissDisabled(connectors.working)

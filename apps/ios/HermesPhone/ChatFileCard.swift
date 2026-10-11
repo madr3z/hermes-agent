@@ -22,20 +22,21 @@ struct ChatFileCard: View {
             }
             HStack(alignment: .top) {
                 Image(systemName: attachment.isImage ? "photo" : "doc")
-                Text(attachment.name).font(.callout).lineLimit(2)
+                Text(attachment.name).font(.subheadline.weight(.medium)).lineLimit(2)
                 Spacer(minLength: 0)
                 if downloading { ProgressView().controlSize(.small) }
             }
             HStack {
                 if let localURL {
-                    Button("Preview") { previewURL = localURL }
-                    ShareLink(item: localURL) { Label("Save or share", systemImage: "square.and.arrow.up") }
+                    Button("Preview", systemImage: "eye") { previewURL = localURL }.accessibilityLabel("Preview \(attachment.name)")
+                    ShareLink(item: localURL) { Label("Share", systemImage: "square.and.arrow.up") }
+                        .accessibilityLabel("Save or share \(attachment.name)")
                 } else {
-                    Button("Download", systemImage: "arrow.down.circle") { requestID += 1 }.disabled(downloading || client == nil || storedSessionID == nil)
+                    Button(error == nil ? "Download" : "Retry download", systemImage: "arrow.down.circle") { requestID += 1 }.disabled(downloading || client == nil || storedSessionID == nil)
                 }
-            }.font(.caption)
+            }.font(.subheadline).buttonStyle(.bordered).controlSize(.large)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
-        }.padding(10).background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+        }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
             .quickLookPreview($previewURL)
             .task(id: ownerKey + ":\(requestID)") {
                 removeLocalFile()

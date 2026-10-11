@@ -7,6 +7,7 @@ struct ChatView: View {
     let store: PhoneStore
     @State private var chat: ChatStore
     @Environment(\.scenePhase) private var scenePhase
+    @FocusState private var composerFocused: Bool
     @State private var showVoice = false
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
@@ -15,27 +16,46 @@ struct ChatView: View {
     var body: some View {
         ScrollViewReader { reader in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    if chat.loading && chat.messages.isEmpty { ProgressView("Opening Bot Chat…").frame(maxWidth: .infinity) }
-                    ForEach(chat.messages) { message in ChatMessageView(message: message, client: chat.client, profile: chat.bot.profile, storedSessionID: chat.storedSessionID).id(message.id) }
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    if chat.loading && chat.messages.isEmpty {
+                        ProgressView("Opening conversation…").frame(maxWidth: .infinity).padding(.vertical, 40)
+                    } else if chat.messages.isEmpty {
+                        ContentUnavailableView("Talk to \(chat.bot.name)", systemImage: "bubble.left.and.bubble.right", description: Text("Send a message, attach a file or start a voice call. Your conversation stays on this bot’s gateway."))
+                    }
+                    ForEach(chat.messages) { message in ChatMessageView(message: message, client: chat.client, profile: chat.bot.profile, storedSessionID: chat.storedSessionID, botName: chat.bot.name).id(message.id) }
+                    LoginHandoffCards(chat: chat)
+                    ChatActivityView(activity: chat.activity, botName: chat.bot.name).id("activity")
                     Color.clear.frame(height: 1).id("bottom")
-                }.padding()
+                }.padding(.horizontal, 16).padding(.vertical, 20)
             }
             .defaultScrollAnchor(.bottom)
+            .scrollDismissesKeyboard(.interactively)
+            .background(Color(uiColor: .systemBackground))
             .onChange(of: chat.messages.last(where: { $0.role == "assistant" })?.text) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: chat.messages.count) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: chat.activity.phase) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
             .safeAreaInset(edge: .bottom) { composer }
         }
         .navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { ConnectorsView(bot: chat.bot, store: store) } label: { Label("Connectors", systemImage: "puzzlepiece.extension") }
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 2) {
+                    Text(chat.bot.name).font(.headline)
+                    Text(store.endpoints.first(where: { $0.id == chat.bot.endpointID })?.label ?? "Bot Chat")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }.accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { VMControlView(bot: chat.bot, store: store) } label: { Label("VM controls", systemImage: "desktopcomputer") }
+                Button("Call", systemImage: "phone") { composerFocused = false; showVoice = true }
+                    .disabled(!chat.connected || chat.sending).accessibilityIdentifier("startVoice")
+                    .accessibilityLabel("Voice call with \(chat.bot.name)")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("GPT Live", systemImage: "waveform") { showVoice = true }.disabled(!chat.connected || chat.sending).accessibilityIdentifier("startVoice")
+                Menu {
+                    NavigationLink { ConnectorsView(bot: chat.bot, store: store) } label: { Label("Connectors", systemImage: "puzzlepiece.extension") }
+                    NavigationLink { BotToolsView(bot: chat.bot, store: store, runtimeID: chat.runtimeID) } label: { Label("Bot tools", systemImage: "slider.horizontal.3") }
+                    NavigationLink { VMControlView(bot: chat.bot, store: store) } label: { Label("VM screen and terminal", systemImage: "desktopcomputer") }
+                } label: { Label("Bot options", systemImage: "ellipsis.circle") }
             }
         }
         .task { await chat.open(store: store) }
@@ -56,43 +76,57 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 8) {
             if let error = chat.error {
-                HStack(alignment: .top) {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                    Button("Reconnect") { Task { await chat.open(store: store) } }.font(.caption)
+                VStack(alignment: .leading, spacing: 6) {
+                    PhoneNotice(title: "Connection needs attention", message: error)
+                    Button("Reconnect", systemImage: "arrow.clockwise") { Task { await chat.open(store: store) } }
+                        .font(.subheadline).frame(minHeight: 44)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let error = chat.voice.error { PhoneNotice(title: "Voice call", message: error, systemImage: "phone.badge.exclamationmark") }
+            HStack {
+                Label(chat.status, systemImage: chat.connected ? "checkmark.circle" : "network")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    .accessibilityLabel("Connection status: \(chat.status)")
+                Spacer()
+                if chat.busy {
+                    Button("Stop", systemImage: "stop.circle") { Task { await chat.interrupt() } }
+                        .font(.subheadline).frame(minHeight: 44)
                 }
             }
-            if let error = chat.voice.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            HStack {
-                Circle().fill(chat.connected ? .green : .orange).frame(width: 6, height: 6)
-                Text(chat.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                Spacer()
-                if chat.busy { Button("Stop") { Task { await chat.interrupt() } }.font(.caption) }
-            }
+            if importingPhotos { ProgressView("Preparing photos…").font(.subheadline) }
             if !chat.uploads.isEmpty {
                 ScrollView(.horizontal) {
-                    HStack {
+                    HStack(spacing: 8) {
                         ForEach(chat.uploads) { upload in
                             HStack(spacing: 6) {
                                 Image(systemName: upload.isImage ? "photo" : "doc")
                                 Text(upload.name).lineLimit(1)
-                                Button("Remove", systemImage: "xmark.circle.fill") { chat.removeUpload(upload.id) }.labelStyle(.iconOnly)
-                            }.font(.caption).padding(8).background(.quaternary, in: Capsule())
+                                Button { chat.removeUpload(upload.id) } label: {
+                                    Image(systemName: "xmark.circle.fill").frame(minWidth: 44, minHeight: 44)
+                                }.accessibilityLabel("Remove \(upload.name)")
+                            }.font(.subheadline).padding(.leading, 12)
+                                .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12))
                         }
                     }
                 }.disabled(chat.sending)
             }
-            HStack(alignment: .bottom) {
+            HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     PhotosPicker(selection: $photos, maxSelectionCount: 5, matching: .images) { Label("Photos", systemImage: "photo") }
                     Button("Files", systemImage: "doc") { showFiles = true }
-                } label: { Image(systemName: "plus.circle").font(.title2).padding(.bottom, 8) }
+                } label: { Image(systemName: "plus").font(.title3).frame(width: 44, height: 44) }
                 .accessibilityLabel("Attach photos or files").disabled(chat.sending || importingPhotos)
-                TextField("Message \(chat.bot.name)", text: $chat.draft, axis: .vertical).lineLimit(1...6).padding(10).background(.background, in: RoundedRectangle(cornerRadius: 16)).accessibilityIdentifier("chatComposer")
-                Button { Task { await chat.send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.largeTitle) }
-                    .disabled(!chat.connected || chat.loading || chat.sending || importingPhotos || (chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && chat.uploads.isEmpty))
-                    .accessibilityLabel(chat.busy ? "Queue message" : "Send message")
+                TextField("Message \(chat.bot.name)", text: $chat.draft, axis: .vertical)
+                    .lineLimit(1...6).padding(.horizontal, 14).padding(.vertical, 12)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22))
+                    .focused($composerFocused).accessibilityIdentifier("chatComposer")
+                Button { Task { await chat.send() } } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 34)).frame(width: 44, height: 44)
+                }
+                .disabled(!chat.connected || chat.loading || chat.sending || importingPhotos || (chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && chat.uploads.isEmpty))
+                .accessibilityLabel(chat.busy ? "Queue message" : "Send message")
             }
-        }.padding(.horizontal).padding(.vertical, 10).background(.bar)
+        }.padding(.horizontal, 12).padding(.vertical, 8).background(.bar)
     }
     private func importPhotos() async {
         guard !photos.isEmpty else { return }

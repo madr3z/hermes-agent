@@ -21,40 +21,81 @@ struct RosterView: View {
         NavigationStack {
             List {
                 if store.endpoints.isEmpty {
-                    ContentUnavailableView("Your bots, wherever you are", systemImage: "network", description: Text("Connect to your HTTPS Hermes gateway. Bots keep running on their own machines when you close this app."))
-                    Button("Connect a gateway") { sheet = .gateway(nil) }
+                    Section {
+                        ContentUnavailableView("Meet your bots", systemImage: "sparkles", description: Text("Chat, call and work with your bots from your iPhone. Connect your Hermes controller to get started."))
+                        Button { sheet = .gateway(nil) } label: {
+                            Label("Connect a gateway", systemImage: "network")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("connectGateway")
+                    }.listRowBackground(Color.clear)
+                } else {
+                    Section {
+                        Text("Your bots keep working when you close Hermes.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        if store.loading { ProgressView("Refreshing bots…") }
+                    }.listRowBackground(Color.clear)
                 }
                 ForEach(store.endpoints) { endpoint in
-                    Section(endpoint.label) {
+                    Section {
                         let rows = store.bots.filter { $0.endpointID == endpoint.id }
-                        if rows.isEmpty { Text("No bots loaded").foregroundStyle(.secondary) }
+                        if rows.isEmpty {
+                            PhoneNotice(title: store.loading ? "Loading bots…" : "No bots to show", message: "Pull down to refresh this gateway.", systemImage: "network")
+                        }
                         ForEach(rows) { bot in
                             NavigationLink(value: bot) {
                                 HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "sparkle").font(.title2).foregroundStyle(.tint).frame(width: 34, height: 42)
+                                    BotAvatar()
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(bot.name).font(.headline)
-                                        Text(bot.preview.isEmpty ? "Open Bot Chat" : bot.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                                        Text(bot.preview.isEmpty ? "Start a conversation" : bot.preview)
+                                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                                        if bot.profile != bot.name {
+                                            Text("Profile: \(bot.profile)").font(.caption).foregroundStyle(.secondary)
+                                        }
                                     }
-                                }.padding(.vertical, 5)
+                                }.padding(.vertical, 6)
                             }
+                            .accessibilityHint("Opens the saved conversation with \(bot.name)")
                         }
-                        if !endpoint.baseURL.path.contains("/gateways/") {
-                            Button("Sign in to controller…") { sheet = .gateway(endpoint) }
-                            Button("Calls and notifications…") { sheet = .mobile(endpoint) }
-                        }
-                        if let owner = store.vmOwners[endpoint.id.uuidString], owner.owns(endpoint), store.vmDeletionControllers.contains(owner.mainID),
-                           let target = VMDeletionTarget(mainID: owner.mainID, requestID: owner.requestID) {
-                            Button("Delete Bot and VM…", role: .destructive) { sheet = .delete(target) }
-                        }
+                    } header: {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(endpoint.label).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                                Text(endpoint.baseURL.path.contains("/gateways/") ? "Bot gateway" : "Controller")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if !endpoint.baseURL.path.contains("/gateways/") || store.vmOwners[endpoint.id.uuidString].map({ store.vmDeletionControllers.contains($0.mainID) }) == true {
+                                Menu {
+                                    if !endpoint.baseURL.path.contains("/gateways/") {
+                                        Button("Sign in to controller", systemImage: "person.crop.circle") { sheet = .gateway(endpoint) }
+                                        Button("Calls and notifications", systemImage: "bell") { sheet = .mobile(endpoint) }
+                                    }
+                                    if let owner = store.vmOwners[endpoint.id.uuidString], owner.owns(endpoint), store.vmDeletionControllers.contains(owner.mainID),
+                                       let target = VMDeletionTarget(mainID: owner.mainID, requestID: owner.requestID) {
+                                        Button("Delete Bot and VM…", systemImage: "trash", role: .destructive) { sheet = .delete(target) }
+                                    }
+                                } label: { Image(systemName: "ellipsis.circle").font(.title3).frame(minWidth: 44, minHeight: 44) }
+                                .accessibilityLabel("Manage \(endpoint.label)")
+                            }
+                        }.textCase(nil)
                     }
                 }
-                if let error = store.error { Section { Text(error).foregroundStyle(.red); Button("Retry") { Task { await store.refresh() } } } }
-                Section { Text("Conversations and tasks live on your gateway. Your phone holds the gateway access token in Keychain.").font(.footnote).foregroundStyle(.secondary) }
+                if let error = store.error {
+                    Section {
+                        PhoneNotice(title: "Could not refresh", message: error)
+                        Button("Try again", systemImage: "arrow.clockwise") { Task { await store.refresh() } }.disabled(store.loading)
+                    }
+                }
+                Section {
+                    Label("Conversations stay on your gateway. Access is saved securely on this iPhone.", systemImage: "lock.shield")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }.listRowBackground(Color.clear)
             }
             .safeAreaInset(edge: .bottom) { MobileCallBanner() }
-            .navigationTitle("Hermes")
+            .navigationTitle("Bots")
             .navigationDestination(for: Bot.self) { bot in ChatView(bot: bot, store: store) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -106,8 +147,11 @@ struct GatewayForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    PhoneNotice(title: existing == nil ? "Connect to Hermes" : "Reconnect your controller", message: "Use the HTTPS address of your Hermes controller.", systemImage: "network")
+                }
                 Section("Gateway") {
-                    TextField("Name", text: $label).disabled(existing != nil).accessibilityIdentifier("gatewayName")
+                    TextField("Gateway name", text: $label).disabled(existing != nil).accessibilityIdentifier("gatewayName")
                     TextField("https://hermes.example.com", text: $address).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(existing != nil).accessibilityIdentifier("gatewayURL")
                 }.disabled(connecting)
                 Section("Controller login") {
@@ -126,11 +170,12 @@ struct GatewayForm: View {
                     }
                 }.disabled(connecting)
                 Section { Text("Sign in to your HTTPS Hermes controller. Its saved session stays in Keychain on this phone. Your password is not saved.").font(.footnote) }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { PhoneNotice(title: "Could not sign in", message: error) }
                 Button { connect() } label: {
                     HStack { Text(connecting ? "Connecting…" : method == .password ? "Sign in" : "Connect"); if connecting { ProgressView() } }
-                }.disabled(connecting || address.isEmpty || (method == .password ? username.isEmpty || password.isEmpty : token.isEmpty)).accessibilityIdentifier("saveGateway")
+                }.buttonStyle(.borderedProminent).frame(maxWidth: .infinity).listRowBackground(Color.clear).disabled(connecting || address.isEmpty || (method == .password ? username.isEmpty || password.isEmpty : token.isEmpty)).accessibilityIdentifier("saveGateway")
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(existing == nil ? "Connect Gateway" : "Sign in again").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connecting) } }
             .onChange(of: address) { _, _ in clearSecrets(); providers = []; provider = "" }
