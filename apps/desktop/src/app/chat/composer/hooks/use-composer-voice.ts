@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { computed } from 'nanostores'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { resolveOwnerNow } from '@/api/client'
 import { useI18n } from '@/i18n'
 import { chatMessageText, collectUnspokenTurnSpeech } from '@/lib/chat-messages'
 import { triggerHaptic } from '@/lib/haptics'
@@ -12,7 +13,7 @@ import {
   resolveSpokenReply
 } from '@/lib/spoken-reply'
 import { CONVERSATION_LEASE, READ_ALOUD_LEASE, syncTtsLease } from '@/lib/tts-lease'
-import { toLiveHistory } from '@/lib/voice-live'
+import { fetchVoiceLiveStatus, toLiveHistory } from '@/lib/voice-live'
 import { clearWakeIndicator, syncWakeIndicatorWithVoice } from '@/lib/wake-indicator'
 import { $voiceConversationStartRequest, takeVoiceConversationStart } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
@@ -76,6 +77,7 @@ export function useComposerVoice({
   // A tile's composer speaks ITS transcript, not the primary chat's.
   const { $messages, connectionId, profile } = useComposerScope()
   const voiceOwnerRef = useRef({ sessionId, connectionId, profile })
+  const voiceActivationRef = useRef(0)
 
   // Wake the voice loop once when a pending reply first becomes speakable,
   // without re-rendering the composer for every streamed token. The live
@@ -306,6 +308,7 @@ export function useComposerVoice({
       previous.connectionId !== connectionId ||
       previous.profile !== profile
     ) {
+      voiceActivationRef.current += 1
       void endLiveConversation()
       setVoiceConversationActive(false)
     }
@@ -317,8 +320,25 @@ export function useComposerVoice({
    *  decided in the same state batch so the other engine never sees a frame of
    *  `enabled`. gpt-live selected but not startable (no OpenAI key on the
    *  gateway) falls back to chained with a notice rather than a dead button. */
-  const activateConversation = useCallback(() => {
-    const status = $voiceLiveStatus.get()
+  const activateConversation = useCallback(async () => {
+    const activation = ++voiceActivationRef.current
+    const owner = voiceOwnerRef.current
+
+    // Owned Bot chats keep the controller window in place. Select the engine
+    // from the same captured owner that will create the voice session.
+    const status =
+      owner.connectionId || owner.profile ? await fetchVoiceLiveStatus(resolveOwnerNow(owner)) : $voiceLiveStatus.get()
+
+    if (activation !== voiceActivationRef.current) {
+      return
+    }
+
+    if ((owner.connectionId || owner.profile) && !status) {
+      notify({ kind: 'error', message: t.notifications.voice.couldNotStartSession })
+
+      return
+    }
+
     let live = false
 
     if (selectedVoiceChatMode(status) === 'gpt-live') {
@@ -459,7 +479,13 @@ export function useComposerVoice({
     }
   }, [t, voiceConversationActive])
 
-  useEffect(() => resumeWakeIfPaused, [resumeWakeIfPaused])
+  useEffect(
+    () => () => {
+      voiceActivationRef.current += 1
+      resumeWakeIfPaused()
+    },
+    [resumeWakeIfPaused]
+  )
 
   // Speech-output toggles are TTS warm-up / release signals. Entering a voice
   // conversation acquires this window's lease (pre-loads the engine so the
@@ -486,6 +512,7 @@ export function useComposerVoice({
   const startConversation = activateConversation
 
   const endConversation = useCallback(() => {
+    voiceActivationRef.current += 1
     setVoiceConversationActive(false)
     void conversation.end()
   }, [conversation])
