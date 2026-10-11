@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 URL_TIMEOUT_SECONDS = 30.0
+NATIVE_CLIENT_REDIRECT_URI = "com.hermes.iphone:/oauth/callback"
 
 
 def probe_with_rollback(
@@ -206,13 +207,18 @@ def run_worker(
 
 
 def _validate_client_redirect_uri(uri: str) -> str:
-    """Accept only plain-http loopback URLs (RFC 8252)."""
-    parsed = urlparse(str(uri or "").strip())
+    """Accept loopback HTTP or the app-owned native callback (RFC 8252)."""
+    uri = str(uri or "").strip()
+    # ASWebAuthenticationSession receives this URI; the authenticated RPC relays
+    # the code. Existing PKCE, issuer, state and profile checks still apply.
+    if uri == NATIVE_CLIENT_REDIRECT_URI:
+        return uri
+    parsed = urlparse(uri)
     host = (parsed.hostname or "").lower()
     if (parsed.scheme != "http" or host not in ("127.0.0.1", "localhost", "::1") or not parsed.port
             or parsed.username is not None or parsed.password is not None):
         raise ValueError(
-            "client_redirect_uri must be a loopback http URL like http://127.0.0.1:<port>/callback")
+            "client_redirect_uri must be a loopback http URL or the Hermes iPhone callback")
     return f"http://{'[' + host + ']' if ':' in host else host}:{parsed.port}{parsed.path or '/callback'}"
 
 
@@ -264,6 +270,9 @@ def _pinned_redirect_uri(cfg: dict) -> str:
 def choose_callback_receiver(flow, cfg: dict, client_redirect_uri: Optional[str] = None):
     """Set the redirect consumed by the SDK and return the optional backend HTTP receiver."""
     if _pinned_loopback(cfg):
+        if client_redirect_uri == NATIVE_CLIENT_REDIRECT_URI:
+            raise ValueError(
+                "This provider requires its registered loopback callback. Complete sign-in on your Mac.")
         flow.redirect_uri = _pinned_redirect_uri(cfg)
         return None
     if client_redirect_uri is not None:
