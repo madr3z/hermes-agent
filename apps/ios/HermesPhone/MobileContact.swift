@@ -406,8 +406,8 @@ extension MobileContact: PKPushRegistryDelegate, CXProviderDelegate, UNUserNotif
                 case "ring-15": await postpone(incoming, until: Date().addingTimeInterval(15 * 60))
                 case "ring-60": await postpone(incoming, until: Date().addingTimeInterval(60 * 60))
                 default:
-                    do { detail = try await resolve(incoming); callInvitation = incoming; chooseCallTime = true }
-                    catch { self.error = "This call expired or its bot is no longer available." }
+                    // The custom picker needs no private details. Submission validates the invitation.
+                    callInvitation = incoming; chooseCallTime = true
                 }
             } else if settings[incoming.controllerID]?.notifications == true {
                 do { detail = try await resolve(incoming) } catch { self.error = "This notification expired or its bot is no longer available." }
