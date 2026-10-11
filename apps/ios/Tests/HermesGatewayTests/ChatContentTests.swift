@@ -2,6 +2,17 @@ import XCTest
 @testable import HermesGateway
 
 final class ChatContentTests: XCTestCase {
+    func testMarkdownFileDestinationsPreserveParenthesesAndDecodeEscapes() {
+        let content = ChatContent.parse("[Report](</tmp/report (final).pdf>)\n[Encoded](/tmp/report%20final.pdf)\n@file:/tmp/literal%20name.pdf")
+        XCTAssertEqual(content.attachments.map(\.path), ["/tmp/report (final).pdf", "/tmp/report final.pdf", "/tmp/literal%20name.pdf"])
+        XCTAssertTrue(content.blocks.isEmpty)
+    }
+    func testInlineCodeExamplesStayLiteralWhileAuthoredQuotedDirectiveStillAttaches() {
+        let examples = "Use `@file:/tmp/example.txt` and ``[PDF](/tmp/a.pdf) with `ticks` `` in your prompt."
+        let content = ChatContent.parse(examples + "\n@file:`/tmp/real file.pdf`")
+        XCTAssertEqual(content.attachments.map(\.path), ["/tmp/real file.pdf"])
+        XCTAssertEqual(content.blocks.first?.text.trimmingCharacters(in: .whitespacesAndNewlines), examples)
+    }
     func testAttachmentReferencesRespectQuotedPathsAndCodeExamples() {
         let content = ChatContent.parse("""
         See **report**.

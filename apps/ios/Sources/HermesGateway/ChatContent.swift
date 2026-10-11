@@ -53,19 +53,22 @@ public struct ChatContent: Equatable {
         return ChatContent(blocks: blocks, attachments: attachments.filter { seen.insert($0.path).inserted })
     }
     private static func extract(_ line: String, attachments: inout [ChatAttachment]) -> String {
-        // Match only authored file directives and Markdown destinations. Code fences stay literal.
-        let pattern = #"(?:@(image|file):|MEDIA:)(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s]+)|(!?)\[([^\]]*)\]\(([^)]+)\)"#
+        // Angle destinations can contain parentheses. Quoted directives keep their literal bytes.
+        let pattern = #"(?:@(image|file):|MEDIA:)(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s]+)|(!?)\[([^\]]*)\]\((<[^>\n]+>|(?:[^()\n]|\([^()\n]*\))+)\)"#
         let expression = try! NSRegularExpression(pattern: pattern)
         let source = line as NSString
         var result = line
         var found: [ChatAttachment] = []
+        let codeSpans = inlineCodeSpans(line)
         for match in expression.matches(in: line, range: NSRange(location: 0, length: source.length)).reversed() {
+            guard !codeSpans.contains(where: { NSLocationInRange(match.range.location, $0) }) else { continue }
             func value(_ index: Int) -> String { match.range(at: index).location == NSNotFound ? "" : source.substring(with: match.range(at: index)) }
             let directive = !value(2).isEmpty
             var path = directive ? value(2) : value(5)
             let quoted = ["`", "\"", "'", "<"].contains(String(path.prefix(1)))
             if quoted { path = String(path.dropFirst().dropLast()) }
             else if directive && value(1).isEmpty { path = path.trimmingCharacters(in: CharacterSet(charactersIn: ".,;!?")) }
+            if !directive { path = path.removingPercentEncoding ?? path }
             // Plain web links remain native Markdown links. A bare MEDIA:word is not a file.
             guard (directive && !value(1).isEmpty) || path.contains("/") || (path as NSString).pathExtension.count > 0 else { continue }
             guard let attachment = ChatAttachment(path: path, name: directive ? nil : value(4), image: value(1) == "image" || value(3) == "!") else { continue }
@@ -74,6 +77,18 @@ public struct ChatContent: Equatable {
         }
         attachments.append(contentsOf: found)
         return result
+    }
+    private static func inlineCodeSpans(_ line: String) -> [NSRange] {
+        let runs = try! NSRegularExpression(pattern: "`+").matches(in: line, range: NSRange(location: 0, length: (line as NSString).length))
+        var spans: [NSRange] = [], index = 0
+        while index < runs.count {
+            let opener = runs[index].range
+            if let closing = runs.indices.dropFirst(index + 1).first(where: { runs[$0].range.length == opener.length }) {
+                spans.append(NSRange(location: opener.location, length: NSMaxRange(runs[closing].range) - opener.location))
+                index = closing + 1
+            } else { index += 1 }
+        }
+        return spans
     }
 }
 

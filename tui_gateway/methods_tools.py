@@ -1576,44 +1576,9 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Add ``name`` from ``preset`` (catalog id) and/or ``config`` (url/command/args/env/headers/auth/
     tools); ``bearer_token`` goes to the profile's .env (only the header template persists). Dup → 4090."""
-    mc = _tools_mod("hermes_cli.mcp_config")
-    name, preset = _str_arg(params, "name"), _str_arg(params, "preset")
-    servers, plugins = _mcp_server_rows()
-    if err := _mcp_plugin_write_error(rid, name, plugins):
-        return err
-    if name in servers:
-        return _err(rid, 4090, f"server '{name}' already exists")
-    raw_cfg = params.get("config")
-    server_config: dict = dict(raw_cfg) if isinstance(raw_cfg, dict) else {}
-    # Explicit url/command wins. Otherwise a desktop catalog id is resolved
-    # before the CLI preset registry — that registry raises, and the wrapper
-    # turns the raise into 5024 before the 4063 check below can run.
-    catalog = _tools_mod("hermes_cli.mcp_catalog")
-    entry = None
-    if preset and not (server_config.get("url") or server_config.get("command")):
-        entry = catalog.get_entry(preset)
-        if entry is not None:
-            for key, value in catalog._build_server_config(entry, install_dir=None).items():
-                server_config.setdefault(key, value)
-        else:
-            try:
-                mc._apply_mcp_preset(
-                    name, preset_name=preset, url=server_config.get("url"),
-                    command=server_config.get("command"),
-                    cmd_args=list(server_config.get("args") or []), server_config=server_config)
-            except ValueError:
-                return _err(rid, 4063, f"Unknown MCP catalog entry or preset: {preset}")
-    if not server_config.get("url") and not server_config.get("command"):
-        return _err(rid, 4063, "config must specify a 'url' (http) or 'command' (stdio), or a valid 'preset'")
-    if bearer_token := params.get("bearer_token"):
-        server_config["headers"] = mc._save_bearer_auth_token(name, str(bearer_token))
-    saved_ok = mc._save_mcp_server(name, server_config)
-    _tools_mod("tui_gateway.mcp_rpc_helpers").record_mcp_add(entry, server_config, saved_ok)
-    if not saved_ok:
-        return _err(rid, 4001, f"server '{name}' rejected: suspicious command/args configuration")
-    saved = mc._get_mcp_servers().get(name, server_config)
-    return _ok(rid, {"ok": True, "name": name, "server": _mcp_summarize_server(name, saved)})
+    from tui_gateway.mcp_rpc_add import add_server
 
+    return add_server(rid, params)
 
 @_mcp_rpc("set_api_key", (*_NAME, ("value", _nonempty)))
 def _(rid, params: dict) -> dict:
