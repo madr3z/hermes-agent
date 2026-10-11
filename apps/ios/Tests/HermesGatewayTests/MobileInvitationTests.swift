@@ -25,4 +25,23 @@ final class MobileInvitationTests: XCTestCase {
         foreign["invitation_id"] = .string(invitation.uuidString); foreign["profile"] = .string("other")
         XCTAssertThrowsError(try MobileInvitation(.object(foreign), push: push, allowedGuests: [guest], accepting: true))
     }
+    func testDeferredCallRequiresAuthenticatedBotAndScheduledState() throws {
+        let due = Date().addingTimeInterval(900)
+        var fields: [String: JSON] = ["invitation_id": .string(invitation.uuidString), "guest_id": .string(guest.uuidString), "profile": .string("default"), "kind": .string("call"), "state": .string("postponed"), "deferred_state": .string("scheduled"), "scheduled_at": .number(due.timeIntervalSince1970)]
+        let call = try MobileDeferredCall(.object(fields), controllerID: controller, allowedGuests: [guest])
+        XCTAssertEqual(call.id, invitation)
+        XCTAssertEqual(call.controllerID, controller)
+        XCTAssertEqual(call.scheduledAt.timeIntervalSince1970, due.timeIntervalSince1970, accuracy: 0.000001)
+        XCTAssertThrowsError(try MobileDeferredCall(.object(fields), controllerID: controller, allowedGuests: []))
+        fields["deferred_state"] = .string("cancelled")
+        XCTAssertThrowsError(try MobileDeferredCall(.object(fields), controllerID: controller, allowedGuests: [guest]))
+    }
+    func testCustomRingTimeIsBoundedAndFinite() throws {
+        let now = Date()
+        try MobileDeferredCall.validateTime(now.addingTimeInterval(900), now: now)
+        try MobileDeferredCall.validateTime(now.addingTimeInterval(3600), now: now)
+        XCTAssertThrowsError(try MobileDeferredCall.validateTime(now.addingTimeInterval(59), now: now))
+        XCTAssertThrowsError(try MobileDeferredCall.validateTime(now.addingTimeInterval(7 * 86400 + 1), now: now))
+        XCTAssertThrowsError(try MobileDeferredCall.validateTime(Date(timeIntervalSince1970: .infinity), now: now))
+    }
 }

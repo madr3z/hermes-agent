@@ -21,6 +21,12 @@ struct MobileContactSettings: Codable {
     private(set) var settings: [UUID: MobileContactSettings] = [:]
     var error: String?
     var detail: MobileInvitation?
+    private(set) var callInvitation: MobilePush?
+    private(set) var deferredCalls: [MobileDeferredCall] = []
+    var postponing = false
+    var chooseCallTime = false
+    private var ringingTask: Task<Void, Never>?
+    private static let postponeCategory = "hermes-ring-again"
     let voice = VoiceCall()
     private var registry: PKPushRegistry?
     private var voipToken: String?
@@ -55,13 +61,21 @@ struct MobileContactSettings: Codable {
         voice.onEnded = { [weak self] in self?.finish(reason: .remoteEnded) }
     }
     func launch() {
-        UNUserNotificationCenter.current().delegate = self
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.setNotificationCategories([UNNotificationCategory(identifier: Self.postponeCategory, actions: [
+            UNNotificationAction(identifier: "ring-15", title: "Ring again in 15 minutes", options: [.authenticationRequired]),
+            UNNotificationAction(identifier: "ring-60", title: "Ring again in 1 hour", options: [.authenticationRequired]),
+            UNNotificationAction(identifier: "ring-custom", title: "Choose a time in Hermes", options: [.foreground, .authenticationRequired])
+        ], intentIdentifiers: [])])
+        Task { await refreshDeferredCalls() }
         guard Self.buildEnabled, settings.values.contains(where: { $0.calls || $0.notifications }) else { return }
         registerPushTypes(calls: settings.values.contains(where: \.calls), notifications: settings.values.contains(where: \.notifications))
     }
     func authenticationReplaced(_ endpoint: GatewayEndpoint) throws {
         guard let record = settings[endpoint.id], record.endpoint.baseURL != endpoint.baseURL else { return }
         settings.removeValue(forKey: endpoint.id)
+        deferredCalls.removeAll { $0.controllerID == endpoint.id }
         try persist(); try MobileCredentials.remove(endpoint.id)
         if push?.controllerID == endpoint.id { end() }
         sessions.removeValue(forKey: endpoint.id)?.session.invalidateAndCancel()
@@ -85,6 +99,7 @@ struct MobileContactSettings: Codable {
         let status = try await client.http("api/plugins/bot-provisioning/v1/mobile/capabilities")
         guard status["status"].string == "configured" else { throw GatewayError.message("The controller's APNs service is disabled or unconfigured.") }
         if calls {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
             guard await AVAudioApplication.requestRecordPermission() else { throw GatewayError.message("Enable microphone access before enabling incoming calls.") }
         }
         if notifications {
@@ -110,6 +125,7 @@ struct MobileContactSettings: Codable {
     func disable(_ endpoint: GatewayEndpoint, client: GatewayClient?) async throws {
         let record = settings[endpoint.id]
         if var disabled = record { disabled.calls = false; disabled.notifications = false; disabled.bots = []; settings[endpoint.id] = disabled }
+        deferredCalls.removeAll { $0.controllerID == endpoint.id }
         try persist(); try MobileCredentials.remove(endpoint.id)
         sessions.removeValue(forKey: endpoint.id)?.session.invalidateAndCancel()
         if push?.controllerID == endpoint.id { end() }
@@ -163,7 +179,7 @@ struct MobileContactSettings: Codable {
         update.hasVideo = false; update.supportsHolding = false; update.supportsGrouping = false; update.supportsUngrouping = false; update.supportsDTMF = false
         handled = handled.filter { $0.value > Date().timeIntervalSince1970 - 86400 }
         let eligible = incoming.map { Self.buildEnabled && push == nil && $0.isCurrent() && settings[$0.controllerID]?.calls == true && handled[id.uuidString] == nil } ?? false
-        if eligible { push = incoming; accepted = false }
+        if eligible { push = incoming; callInvitation = incoming; detail = nil; accepted = false }
         // Report before any network request, even if the local ownership check fails.
         provider.reportNewIncomingCall(with: id, update: update) { [weak self] failure in
             completion()
@@ -186,14 +202,88 @@ struct MobileContactSettings: Codable {
                     let details = CXCallUpdate(); details.localizedCallerName = invitation.name
                     self.provider.reportCall(with: id, updated: details)
                     self.detail = invitation
+                    await self.offerPostponement(incoming)
+                    self.ringingTask = Task { [weak self] in
+                        while !Task.isCancelled {
+                            try? await Task.sleep(for: .seconds(3))
+                            guard !Task.isCancelled, let self, self.push == incoming, !self.accepted, !self.postponing else { return }
+                            do { _ = try await self.resolve(incoming) }
+                            catch {
+                                if self.push == incoming, !self.accepted, !self.postponing {
+                                    self.finish(reason: .remoteEnded, notifyServer: false)
+                                    self.callInvitation = nil; self.detail = nil
+                                }
+                                return
+                            }
+                        }
+                    }
                 } catch { if self.push == incoming && !self.accepted { self.finish(reason: .failed) } }
             }
+        }
+    }
+    private func offerPostponement(_ incoming: MobilePush) async {
+        let content = UNMutableNotificationContent()
+        content.title = "Hermes incoming call"
+        content.body = "Open Hermes or choose when the agent should ring again."
+        content.categoryIdentifier = Self.postponeCategory
+        content.userInfo = ["controller_id": incoming.controllerID.uuidString.lowercased(), "invitation_id": incoming.invitationID.uuidString.lowercased(), "expires_at": incoming.expiresAt.timeIntervalSince1970]
+        do { try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: incoming.invitationID.uuidString, content: content, trigger: nil)) }
+        catch { self.error = "Open Hermes to choose when this agent should ring again." }
+    }
+    func postpone(_ incoming: MobilePush, until date: Date) async {
+        guard !postponing, !accepted else { return }
+        postponing = true; error = nil
+        defer { postponing = false }
+        do {
+            try MobileDeferredCall.validateTime(date)
+            let value = try await scheduleAction(incoming.controllerID, invitationID: incoming.invitationID, action: "postpone", date: date)
+            let record = try MobileDeferredCall(value, controllerID: incoming.controllerID, allowedGuests: settings[incoming.controllerID]?.bots ?? [])
+            deferredCalls.removeAll { $0.id == record.id }; deferredCalls.append(record)
+            if push == incoming { finish(reason: .remoteEnded, notifyServer: false) }
+            if callInvitation == incoming { callInvitation = nil; detail = nil }
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [incoming.invitationID.uuidString])
+        } catch { self.error = "Could not schedule another ring: " + error.localizedDescription }
+    }
+    func changeTime(_ call: MobileDeferredCall, to date: Date) async {
+        guard !postponing else { return }
+        postponing = true; error = nil
+        defer { postponing = false }
+        do {
+            try MobileDeferredCall.validateTime(date)
+            let value = try await scheduleAction(call.controllerID, invitationID: call.id, action: "postpone", date: date)
+            let updated = try MobileDeferredCall(value, controllerID: call.controllerID, allowedGuests: settings[call.controllerID]?.bots ?? [])
+            deferredCalls.removeAll { $0.id == call.id }; deferredCalls.append(updated)
+        } catch { self.error = "Could not change the ring time: " + error.localizedDescription }
+    }
+    func cancelPostponement(_ call: MobileDeferredCall) async {
+        guard !postponing else { return }
+        postponing = true; error = nil
+        defer { postponing = false }
+        do {
+            _ = try await scheduleAction(call.controllerID, invitationID: call.id, action: "cancel_postpone")
+            deferredCalls.removeAll { $0.id == call.id }
+        } catch { self.error = "Could not cancel the scheduled ring: " + error.localizedDescription }
+    }
+    private func scheduleAction(_ controllerID: UUID, invitationID: UUID, action: String, date: Date? = nil) async throws -> JSON {
+        guard let record = settings[controllerID], record.calls else { throw GatewayError.message("Incoming calls are disabled.") }
+        var body: [String: JSON] = ["device_id": .string(record.deviceID.uuidString.lowercased()), "action": .string(action)]
+        if let date { body["scheduled_at"] = .number(date.timeIntervalSince1970) }
+        return try await client(controllerID, background: true).http("api/plugins/bot-provisioning/v1/mobile/invitations/" + invitationID.uuidString.lowercased() + "/actions", body: .object(body))
+    }
+    func refreshDeferredCalls() async {
+        for record in settings.values where record.calls {
+            do {
+                let value = try await client(record.endpoint.id, background: true).http("api/plugins/bot-provisioning/v1/mobile/devices/" + record.deviceID.uuidString.lowercased() + "/deferred")
+                let calls = try value["invitations"].array.map { try MobileDeferredCall($0, controllerID: record.endpoint.id, allowedGuests: record.bots) }
+                deferredCalls.removeAll { $0.controllerID == record.endpoint.id }; deferredCalls.append(contentsOf: calls)
+            } catch { self.error = "Could not refresh scheduled rings. Sign in and try again." }
         }
     }
     private func prepare(_ incoming: MobilePush) async throws {
         let invitation = try await resolve(incoming, accepting: true)
         guard push == incoming, let record = settings[incoming.controllerID] else { throw CancellationError() }
-        accepted = true; expiryTask?.cancel()
+        accepted = true; expiryTask?.cancel(); ringingTask?.cancel()
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [incoming.invitationID.uuidString])
         // Derive the URL from the saved controller and authenticated registry identity.
         let main = try client(incoming.controllerID, background: true)
         let row = try await main.http("api/plugins/bot-provisioning/v1/requests/" + invitation.guestID.uuidString.lowercased())
@@ -236,15 +326,15 @@ struct MobileContactSettings: Codable {
             if failure != nil { Task { @MainActor in self?.finish(reason: .failed) } }
         }
     }
-    private func finish(reason: CXCallEndedReason) {
+    private func finish(reason: CXCallEndedReason, notifyServer: Bool = true) {
         guard let old = push else { return }
         let wasAccepted = accepted
         push = nil; accepted = false; audioActive = false
-        setupTask?.cancel(); expiryTask?.cancel(); runtimeID = nil; callHistory = []
+        setupTask?.cancel(); expiryTask?.cancel(); ringingTask?.cancel(); runtimeID = nil; callHistory = []
         if let eventObserver { guestClient?.removeObserver(eventObserver); self.eventObserver = nil }
         voice.stop(); guestClient?.disconnect(); guestClient = nil
         provider.reportCall(with: old.invitationID, endedAt: Date(), reason: reason)
-        Task { await action(old, wasAccepted ? "end" : "decline") }
+        if notifyServer { Task { await action(old, wasAccepted ? "end" : "decline") } }
     }
     func receivedAlertToken(_ token: Data) {
         alertToken = token.map { String(format: "%02x", $0) }.joined(); synchronizeRegistrations()
@@ -276,7 +366,7 @@ extension MobileContact: PKPushRegistryDelegate, CXProviderDelegate, UNUserNotif
     }
     func providerDidReset(_ provider: CXProvider) { finish(reason: .failed) }
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        guard let incoming = push, incoming.invitationID == action.callUUID else { action.fail(); return }
+        guard !postponing, let incoming = push, incoming.invitationID == action.callUUID else { action.fail(); return }
         setupTask = Task {
             do {
                 try await prepare(incoming)
@@ -309,8 +399,19 @@ extension MobileContact: PKPushRegistryDelegate, CXProviderDelegate, UNUserNotif
         let value = (try? JSONSerialization.data(withJSONObject: response.notification.request.content.userInfo)).flatMap { try? JSONDecoder().decode(JSON.self, from: $0) }
         Task { @MainActor in
             defer { completionHandler() }
-            guard let value, let incoming = try? MobilePush(value), incoming.isCurrent(), settings[incoming.controllerID]?.notifications == true else { return }
-            do { detail = try await resolve(incoming) } catch { self.error = "This notification expired or its bot is no longer available." }
+            guard let value, let incoming = try? MobilePush(value), incoming.isCurrent() else { return }
+            if response.notification.request.content.categoryIdentifier == Self.postponeCategory {
+                guard settings[incoming.controllerID]?.calls == true else { return }
+                switch response.actionIdentifier {
+                case "ring-15": await postpone(incoming, until: Date().addingTimeInterval(15 * 60))
+                case "ring-60": await postpone(incoming, until: Date().addingTimeInterval(60 * 60))
+                default:
+                    do { detail = try await resolve(incoming); callInvitation = incoming; chooseCallTime = true }
+                    catch { self.error = "This call expired or its bot is no longer available." }
+                }
+            } else if settings[incoming.controllerID]?.notifications == true {
+                do { detail = try await resolve(incoming) } catch { self.error = "This notification expired or its bot is no longer available." }
+            }
         }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([]) }

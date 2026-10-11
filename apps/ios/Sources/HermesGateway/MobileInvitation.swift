@@ -24,6 +24,7 @@ public struct MobileInvitation {
     public let state: String
     public let kind: String
     public let profile: String
+    public let canPostpone: Bool
     public init(_ value: JSON, push: MobilePush, allowedGuests: Set<UUID>, now: Date = Date(), accepting: Bool = false) throws {
         guard value["invitation_id"].string.flatMap(UUID.init(uuidString:)) == push.invitationID,
               let guest = value["guest_id"].string.flatMap(UUID.init(uuidString:)), allowedGuests.contains(guest),
@@ -36,8 +37,35 @@ public struct MobileInvitation {
               accepting ? state == "accepted" && kind == "call" : state == "pending" else {
             throw GatewayError.message("This invitation expired, was answered, or no longer belongs to an enabled bot.")
         }
+        canPostpone = value["can_postpone"].bool
         id = push.invitationID; guestID = guest; self.kind = kind; self.state = state; profile = "default"
         name = String((value["name"].string ?? "Hermes").prefix(100))
         reason = String((value["reason"].string ?? "").prefix(500))
+    }
+}
+
+/// Server-owned reschedule. It is bound to a saved controller and an allowed bot.
+public struct MobileDeferredCall: Identifiable {
+    public let id: UUID
+    public let controllerID: UUID
+    public let guestID: UUID
+    public let name: String
+    public let scheduledAt: Date
+    public init(_ value: JSON, controllerID: UUID, allowedGuests: Set<UUID>) throws {
+        guard let id = value["invitation_id"].string.flatMap(UUID.init(uuidString:)),
+              let guest = value["guest_id"].string.flatMap(UUID.init(uuidString:)), allowedGuests.contains(guest),
+              value["profile"].string == "default", value["kind"].string == "call",
+              value["state"].string == "postponed", value["deferred_state"].string == "scheduled",
+              let due = value["scheduled_at"].number, due.isFinite else {
+            throw GatewayError.message("This call is no longer scheduled.")
+        }
+        self.id = id; self.controllerID = controllerID; guestID = guest
+        name = String((value["name"].string ?? "Hermes").prefix(100))
+        scheduledAt = Date(timeIntervalSince1970: due)
+    }
+    public static func validateTime(_ date: Date, now: Date = Date()) throws {
+        guard date.timeIntervalSince1970.isFinite, date >= now.addingTimeInterval(60), date <= now.addingTimeInterval(7 * 86400) else {
+            throw GatewayError.message("Choose a time from one minute to seven days from now.")
+        }
     }
 }

@@ -75,22 +75,71 @@ struct MobileContactView: View {
 
 struct MobileCallBanner: View {
     @Bindable var contact = MobileContact.shared
+    @State private var selectedTime = Date().addingTimeInterval(15 * 60)
+    @State private var editingCall: MobileDeferredCall?
     var body: some View {
-        if contact.voice.active || contact.voice.connecting {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(contact.detail?.name ?? "Hermes").font(.headline)
-                    Text(contact.voice.connecting ? "Connecting voice…" : "GPT Live call").font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            if contact.voice.active || contact.voice.connecting {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(contact.detail?.name ?? "Hermes").font(.headline)
+                        Text(contact.voice.connecting ? "Connecting voice…" : "GPT Live call").font(.caption)
+                    }
+                    Spacer()
+                    Button(contact.voice.muted ? "Unmute" : "Mute") { contact.voice.toggleMute() }
+                    Button("End", role: .destructive) { contact.end() }
                 }
-                Spacer()
-                Button(contact.voice.muted ? "Unmute" : "Mute") { contact.voice.toggleMute() }
-                Button("End", role: .destructive) { contact.end() }
-            }.padding().background(.regularMaterial)
-        } else if let detail = contact.detail, detail.kind == "notification" {
-            VStack(alignment: .leading) {
+            } else if let incoming = contact.callInvitation, incoming.isCurrent(), let detail = contact.detail, detail.kind == "call" {
+                Text(detail.name + " is calling").font(.headline)
+                Text(detail.reason).font(.caption)
+                HStack {
+                    Menu("Ring again") {
+                        Button("In 15 minutes") { Task { await contact.postpone(incoming, until: Date().addingTimeInterval(15 * 60)) } }
+                        Button("In 1 hour") { Task { await contact.postpone(incoming, until: Date().addingTimeInterval(60 * 60)) } }
+                        Button("Choose a time…") { editingCall = nil; selectedTime = Date().addingTimeInterval(15 * 60); contact.chooseCallTime = true }
+                    }.disabled(contact.postponing || !detail.canPostpone)
+                    Spacer()
+                    Button("Decline", role: .destructive) { contact.end() }
+                }
+            } else if let detail = contact.detail, detail.kind == "notification" {
                 HStack { Text(detail.name).font(.headline); Spacer(); Button("Dismiss") { contact.detail = nil } }
                 Text(detail.reason)
-            }.padding().background(.regularMaterial)
+            }
+            ForEach(contact.deferredCalls) { call in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(call.name + " will ring again").font(.headline)
+                        Text(call.scheduledAt, format: .dateTime.month().day().hour().minute()).font(.caption)
+                    }
+                    Spacer()
+                    Button("Change time") { editingCall = call; selectedTime = call.scheduledAt; contact.chooseCallTime = true }
+                    Button("Cancel", role: .destructive) { Task { await contact.cancelPostponement(call) } }
+                }.disabled(contact.postponing)
+            }
+            if let error = contact.error {
+                HStack { Text(error).font(.caption).foregroundStyle(.red); Spacer(); Button("Dismiss") { contact.error = nil } }
+            }
+        }
+        .padding(contact.detail != nil || !contact.deferredCalls.isEmpty || contact.error != nil ? 12 : 0)
+        .background(.regularMaterial)
+        .task { await contact.refreshDeferredCalls() }
+        .sheet(isPresented: $contact.chooseCallTime) {
+            NavigationStack {
+                Form {
+                    DatePicker("Ring again at", selection: $selectedTime, in: Date().addingTimeInterval(90)...Date().addingTimeInterval(7 * 86400))
+                    Text("The agent will call this phone once at this time. The call will ring for up to one minute. It requires network access and an available bot.").font(.footnote)
+                    Button("Ask agent to ring again") {
+                        Task {
+                            if let editingCall { await contact.changeTime(editingCall, to: selectedTime) }
+                            else if let incoming = contact.callInvitation { await contact.postpone(incoming, until: selectedTime) }
+                            if contact.error == nil { contact.chooseCallTime = false }
+                        }
+                    }.disabled(contact.postponing)
+                    if let error = contact.error { Text(error).foregroundStyle(.red) }
+                }
+                .navigationTitle("Ring again")
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { contact.chooseCallTime = false } } }
+            }
         }
     }
 }
