@@ -27,9 +27,16 @@ import WebRTC
     private var flushing = false
     private var outboxURL: URL?
     private var startup: UUID?
+    private static weak var current: VoiceCall?
+    private var managedAudio = false
+    var onEnded: (() -> Void)?
 
-    func start(client: GatewayClient, profile: String, runtimeID: String, history: [ChatMessage]) async {
+    static func stopCurrent() { current?.stop() }
+
+    func start(client: GatewayClient, profile: String, runtimeID: String, history: [ChatMessage], managedAudio: Bool = false) async {
         guard !active && !connecting && peer == nil else { return }
+        Self.current?.stop()
+        Self.current = self; self.managedAudio = managedAudio
         connecting = true; error = nil
         let generation = UUID(); startup = generation
         defer { if startup == generation { connecting = false } }
@@ -46,11 +53,14 @@ import WebRTC
             try await flush()
             let audioConfiguration = VoiceAudioConfiguration.install()
             let audio = RTCAudioSession.sharedInstance()
-            audio.lockForConfiguration()
-            do {
-                try audio.setConfiguration(audioConfiguration, active: true)
-                audio.unlockForConfiguration()
-            } catch { audio.unlockForConfiguration(); throw error }
+            if !managedAudio {
+                audio.useManualAudio = false
+                audio.lockForConfiguration()
+                do {
+                    try audio.setConfiguration(audioConfiguration, active: true)
+                    audio.unlockForConfiguration()
+                } catch { audio.unlockForConfiguration(); throw error }
+            }
             RTCInitializeSSL()
             let factory = RTCPeerConnectionFactory(); self.factory = factory
             let configuration = RTCConfiguration(); configuration.sdpSemantics = .unifiedPlan
@@ -100,7 +110,7 @@ import WebRTC
         self.client = client; self.profile = profile; self.runtimeID = runtimeID
         let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let key = Data(profile.utf8).base64EncodedString().replacingOccurrences(of: "/", with: "_")
-        outboxURL = support.appendingPathComponent("voice-\(client.endpoint.id)-\(key).json")
+        outboxURL = support.appendingPathComponent("\(managedAudio ? "incoming-" : "")voice-\(client.endpoint.id)-\(key).json")
         if let outboxURL, FileManager.default.fileExists(atPath: outboxURL.path) {
             pending = try JSONDecoder().decode([JSON].self, from: Data(contentsOf: outboxURL))
         }
@@ -120,10 +130,12 @@ import WebRTC
         send(["type": .string("session.close")])
         track?.isEnabled = false; channel?.delegate = nil; channel?.close(); peer?.close()
         channel = nil; peer = nil; track = nil; factory = nil; delegation.cancel()
-        if hadAudio {
+        if hadAudio && !managedAudio {
             let audio = RTCAudioSession.sharedInstance()
             audio.lockForConfiguration(); try? audio.setActive(false); audio.unlockForConfiguration()
         }
+        if Self.current === self { Self.current = nil }
+        if hadAudio { onEnded?() }
         Task { do { try await flush() } catch { self.error = "Transcript retained on this phone: \(error.localizedDescription)" } }
     }
     func toggleMute() {
@@ -202,7 +214,7 @@ import WebRTC
     }
     private func persist() throws {
         guard let outboxURL else { return }
-        try JSONEncoder().encode(pending).write(to: outboxURL, options: [.atomic, .completeFileProtection])
+        try JSONEncoder().encode(pending).write(to: outboxURL, options: [.atomic, managedAudio ? .completeFileProtectionUntilFirstUserAuthentication : .completeFileProtection])
     }
     private func flush() async throws {
         guard !flushing, let client else { return }

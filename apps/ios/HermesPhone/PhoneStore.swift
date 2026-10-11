@@ -23,7 +23,9 @@ import HermesGateway
         let client = GatewayClient(endpoint: endpoint, token: token)
         try await client.connect()
         let rows = try await client.request("profiles.list", ["include_sessions": .bool(true)])
+        try MobileContact.shared.authenticationReplaced(endpoint)
         try GatewayKeychain.save(token, id: endpoint.id)
+        try MobileCredentials.synchronize(Data(token.utf8), id: endpoint.id)
         disconnectController(endpoint.id)
         controllerSessions.removeValue(forKey: endpoint.id)?.session.invalidateAndCancel()
         if !endpoints.contains(where: { $0.id == endpoint.id }) { endpoints.append(endpoint) }
@@ -103,12 +105,13 @@ import HermesGateway
         } else { authenticationEndpoint = endpoint }
         let id = authenticationEndpoint.id
         if controllerSessions[id] == nil {
-            controllerSessions[id] = try ControllerSession.restore(endpoint: authenticationEndpoint, data: GatewayKeychain.readData(id))
+            controllerSessions[id] = try ControllerSession.restore(endpoint: authenticationEndpoint, data: MobileCredentials.foregroundData(id))
         }
         if let controller = controllerSessions[id] {
             return GatewayClient(endpoint: endpoint, token: nil, session: controller.session, authenticationEndpoint: authenticationEndpoint, onAuthenticationChange: { [weak self, weak controller] in
                 guard let self, let controller, self.controllerSessions[id] === controller else { return }
                 try GatewayKeychain.saveData(controller.savedData(), id: id)
+                try MobileCredentials.synchronize(controller.savedData(), id: id)
             })
         }
         return GatewayClient(endpoint: endpoint, token: try GatewayKeychain.read(id))
@@ -118,10 +121,13 @@ import HermesGateway
         let client = GatewayClient(endpoint: endpoint, token: nil, session: controller.session, onAuthenticationChange: { [weak self, weak controller] in
             guard let self, let controller, self.controllerSessions[endpoint.id] === controller else { return }
             try GatewayKeychain.saveData(controller.savedData(), id: endpoint.id)
+            try MobileCredentials.synchronize(controller.savedData(), id: endpoint.id)
         })
         try await client.connect()
         let rows = try await client.request("profiles.list", ["include_sessions": .bool(true)])
-        do { try GatewayKeychain.saveData(controller.savedData(), id: endpoint.id) }
+        try MobileContact.shared.authenticationReplaced(endpoint)
+        do { try GatewayKeychain.saveData(controller.savedData(), id: endpoint.id)
+            try MobileCredentials.synchronize(controller.savedData(), id: endpoint.id) }
         catch { client.disconnect(); throw error }
         disconnectController(endpoint.id)
         controllerSessions[endpoint.id]?.session.invalidateAndCancel()

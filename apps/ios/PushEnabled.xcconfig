@@ -1,0 +1,4 @@
+// Opt-in only. Requires an explicit com.hermes.iphone App ID and push-capable profile.
+HERMES_PUSH_ENABLED = YES
+HERMES_APNS_ENVIRONMENT = development
+CODE_SIGN_ENTITLEMENTS = $(SRCROOT)/PushEnabled.entitlements

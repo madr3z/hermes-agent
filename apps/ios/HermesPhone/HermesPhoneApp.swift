@@ -2,14 +2,15 @@ import SwiftUI
 import HermesGateway
 
 @main struct HermesPhoneApp: App {
+    @UIApplicationDelegateAdaptor(HermesApplicationDelegate.self) private var appDelegate
     @State private var store = PhoneStore()
     var body: some Scene { WindowGroup { RosterView(store: store) } }
 }
 
 private enum RosterSheet: Identifiable {
-    case gateway(GatewayEndpoint?), create, delete(VMDeletionTarget)
+    case gateway(GatewayEndpoint?), create, delete(VMDeletionTarget), mobile(GatewayEndpoint)
     var id: String {
-        switch self { case .gateway(let endpoint): return "gateway-" + (endpoint?.id.uuidString ?? "new"); case .create: return "create"; case .delete(let target): return "delete-\(target.id)" }
+        switch self { case .gateway(let endpoint): return "gateway-" + (endpoint?.id.uuidString ?? "new"); case .mobile(let endpoint): return "mobile-" + endpoint.id.uuidString; case .create: return "create"; case .delete(let target): return "delete-\(target.id)" }
     }
 }
 
@@ -41,6 +42,7 @@ struct RosterView: View {
                         }
                         if !endpoint.baseURL.path.contains("/gateways/") {
                             Button("Sign in to controller…") { sheet = .gateway(endpoint) }
+                            Button("Calls and notifications…") { sheet = .mobile(endpoint) }
                         }
                         if let owner = store.vmOwners[endpoint.id.uuidString], owner.owns(endpoint), store.vmDeletionControllers.contains(owner.mainID),
                            let target = VMDeletionTarget(mainID: owner.mainID, requestID: owner.requestID) {
@@ -51,6 +53,7 @@ struct RosterView: View {
                 if let error = store.error { Section { Text(error).foregroundStyle(.red); Button("Retry") { Task { await store.refresh() } } } }
                 Section { Text("Conversations and tasks live on your gateway. Your phone holds the gateway access token in Keychain.").font(.footnote).foregroundStyle(.secondary) }
             }
+            .safeAreaInset(edge: .bottom) { MobileCallBanner() }
             .navigationTitle("Hermes")
             .navigationDestination(for: Bot.self) { bot in ChatView(bot: bot, store: store) }
             .toolbar {
@@ -69,6 +72,7 @@ struct RosterView: View {
                 case .gateway(let endpoint): GatewayForm(store: store, existing: endpoint)
                 case .create: CreateBotView(store: store)
                 case .delete(let target): VMDeletionView(target: target, store: store)
+                case .mobile(let endpoint): MobileContactView(endpoint: endpoint, store: store)
                 }
             }
         }

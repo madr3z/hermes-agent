@@ -196,9 +196,10 @@ import HermesGateway
                 Object.defineProperty(event, 'changedTouches', {value:fingers.map(([identifier,clientX]) => ({identifier,clientX,clientY:y}))});
                 canvas.dispatchEvent(event);
             };
-            touch('touchstart', [[0,120],[1,220]]);
-            touch('touchmove', [[0,70],[1,270]]);
-            touch('touchend', [[0,70],[1,270]]);
+            // Each finger must cross noVNC's strict >50px two-touch threshold.
+            touch('touchstart', [[0,110],[1,230]]);
+            touch('touchmove', [[0,50],[1,290]]);
+            touch('touchend', [[0,50],[1,290]]);
             """, arguments: [:], in: nil, contentWorld: .page)
         await fulfillment(of: [noInput], timeout: 0.3)
         messages.next = nil
