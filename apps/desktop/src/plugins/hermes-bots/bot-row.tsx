@@ -89,6 +89,7 @@ import {
   moveBotsToSection,
   moveGroupChatsToSection
 } from './user-sections'
+import { VmMenuItem } from './vm-open'
 
 // ── bot row ──────────────────────────────────────────────────────────────────
 
@@ -332,6 +333,7 @@ export function BotRow({ bot, onDelete, onEdit, onGroup, onNewSection, showHandl
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => void openRosterBot(bot)}>{b.bot.openBotChat}</ContextMenuItem>
         <ContextMenuItem onSelect={() => openBotScreen(bot, meta)}>{b.screen.menu}</ContextMenuItem>
+        <VmMenuItem bot={bot} meta={meta} />
         <ContextMenuCheckboxItem
           checked={Boolean(meta?.screenAutoOpen)}
           onSelect={() => {

@@ -23,7 +23,8 @@ import type { ReactNode } from 'react'
 import { capabilityScoped } from '@/api/client'
 
 import { botProvisioningClient } from './bot-provisioning'
-import { listConnections } from './connections'
+import { botVmClient, botVmOwner, hasBotVm } from './bot-vm'
+import { listConnections, pluginRouteStillRegistered } from './connections'
 /** Pane, status bar and titlebar slots; see `./areas` for the mount rules. */
 export { PANES_AREA, STATUSBAR_AREAS, TITLEBAR_AREAS } from './areas'
 import { PRIMARY_SESSION_VIEW } from '@/app/chat/session-view'
@@ -119,6 +120,9 @@ import { sessionsHost } from './sessions'
 import { desktopSettings } from './settings'
 
 export type { BotVmCapabilities, BotVmRequest, BotVmStatus } from './bot-provisioning'
+export type { BotVmOwner, VmPowerAction, VmPowerOperation, VmRuntimeStatus } from './bot-vm'
+/** The plugin authoring contract (`HermesPlugin`, `PluginContext`, `ctx.*` door types). */
+export type * from './plugin-contract'
 
 // -- state: readonly views over the app's live atoms -------------------------
 
@@ -314,31 +318,6 @@ async function requestPluginProfile<T>(
   throw new Error(
     `Profile "${profile}" requires a route descriptor from host.profileRoutes(); profile-only routing is limited to legacy/local profiles.`
   )
-}
-
-/** Re-read Electron's current registry before retrying an exact-owner wake.
- *  A route that was removed or replaced while the first hydration wait ran is
- *  no longer authority to touch that backend, even when its labels still look
- *  identical. */
-async function pluginRouteStillRegistered(route: PluginProfileRoute): Promise<boolean> {
-  const getProfileRoutes = window.hermesDesktop?.getProfileRoutes
-
-  if (!getProfileRoutes) {
-    return false
-  }
-
-  try {
-    const routes = await getProfileRoutes($profiles.get().map(profile => profile.name))
-
-    return routes.some(
-      candidate =>
-        candidate.connectionId === route.connectionId &&
-        candidate.profile === route.profile &&
-        candidate.targetProfile === route.targetProfile
-    )
-  } catch {
-    return false
-  }
 }
 
 if (typeof window !== 'undefined') {
@@ -672,6 +651,9 @@ async function awaitProfileActivation(
 
 export const host = {
   botProvisioning: botProvisioningClient,
+  botVmOwner,
+  botVm: botVmClient,
+  hasBotVm,
   state: {
     /** Runtime id of the active chat session (null on a fresh draft). */
     activeSessionId: readonlyAtom<null | string>($activeSessionId),
@@ -1644,12 +1626,10 @@ export const host = {
 
 // -- react bridge -------------------------------------------------------------
 
-/** The plugin authoring contract (`HermesPlugin`, `PluginContext`, `ctx.*` door types). */
-export type * from './plugin-contract'
+export type { DesktopSettingKey, DesktopSettingValues } from './settings'
 
 // -- ui: the design language --------------------------------------------------
 
-export type { DesktopSettingKey, DesktopSettingValues } from './settings'
 /** THE whole Capabilities surface (Skills / Tools / MCP tabs, installed
  *  lists, full-skill detail pane, embedded hub picker with one-click
  *  installs). For plugin dialogs pass `embedded` (tab state stays local —
@@ -1734,6 +1714,7 @@ export {
   PanelRowMenu,
   PanelSectionLabel
 } from '@/app/overlays/panel'
+export { RemoteVmTerminal } from '@/app/right-sidebar/terminal/remote-vm-terminal'
 
 export {
   type ProfileGroupHeaderContribution,
@@ -1982,6 +1963,7 @@ export { SESSION_ROW_AREAS, type SessionRowSlotContribution, type SessionRowSlot
 /** A sibling WebSocket beside the route's `/api/ws` (voice PCM, Bot Screen RFB):
  *  same origin, same auth resolution as chat. */
 export { resolveSiblingWsUrl, type SiblingWsRoute } from '@/lib/sibling-ws-url'
+export { readKey, writeKey } from '@/lib/storage'
 /** Canonical time formatting — every surface pulls from here so timestamps read
  *  the same app-wide. For a row's AGE, bucket with `coarseElapsed` and render
  *  the compact suffixes (`t.sidebar.row.ageMin` → "52m"), which is what the
@@ -2085,6 +2067,7 @@ export { Blobatar } from 'blobatar/react'
 /** Plugin-local reactive state (share between a trigger and its panel, poll
  *  loops, cross-component signals) — the same primitive `host.state` uses. */
 export { atom, computed } from 'nanostores'
+
 /** Markdown renderer (same pipeline core chat surfaces use) so plugins render
  *  message text as a preview instead of raw Markdown source. */
 export { Streamdown } from 'streamdown'

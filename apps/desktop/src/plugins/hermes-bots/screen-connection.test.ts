@@ -12,7 +12,7 @@ import type { RosterRow } from './types'
 const routeMock = vi.fn<() => { connectionId: string; profile: string; targetProfile?: string } | null>(() => null)
 
 vi.mock('@hermes/plugin-sdk', () => ({
-  host: { requestProfile: vi.fn() },
+  host: { requestProfile: vi.fn(), botVmOwner: vi.fn(async () => null) },
   resolveSiblingWsUrl: vi.fn()
 }))
 
@@ -132,4 +132,26 @@ describe('resolveScreenWsUrl', () => {
       { stripGatewayCredential: true }
     )
   })
+})
+
+it('retains independent main authentication beside the guest display ticket for a provisioned VM', async () => {
+  routeMock.mockReturnValue({ connectionId: 'vm-a', profile: 'default' })
+  vi.mocked(host.botVmOwner).mockResolvedValueOnce({
+    connectionId: 'main',
+    requestId: 'a',
+    guestConnectionId: 'vm-a',
+    mainUrl: 'https://main',
+    guestUrl: 'https://main/a'
+  })
+  vi.mocked(resolveSiblingWsUrl).mockResolvedValueOnce(
+    'wss://main/api/plugins/bot-provisioning/v1/gateways/a/api/display/ws?token=main-auth'
+  )
+  const url = new URL(await resolveScreenWsUrl(bot, 'guest-ticket'))
+  expect(resolveSiblingWsUrl).toHaveBeenLastCalledWith(
+    { connectionId: 'vm-a', profile: 'default' },
+    '/api/display/ws',
+    { stripGatewayCredential: false }
+  )
+  expect(url.searchParams.get('token')).toBe('main-auth')
+  expect(url.searchParams.get('display_ticket')).toBe('guest-ticket')
 })

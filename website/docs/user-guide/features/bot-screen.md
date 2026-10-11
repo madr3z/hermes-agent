@@ -411,3 +411,32 @@ sudo mkdir -p /tmp/.X11-unix && sudo chmod 1777 /tmp/.X11-unix  # no-tmp: ok —
 ```
 
 The mount comes back on the next WSL restart; repeat the two commands then.
+
+## Provisioned Linux VMs
+
+For a VM created through **Create Linux VM** on a configured main gateway, open
+its bot context menu and choose **Remote VM**. The pane combines the existing
+screen viewer and its **Take control** / hand-back controls with a guest terminal
+and VM power status. Screen and terminal tabs stay attached when hidden.
+
+The terminal runs as `hermes` in `/home/hermes/workspace` inside the guest. Closing
+the pane detaches from its persistent tmux shell; reconnecting resumes it. The
+most recent terminal attachment owns keyboard input. If another client takes
+over, use **Reconnect** explicitly to regain control. If you exit the shell,
+reconnecting opens a new shell.
+
+**Start**, **Stop**, and **Restart** are explicit commands to the main gateway.
+Closing the pane, changing bots or losing a connection never powers off the VM.
+Stop and Restart interrupt guest work but preserve its disk and files; Stop is
+also available for a starting or failed VM whose desired state is running.
+Accepted commands are followed by polling the VM's actual state.
+
+If a power request loses its response, **Retry same operation** reuses the same
+saved operation ID, including after reopening the pane or restarting Desktop.
+An unknown outcome requires **Review VM state** before a new command. Screen,
+terminal and power operations stay bound to the registered VM and main gateway;
+editing or removing either connection requires reopening the pane.
+
+These controls require the main gateway's VM-control capability and the guest
+screen/terminal runtime. Older gateways continue to support their existing Bot
+Screen capabilities; a missing guest terminal is shown as unavailable.

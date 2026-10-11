@@ -1141,6 +1141,7 @@ export type DesktopConnectionKind = 'cloud' | 'local' | 'remote' | 'ssh'
 // A registered agent source as the renderer sees it: token bytes never cross
 // the IPC boundary (preview + set flag instead, like DesktopConnectionConfig).
 export interface DesktopRegistryConnection {
+  provisionedVm?: { connectionId: string; requestId: string }
   id: string
   kind: DesktopConnectionKind
   // Required, registry-unique device name ("Homelab", "Work laptop").

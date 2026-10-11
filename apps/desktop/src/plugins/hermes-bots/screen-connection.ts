@@ -114,7 +114,15 @@ export function isEventForBotScreen(bot: RosterRow, event: RpcEvent, profileKey:
   return expected === actual || (expected === 'local' && actual === null)
 }
 
-export function displayRequest<T>(bot: RosterRow, method: string, params: Record<string, unknown> = {}): Promise<T> {
+export async function displayRequest<T>(
+  bot: RosterRow,
+  method: string,
+  params: Record<string, unknown> = {}
+): Promise<T> {
+  if (bot.vmOwner) {
+    await host.botVm(bot.vmOwner).assertOwner()
+  }
+
   const route = botScreenRoute(bot)
 
   if (route === null) {
@@ -143,6 +151,10 @@ export function displayRequest<T>(bot: RosterRow, method: string, params: Record
 export async function retainBotScreen(bot: RosterRow): Promise<() => void> {
   const noop = () => undefined
 
+  if (bot.vmOwner) {
+    await host.botVm(bot.vmOwner).assertOwner()
+  }
+
   const route = botScreenRoute(bot)
 
   if (typeof host.retainProfile !== 'function' || route === null) {
@@ -164,6 +176,10 @@ export async function retainBotScreen(bot: RosterRow): Promise<() => void> {
  * bridge and the single-use display ticket attached.
  */
 export async function resolveScreenWsUrl(bot: RosterRow, ticket: string): Promise<string> {
+  if (bot.vmOwner) {
+    await host.botVm(bot.vmOwner).assertOwner()
+  }
+
   const resolved = resolveBotConnectionRoute(bot)
 
   if (resolved.status === 'owner_removed') {
@@ -172,18 +188,28 @@ export async function resolveScreenWsUrl(bot: RosterRow, ticket: string): Promis
 
   const route = resolved.route
 
-  // The /api/ws credential authenticated the RPC that minted the display ticket;
-  // the bridge authenticates on the ticket alone, so the gateway credential is
-  // dropped rather than spending a second one-shot ticket.
+  // A provisioned VM's main proxy authenticates independently of the guest's
+  // display ticket. Ordinary guests still use only the single-use display ticket.
+  const vmOwner =
+    route?.connectionId && typeof host.botVmOwner === 'function' ? await host.botVmOwner(route.connectionId) : null
+
   const url = new URL(
     await resolveSiblingWsUrl(
       { connectionId: route?.connectionId ?? null, profile: route?.targetProfile ?? route?.profile ?? bot.name },
       '/api/display/ws',
       {
-        stripGatewayCredential: true
+        stripGatewayCredential: !vmOwner
       }
     )
   )
+
+  if (bot.vmOwner) {
+    const expected = new URL(bot.vmOwner.guestUrl + '/api/display/ws')
+
+    if (url.host !== expected.host || url.pathname !== expected.pathname || url.protocol !== 'wss:') {
+      throw new Error('VM connection owner changed. Reopen the VM pane.')
+    }
+  }
 
   url.searchParams.set('display_ticket', ticket)
 

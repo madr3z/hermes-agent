@@ -1,3 +1,11 @@
+import {
+  hostLabelFromBaseUrl,
+  modeIsRemoteLike,
+  normalizeRemoteBaseUrl,
+  normalizeRemoteHeaders,
+  normalizeSshConfig,
+  normAuthMode
+} from './connection-config'
 /**
  * connection-registry.ts
  *
@@ -26,16 +34,8 @@
  * — same pattern as connection-config.ts / backend-probes.ts. main.ts wires
  * these into the IPC layer and owns file I/O + secret encryption.
  */
-
-import {
-  hostLabelFromBaseUrl,
-  modeIsRemoteLike,
-  normalizeRemoteBaseUrl,
-  normalizeRemoteHeaders,
-  normalizeSshConfig,
-  normAuthMode
-} from './connection-config'
 import { matchingConnectionId, type StoredRoute } from './connection-route-identity'
+import { normalizeProvisionedVm, retainedProvisionedVm } from './provisioned-vm'
 
 export const REGISTRY_VERSION = 2
 
@@ -73,6 +73,7 @@ export interface RegistryConnection {
   keyPath?: string
   remoteHermesPath?: string
   remoteProfile?: string
+  provisionedVm?: { connectionId: string; requestId: string }
 }
 
 /**
@@ -1052,6 +1053,9 @@ export function normalizeConnectionInput(input: ConnectionInput, registry: Conne
     // Cloud never stores a token (below), so it is always oauth.
     const authMode = storedAuthMode(kind, input.authMode, undefined)
     const entry: RegistryConnection = { id, kind, label, url, authMode }
+    const previous = registry.connections.find(connection => connection.id === id)
+
+    Object.assign(entry, retainedProvisionedVm(kind, url, authMode, previous))
 
     // A token is only meaningful for token-auth remotes. Dropping it here is
     // what clears the stale envelope when an entry is switched token→oauth
@@ -1302,6 +1306,7 @@ export function normalizeRegistry(raw: unknown): ConnectionRegistry {
 
         clean.url = url
         clean.authMode = storedAuthMode(kind, entry.authMode, entry.token)
+        Object.assign(clean, normalizeProvisionedVm(kind, entry.provisionedVm))
 
         if (entry.token !== undefined) {
           clean.token = entry.token

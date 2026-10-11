@@ -39,6 +39,7 @@ describe('provisioned gateway registration', () => {
     await registerProvisionedBot({ connectionId: 'main', requestId: id }, deps)
     expect(result).toEqual({ id: `bot-vm-${id}` })
     expect(deps.registry().connections).toHaveLength(2)
+    expect(deps.registry().connections[1].provisionedVm).toEqual({ connectionId: 'main', requestId: id })
     expect(deps.registry().connections[1].token).toEqual({ encrypted: 'sealed' })
     expect(deps.request).toHaveBeenCalledWith({
       connectionId: 'main',

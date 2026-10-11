@@ -16,6 +16,7 @@ export interface BotVmStatus {
 }
 export interface BotVmCapabilities {
   available: boolean
+  vm_control?: boolean
   resources: Record<'cpu' | 'memory_mib' | 'disk_gib', { min: number; max: number; default: number }>
   credential_keys: string[]
 }

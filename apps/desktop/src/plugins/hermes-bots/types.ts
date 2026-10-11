@@ -9,7 +9,7 @@
  * required is a claim that every one of those paths supplies it.
  */
 
-import type { ProfileSessionPreview } from '@hermes/plugin-sdk'
+import type { BotVmOwner, ProfileSessionPreview } from '@hermes/plugin-sdk'
 
 /**
  * The compact age suffixes the sidebar's session rows render ("now", "m", "h",
@@ -94,6 +94,8 @@ export interface BotMeta {
 }
 
 export interface RosterRow {
+  /** Captured only by a VM workspace; never stored in the roster. */
+  vmOwner?: BotVmOwner
   name: string
   canonical_session?: CanonicalSession | null
   connectionId?: string

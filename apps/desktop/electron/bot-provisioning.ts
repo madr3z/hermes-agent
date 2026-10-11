@@ -71,6 +71,7 @@ export async function registerProvisionedBot(
     ),
     url: (source.url || '').replace(/\/$/, '') + expected,
     remoteProfile: 'default',
+    provisionedVm: { connectionId: source.id, requestId: payload.requestId },
     installId: undefined
   }
 
