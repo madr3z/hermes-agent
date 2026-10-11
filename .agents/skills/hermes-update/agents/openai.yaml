@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Custom Hermes"
+  short_description: "Update Hermes, preserve features, and deploy safely"
+  default_prompt: "Use $hermes-update to update our custom Hermes from upstream, resolve conflicts, report features now covered upstream, and deploy the verified update to the existing cluster and managed bot VMs."
