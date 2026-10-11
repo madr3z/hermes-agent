@@ -155,7 +155,7 @@ class HermesProviderMixin:
         self.context.redirect_handler = _with_offline_access
 
     async def _hermes_accept_origin_issued_metadata(self, response):
-        """Accept a path-scoped authorization server's metadata document whose ``issuer`` is the origin
+        """Accept an authorization server's metadata document whose ``issuer`` is the origin
         it lives under (see ``metadata_issued_by_origin``); the SDK's exact-string check (RFC 8414 §3.3)
         would reject it and park the connection on an issuer mismatch (Strava, #116233).
 
@@ -524,7 +524,7 @@ def _metadata_issuer(context: Any) -> str | None:
 
 def metadata_issued_by_origin(metadata: Any, auth_server_url: str | None, response: Any) -> bool:
     """Whether *metadata* may stand in for the exact-issuer match of RFC 8414 §3.3 because it is the
-    document of the path-scoped authorization server *auth_server_url* and names that server's origin.
+    document of the authorization server *auth_server_url* and names that server's origin.
 
     The issuer check stops a party controlling a path or a sibling host from making the client accept
     endpoints of a different authorization server (RFC 8414 §3.3, RFC 9728 §3.3). This narrow shape keeps
@@ -535,18 +535,21 @@ def metadata_issued_by_origin(metadata: Any, auth_server_url: str | None, respon
     actually read from (the final request after any followed redirect), so a redirected document never
     matches. Whoever can publish that document already
     controls the origin's well-known tree, so accepting it grants a path-controlling attacker nothing.
-    Strava's MCP connector publishes exactly this pair (#116233). Anything else (another origin, a
-    different path, the root or OIDC fallback documents, a redirect target) still goes through the
-    exact-string check."""
+    Strava's MCP connector publishes this path-scoped pair (#116233). TickTick advertises a root
+    identifier with a trailing slash but declares its origin without one. Accept that pair only from
+    the same origin's root well-known document. Other origins, paths, fallback documents and redirect
+    targets still go through the exact-string check."""
     from urllib.parse import urlsplit
     if not auth_server_url:
         return False
     parts = urlsplit(auth_server_url)
     path = parts.path.rstrip("/")
-    if (not path or ".." in path.split("/") or parts.username is not None or parts.query or parts.fragment
+    if (".." in path.split("/") or parts.username is not None or parts.query or parts.fragment
             or response.status_code != 200):
         return False
     origin = f"{parts.scheme}://{parts.netloc}"
+    if not path and (parts.path not in ("", "/") or str(metadata.issuer) not in (origin, origin + "/")):
+        return False
     derived = f"{origin}/.well-known/oauth-authorization-server{path}"
     return str(response.url) == derived and str(metadata.issuer).rstrip("/") == origin
 

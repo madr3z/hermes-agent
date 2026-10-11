@@ -56,8 +56,9 @@ def _asm(issuer):
 class _StandIn:
     """Resource + authorization server behind one httpx MockTransport; ``issuer_doc`` maps ASM path -> document."""
 
-    def __init__(self, httpx, issuer_doc):
+    def __init__(self, httpx, issuer_doc, advertised=ADVERTISED):
         self.httpx, self.issuer_doc, self.hits = httpx, issuer_doc, []
+        self.advertised = advertised
 
     def __call__(self, request):
         url = str(request.url)
@@ -69,7 +70,7 @@ class _StandIn:
                 return j(200, {"ok": True})
             return j(401, {}, **{"WWW-Authenticate": 'Bearer resource_metadata="https://res.example/.well-known/oauth-protected-resource"'})
         if url == "https://res.example/.well-known/oauth-protected-resource":
-            return j(200, {"resource": RESOURCE, "authorization_servers": [ADVERTISED]})
+            return j(200, {"resource": RESOURCE, "authorization_servers": [self.advertised]})
         if url.startswith(AS_ORIGIN) and path in self.issuer_doc:
             return j(200, self.issuer_doc[path])
         if url == f"{AS_ORIGIN}/register":
@@ -80,7 +81,7 @@ class _StandIn:
         return j(404, {})
 
 
-async def _run_flow(tmp_path, monkeypatch, issuer_doc):
+async def _run_flow(tmp_path, monkeypatch, issuer_doc, advertised=ADVERTISED):
     from mcp.shared.auth import OAuthClientMetadata
     from pydantic import AnyUrl
 
@@ -105,7 +106,7 @@ async def _run_flow(tmp_path, monkeypatch, issuer_doc):
         server_name="srv", server_url=RESOURCE, storage=storage,
         client_metadata=OAuthClientMetadata(redirect_uris=[AnyUrl("http://127.0.0.1:1/cb")], client_name="Hermes Agent"),
         redirect_handler=redirect, callback_handler=callback)
-    standin = _StandIn(httpx, issuer_doc)
+    standin = _StandIn(httpx, issuer_doc, advertised)
     async with httpx.AsyncClient(auth=provider, transport=httpx.MockTransport(standin)) as client:
         response = await client.get(RESOURCE)
     return response, standin, seen, provider
@@ -122,6 +123,31 @@ async def test_origin_issued_document_of_path_scoped_server_completes_the_flow(t
     # SEP-2352 binding stays on the advertised identifier, so the next 401 reuses this client instead of re-registering.
     assert json.loads((tmp_path / "mcp-tokens" / "srv.client.json").read_text())["issuer"] == ADVERTISED
     assert json.loads((tmp_path / "mcp-tokens" / "srv.json").read_text())["access_token"] == "AT-1"
+
+
+@pytest.mark.asyncio
+async def test_root_slash_advertisement_keeps_original_credential_binding(tmp_path, monkeypatch):
+    """TickTick advertises its root with a slash but declares the issuer without one."""
+    advertised = AS_ORIGIN + "/"
+    response, standin, seen, provider = await _run_flow(
+        tmp_path, monkeypatch, {"/.well-known/oauth-authorization-server": _asm(AS_ORIGIN)}, advertised)
+
+    assert response.status_code == 200
+    assert seen["authorize_url"].startswith(f"{AS_ORIGIN}/authorize?")
+    assert ("POST", f"{AS_ORIGIN}/register") in standin.hits
+    assert str(provider.context.oauth_metadata.issuer) == AS_ORIGIN
+    assert json.loads((tmp_path / "mcp-tokens" / "srv.client.json").read_text())["issuer"] == advertised
+    assert json.loads((tmp_path / "mcp-tokens" / "srv.json").read_text())["hermes_issuer"] == AS_ORIGIN
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("issuer", ["https://other.example", AS_ORIGIN + "/other-path"])
+async def test_root_advertisement_rejects_another_issuer(tmp_path, monkeypatch, issuer):
+    from mcp.client.auth.exceptions import OAuthFlowError
+
+    with pytest.raises(OAuthFlowError):
+        await _run_flow(tmp_path, monkeypatch, {"/.well-known/oauth-authorization-server": _asm(issuer)}, AS_ORIGIN + "/")
+    assert not (tmp_path / "mcp-tokens" / "srv.json").exists()
 
 
 @pytest.mark.asyncio
