@@ -3,8 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useBots } from './i18n'
 import { useVmCreationRequest } from './vm-create-request'
+import { VmCreateSubmit } from './vm-create-submit'
+import { vmCreateProblem } from './vm-create-validation'
+import { VmDeleteDialog } from './vm-delete-dialog'
 import { VmLoginFields } from './vm-login-fields'
-import { validVmLogin } from './vm-login-validation'
 
 /** The durable request belongs to the captured main gateway, not this dialog's lifetime. */
 interface VmCreateProps {
@@ -17,6 +19,7 @@ export function VmCreate({ client: suppliedClient, initialCapabilities }: VmCrea
   const [client] = useState(() => suppliedClient ?? host.botProvisioning())
   const [capabilities, setCapabilities] = useState<BotVmCapabilities | null>(null)
   const [requests, setRequests] = useState<BotVmStatus[]>([])
+  const [deleting, setDeleting] = useState<BotVmStatus | null>(null)
   const [name, setName] = useState('')
   const [resources, setResources] = useState({ cpu: 2, memory_mib: 2048, disk_gib: 20 })
   const [copy, setCopy] = useState(false)
@@ -113,14 +116,7 @@ export function VmCreate({ client: suppliedClient, initialCapabilities }: VmCrea
     }
   }
 
-  const valid =
-    validVmLogin(name, password, confirmation, capabilities?.linux_account) &&
-    capabilities?.available &&
-    Object.entries(resources).every(([key, value]) => {
-      const bounds = capabilities.resources[key as keyof typeof resources]
-
-      return Number.isInteger(value) && value >= bounds.min && value <= bounds.max
-    })
+  const problem = vmCreateProblem(capabilities, name, password, confirmation, resources, b)
 
   return (
     <div className="grid gap-3">
@@ -143,11 +139,6 @@ export function VmCreate({ client: suppliedClient, initialCapabilities }: VmCrea
         </p>
       ) : null}
       <p className="text-xs text-(--ui-text-secondary)">{b.loginRules}</p>
-      {capabilities?.linux_account?.reserved_usernames.includes(name) ? (
-        <p className="text-xs" role="status">
-          {b.reservedUsername}
-        </p>
-      ) : null}
       <div className="grid grid-cols-3 gap-2">
         {(['cpu', 'memory_mib', 'disk_gib'] as const).map(key => (
           <label className="grid gap-1 text-xs" key={key}>
@@ -169,19 +160,13 @@ export function VmCreate({ client: suppliedClient, initialCapabilities }: VmCrea
       </label>
       <p className="text-xs text-(--ui-text-secondary)">{b.exclusions}</p>
       {copy && capabilities ? <p className="text-xs">{capabilities.credential_keys.join(', ')}</p> : null}
-      <Button
-        disabled={busy || !creation.ready || (!valid && (!pending || creation.needsPassword))}
-        onClick={() =>
-          void creation.submit(
-            { name, resources, credentials: { copy, source_profile: 'default' } },
-            password,
-            !!valid && !!capabilities?.available
-          )
-        }
-      >
-        {pending ? b.retry : b.create}
-      </Button>
-      {error || creation.error ? (
+      <VmCreateSubmit
+        creation={creation}
+        draft={{ name, resources, credentials: { copy, source_profile: 'default' } }}
+        password={password}
+        problem={problem}
+      />
+      {error || (creation.ready && creation.error) ? (
         <p className="text-xs text-(--ui-accent)" role="alert">
           {error || creation.error}
         </p>
@@ -194,6 +179,11 @@ export function VmCreate({ client: suppliedClient, initialCapabilities }: VmCrea
             </div>
             <div className="text-(--ui-text-tertiary)">{row.request_id}</div>
             {row.error ? <p>{row.error.message}</p> : null}
+            {capabilities?.vm_delete && row.phase !== 'deleted' ? (
+              <Button onClick={() => setDeleting(row)} size="sm" variant="destructive">
+                {b.deleteAction}
+              </Button>
+            ) : null}
             {row.phase === 'ready' ? (
               <Button onClick={() => void register(row.request_id)} size="sm">
                 {b.connect}
@@ -202,6 +192,17 @@ export function VmCreate({ client: suppliedClient, initialCapabilities }: VmCrea
           </div>
         ))}
       </div>
+      {deleting ? (
+        <VmDeleteDialog
+          client={client.deletion(deleting.request_id)}
+          key={deleting.request_id}
+          onClose={() => setDeleting(null)}
+          onDeleted={async () => {
+            setRequests(rows => rows.filter(row => row.request_id !== deleting.request_id))
+            setDeleting(null)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

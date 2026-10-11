@@ -50,11 +50,6 @@ export function VmLoginFields({
           value={confirmation}
         />
       </label>
-      {mismatch ? (
-        <p className="text-xs text-(--ui-accent)" role="alert">
-          {b.passwordMismatch}
-        </p>
-      ) : null}
     </>
   )
 }

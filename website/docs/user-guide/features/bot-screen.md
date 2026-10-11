@@ -431,6 +431,9 @@ login. Desktop keeps it only in memory and clears it after acceptance or closing
 the dialog. A saved request ID and non-secret settings allow safe recovery.
 After an uncertain submission or reopening, Desktop looks up that request first.
 Only a missing request permits password reentry and a retry with the same ID.
+If **Create VM** is disabled, the dialog shows the exact blocked check: bot name,
+VM password, confirmation, resource bounds, or owning-main readiness. Resource
+defaults and bounds come from that main gateway; fixed limits must match exactly.
 
 The terminal runs as the bot account in its home workspace inside the guest. Closing
 the pane detaches from its persistent tmux shell; reconnecting resumes it. The
@@ -453,3 +456,23 @@ editing or removing either connection requires reopening the pane.
 These controls require the main gateway's VM-control capability and the guest
 screen/terminal runtime. Older gateways continue to support their existing Bot
 Screen capabilities; a missing guest terminal is shown as unavailable.
+
+### Delete a managed bot and its VM
+
+For a bot registered from a provisioning request, the roster's **Delete bot and VM**
+action opens an explicit confirmation. It stops the bot and removes its VM,
+workspace and files. This cannot be undone. Existing backups are retained. The
+same action is available on its creation request, including a pending or failed
+creation. The main must advertise VM deletion support before the action appears.
+
+The client retains one deletion operation ID. After a lost response or reopening
+the dialog, it checks that operation before retrying. It removes the registered
+bot connection only after the main reports **deleted**. A failed deletion keeps
+the bot registered and requires an explicit retry. Closing the dialog does not
+cancel an accepted deletion.
+
+Local profiles and external gateways keep their existing profile deletion behavior.
+They do not gain a VM deletion action. Native ownership metadata identifies managed
+VMs; a matching name or URL does not. Cookie-authenticated managed guests use only
+their verified owning main's native cookie session. Other gateways keep separate
+cookie sessions, and no guest credential is sent to the renderer.

@@ -11,6 +11,7 @@ import { deleteBot } from './profile-ops'
 import type { GroupMember, RosterRow } from './types'
 import { createBotSection, moveGroupChatsToSection, renameBotSection, type SectionDialogState } from './user-sections'
 import { SectionNameDialog } from './user-sections-ui'
+import { VmDeleteDialog } from './vm-delete-dialog'
 
 interface renderRosterDialogsProps {
   b: ReturnType<typeof useBots>
@@ -103,6 +104,18 @@ export function renderRosterDialogs({
         open={Boolean(editing)}
       />
       {grouping ? <GroupDialog bot={grouping} onClose={() => setGrouping(null)} /> : null}
+      {deleting?.vmOwner ? (
+        <VmDeleteDialog
+          client={host.botVm(deleting.vmOwner).deletion()}
+          key={deleting.vmOwner.requestId}
+          onClose={() => setDeleting(null)}
+          onDeleted={async () => {
+            setDeleting(null)
+            await refetch()
+            host.notify({ kind: 'success', message: b.vm.deleted })
+          }}
+        />
+      ) : null}
       <ConfirmDialog
         busyLabel="Deleting…"
         confirmLabel={t.common.delete}
@@ -132,7 +145,7 @@ export function renderRosterDialogs({
             message: `Deleted profile ${name}`
           })
         }}
-        open={Boolean(deleting)}
+        open={Boolean(deleting && !deleting.vmOwner)}
         title={b.bot.deleteTitle}
       />
       <ConfirmDialog

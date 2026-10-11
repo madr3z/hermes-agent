@@ -57,3 +57,18 @@ describe('provisioned gateway registration', () => {
     expect(deps.persist).not.toHaveBeenCalled()
   })
 })
+
+it('registers a cookie-authenticated main without exporting its native session credentials', async () => {
+  const deps = fixture()
+  const source = deps.registry()
+  source.connections[0].authMode = 'oauth'
+  delete source.connections[0].token
+  deps.persist(source)
+  const result = await registerProvisionedBot({ connectionId: 'main', requestId: id }, deps)
+  expect(result).toEqual({ id: `bot-vm-${id}` })
+  expect(deps.registry().connections[1]).toMatchObject({
+    authMode: 'oauth',
+    provisionedVm: { connectionId: 'main', requestId: id }
+  })
+  expect(deps.registry().connections[1].token).toBeUndefined()
+})

@@ -1,6 +1,6 @@
 import type { BotVmCapabilities } from '@hermes/plugin-sdk'
 
-export function validVmLogin(
+export function vmLoginIssue(
   name: string,
   password: string,
   confirmation: string,
@@ -12,17 +12,51 @@ export function validVmLogin(
     policy.username_pattern !== '^[a-z][a-z0-9_-]{0,31}$' ||
     !policy.password.required
   ) {
-    return false
+    return 'loginUnavailable'
+  }
+
+  if (!name) {
+    return 'nameRequired'
+  }
+
+  if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name)) {
+    return 'invalidUsername'
+  }
+
+  if (policy.reserved_usernames.includes(name)) {
+    return 'reservedUsername'
+  }
+
+  if (!password) {
+    return 'passwordRequired'
+  }
+
+  if (/[\0\r\n]/.test(password)) {
+    return 'passwordInvalid'
   }
 
   const bytes = new TextEncoder().encode(password).length
 
-  return (
-    /^[a-z][a-z0-9_-]{0,31}$/.test(name) &&
-    !policy.reserved_usernames.includes(name) &&
-    password === confirmation &&
-    !/[\0\r\n]/.test(password) &&
-    bytes >= policy.password.min_bytes &&
-    bytes <= policy.password.max_bytes
-  )
+  if (bytes < policy.password.min_bytes || bytes > policy.password.max_bytes) {
+    return 'passwordLength'
+  }
+
+  if (!confirmation) {
+    return 'confirmationRequired'
+  }
+
+  if (password !== confirmation) {
+    return 'passwordMismatch'
+  }
+
+  return null
+}
+
+export function validVmLogin(
+  name: string,
+  password: string,
+  confirmation: string,
+  policy: BotVmCapabilities['linux_account']
+) {
+  return vmLoginIssue(name, password, confirmation, policy) === null
 }

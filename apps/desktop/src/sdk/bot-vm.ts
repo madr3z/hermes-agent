@@ -3,6 +3,7 @@ import { resolveSiblingWsUrl } from '@/lib/sibling-ws-url'
 import { $connectionsRegistry } from '@/store/connection-registry-state'
 
 import type { BotVmCapabilities } from './bot-provisioning'
+import { vmDeletionClient } from './bot-vm-deletion'
 import { listConnections } from './connections'
 
 export interface BotVmOwner {
@@ -44,7 +45,15 @@ export function resolveBotVmOwner(rows: VmConnection[], guestConnectionId: strin
   const vm = guest?.provisionedVm
   const main = rows.find(row => row.id === vm?.connectionId)
 
-  if (!vm || !main?.url || guest?.kind !== 'remote' || main.kind !== 'remote' || main.authMode === 'oauth') {
+  if (
+    !vm ||
+    !main?.url ||
+    guest?.kind !== 'remote' ||
+    main.kind !== 'remote' ||
+    main.provisionedVm ||
+    (guest.authMode ?? 'token') !== (main.authMode ?? 'token') ||
+    !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(vm.requestId)
+  ) {
     return null
   }
 
@@ -111,6 +120,20 @@ export function botVmClient(owner: BotVmOwner) {
 
   return {
     assertOwner: check,
+    deletion: () =>
+      vmDeletionClient(
+        owner.requestId,
+        main,
+        async () => {
+          await check()
+
+          return JSON.stringify({ connectionId: owner.connectionId, url: owner.mainUrl })
+        },
+        async () => {
+          await check()
+          await window.hermesDesktop.connections.remove(owner.guestConnectionId)
+        }
+      ),
     capabilities: () => main<BotVmCapabilities>('/api/plugins/bot-provisioning/v1/capabilities'),
     status: () => main<VmRuntimeStatus>(`${prefix}/vm`),
     power: (operation: { operation_id: string; action: VmPowerAction }) =>

@@ -363,3 +363,32 @@ describe('resolveOauthPartition with connectionId (pre-save sign-in identity)', 
     expect(got).not.toMatch(/[\s/€]/)
   })
 })
+
+it.each(['main', 'local'])(
+  'keeps only a canonical managed guest on its owning main cookie jar: primary %s',
+  primary => {
+    const requestId = '25d2e87a-80d9-41e2-a154-5fbbfae2bf70'
+    const main = remote('main', 'https://main.example')
+
+    const guest = remote('guest', `${main.url}/api/plugins/bot-provisioning/v1/gateways/${requestId}`, {
+      provisionedVm: { connectionId: main.id, requestId }
+    })
+
+    const other = remote('unrelated', 'https://main.example/unrelated')
+    const reg = registry(primary, [main, guest, other])
+    const parent = resolveOauthPartition(main.url, { registry: reg })
+    expect(resolveOauthPartition(guest.url + '/api/auth/ws-ticket', { registry: reg })).toBe(parent)
+    expect(resolveOauthPartition(guest.url, { registry: reg, connectionId: guest.id })).toBe(parent)
+    expect(resolveOauthPartition(other.url, { registry: reg })).not.toBe(parent)
+    const alias = remote('unowned-alias', guest.url)
+    reg.connections.push(alias)
+    expect(resolveOauthPartition(guest.url, { registry: reg })).not.toBe(parent)
+    expect(resolveOauthPartition(alias.url, { registry: reg, connectionId: alias.id })).not.toBe(parent)
+    expect(resolveOauthPartition(guest.url, { registry: reg, connectionId: guest.id })).toBe(parent)
+    reg.connections = [main, guest, other]
+    main.url = 'https://repointed.example'
+    expect(resolveOauthPartition(guest.url, { registry: reg })).not.toBe(parent)
+    reg.connections = [guest, other]
+    expect(resolveOauthPartition(guest.url, { registry: reg })).not.toBe(parent)
+  }
+)

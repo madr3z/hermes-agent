@@ -200,3 +200,70 @@ it.each(['found', 'missing'])(
     expect(screen.getByLabelText(vmEn.password)).toHaveProperty('value', '')
   }
 )
+
+const fixedCapabilities = {
+  available: true,
+  linux_account: policy,
+  resources: {
+    cpu: { min: 1, max: 2, default: 2 },
+    memory_mib: { min: 2560, max: 2560, default: 2560 },
+    disk_gib: { min: 20, max: 20, default: 20 }
+  },
+  credential_keys: []
+}
+
+it('explains each blocked input and uses the main gateway fixed RAM and disk defaults', async () => {
+  const client = {
+    ...mocks,
+    deletion: vi.fn(),
+    connectionId: 'main',
+    requestScope: async () => 'main-scope',
+    capabilities: async () => fixedCapabilities
+  }
+
+  render(<VmCreate client={client} initialCapabilities={fixedCapabilities} />)
+  const button = screen.getByRole('button', { name: vmEn.create })
+  await screen.findByText(vmEn.nameRequired)
+  expect(screen.getByLabelText(vmEn.memory_mib)).toHaveProperty('value', '2560')
+  expect(button).toHaveProperty('disabled', true)
+  fireEvent.change(screen.getByLabelText(vmEn.name), { target: { value: 'Hermes Test' } })
+  expect(screen.getByText(vmEn.invalidUsername)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText(vmEn.name), { target: { value: 'hermes-test' } })
+  expect(screen.getByText(vmEn.passwordRequired)).toBeTruthy()
+  enterPassword('short')
+  expect(screen.getByText(vmEn.passwordLength.replace('{min}', '8').replace('{max}', '256'))).toBeTruthy()
+  enterPassword('test-password', '')
+  expect(screen.getByText(vmEn.confirmationRequired)).toBeTruthy()
+  enterPassword('test-password', 'different')
+  expect(screen.getByText(vmEn.passwordMismatch)).toBeTruthy()
+  enterPassword('test-password')
+  expect(button).toHaveProperty('disabled', false)
+  fireEvent.change(screen.getByLabelText(vmEn.memory_mib), { target: { value: '2048' } })
+  expect(
+    screen.getByText(
+      vmEn.resourceBounds.replace('{resource}', vmEn.memory_mib).replace('{min}', '2560').replace('{max}', '2560')
+    )
+  ).toBeTruthy()
+  expect(button).toHaveProperty('disabled', true)
+  fireEvent.change(screen.getByLabelText(vmEn.memory_mib), { target: { value: '2560' } })
+  expect(button).toHaveProperty('disabled', false)
+  expect(mocks.create).not.toHaveBeenCalled()
+})
+
+it('explains a failed captured-owner check and never enables creation against another gateway', async () => {
+  const client = {
+    ...mocks,
+    deletion: vi.fn(),
+    connectionId: 'main',
+    requestScope: async () => {
+      throw new Error('owner changed')
+    },
+    capabilities: async () => fixedCapabilities
+  }
+
+  render(<VmCreate client={client} />)
+  await screen.findByText(vmEn.ownerUnavailable)
+  expect(screen.getByRole('button', { name: vmEn.create })).toHaveProperty('disabled', true)
+  expect(screen.getByLabelText(vmEn.password)).toHaveProperty('disabled', true)
+  expect(mocks.create).not.toHaveBeenCalled()
+})

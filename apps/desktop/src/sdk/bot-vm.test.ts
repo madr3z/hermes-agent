@@ -76,3 +76,49 @@ it('does not infer VM ownership from a name or URL, and refuses a repointed main
   expect(resolveBotVmOwner([main, { ...guest, provisionedVm: undefined }], guest.id)).toBeNull()
   expect(resolveBotVmOwner([{ ...main, url: 'https://different.example' }, guest], guest.id)).toBeNull()
 })
+
+it('routes managed deletion through the captured cookie main and forgets only after a verified deleted receipt', async () => {
+  let rows = [
+    { ...main, authMode: 'oauth' },
+    { ...guest, authMode: 'oauth' }
+  ]
+
+  const operationId = crypto.randomUUID()
+
+  const api = vi.fn(async () => ({
+    operation_id: operationId,
+    request_id: requestId,
+    action: 'delete',
+    phase: 'queued'
+  }))
+
+  const remove = vi.fn(async () => ({ ok: true }))
+  Object.defineProperty(window, 'hermesDesktop', {
+    configurable: true,
+    value: { connections: { list: async () => ({ connections: rows }), remove }, api }
+  })
+  const owner = await botVmOwner(guest.id)
+  expect(owner).not.toBeNull()
+  const deletion = botVmClient(owner!).deletion()
+  const body = { operation_id: operationId, confirm_name: 'hermes-test' }
+  await deletion.submit(body)
+  expect(api).toHaveBeenLastCalledWith({
+    connectionId: 'main',
+    profile: 'default',
+    priority: 'foreground',
+    path: `/api/plugins/bot-provisioning/v1/requests/${requestId}/delete`,
+    method: 'POST',
+    body
+  })
+  await expect(deletion.forget(operationId)).rejects.toThrow('not complete')
+  expect(remove).not.toHaveBeenCalled()
+  api.mockResolvedValueOnce({ operation_id: operationId, request_id: requestId, action: 'delete', phase: 'deleted' })
+  await deletion.forget(operationId)
+  expect(remove).toHaveBeenCalledWith(guest.id)
+  rows = [
+    { ...main, authMode: 'oauth', url: 'https://changed.example' },
+    { ...guest, authMode: 'oauth' }
+  ]
+  await expect(deletion.submit(body)).rejects.toThrow('owner changed')
+  expect(api).toHaveBeenCalledTimes(3)
+})

@@ -39,8 +39,10 @@ export function useVmCreationRequest(
     let active = true
 
     void (async () => {
+      let owner: string | null = null
+
       try {
-        const owner = await client.requestScope()
+        owner = await client.requestScope()
         const saved = readPendingCreate(owner)
 
         if (!active) {
@@ -69,7 +71,7 @@ export function useVmCreationRequest(
         }
       } catch {
         if (active) {
-          setError(b.retrySame)
+          setError(owner ? b.lookupFailed : b.ownerUnavailable)
         }
       } finally {
         if (active) {
@@ -82,7 +84,7 @@ export function useVmCreationRequest(
       active = false
       secret.current = ''
     }
-  }, [client, restore, accepted, b.resumePassword, b.retrySame])
+  }, [client, restore, accepted, b.resumePassword, b.lookupFailed, b.ownerUnavailable])
 
   const submit = async (draft: Omit<PendingVmCreate, 'request_id'>, password: string, canSend: boolean) => {
     if (flight.current || !scope || !ready) {

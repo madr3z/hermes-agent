@@ -6,7 +6,7 @@ interface ReadyStatus {
   gateway?: { id: string; base_url: string; label: string }
 }
 
-/** Registration copies the existing encrypted main credential inside Electron only. */
+/** Registration retains native main credentials; cookie guests use the verified parent jar. */
 export async function registerProvisionedBot(
   payload: { connectionId: string; requestId: string },
   deps: {
@@ -24,8 +24,8 @@ export async function registerProvisionedBot(
   const registry = deps.registry()
   const source = registry.connections.find(entry => entry.id === payload.connectionId)
 
-  if (!source || source.kind !== 'remote' || source.authMode === 'oauth') {
-    throw new Error('Connect to the main provisioning gateway using its HTTPS URL and token first.')
+  if (!source || source.kind !== 'remote' || source.provisionedVm) {
+    throw new Error('Connect to the main provisioning gateway using its HTTPS URL first.')
   }
 
   const base = new URL(source.url || '')

@@ -2,6 +2,7 @@ import { hermesApiAs } from '@/api/client'
 import { activeGatewayConnectionId } from '@/store/gateway'
 
 import { botVmClient, resolveBotVmOwner } from './bot-vm'
+import { vmDeletionClient } from './bot-vm-deletion'
 import { listConnections } from './connections'
 
 export interface BotVmRequest {
@@ -14,13 +15,15 @@ export interface BotVmRequest {
 export interface BotVmStatus {
   request_id: string
   name: string
-  phase: 'queued' | 'provisioning' | 'ready' | 'failed'
+  phase: 'queued' | 'provisioning' | 'ready' | 'failed' | 'deleting' | 'deleted' | 'delete_failed'
+  deletion_operation_id?: string
   error?: { code: string; message: string }
   gateway?: { id: string; label: string; base_url: string; profile: 'default' }
 }
 export interface BotVmCapabilities {
   available: boolean
   vm_control?: boolean
+  vm_delete?: boolean
   linux_account?: {
     username: 'bot_name'
     username_pattern: string
@@ -113,6 +116,32 @@ export function botProvisioningClient() {
     status: (requestId: string) => request<BotVmStatus>(`${prefix}/requests/${encodeURIComponent(requestId)}`),
     list: () => request<{ requests: BotVmStatus[] }>(`${prefix}/requests`),
     create: (body: BotVmRequest) => request<BotVmStatus>(`${prefix}/requests`, body),
+    deletion: (requestId: string) =>
+      vmDeletionClient(
+        requestId,
+        request,
+        async () => {
+          const route = await owner()
+          const snapshot = await captured
+
+          return JSON.stringify({
+            connectionId: route.connectionId,
+            url: (snapshot?.vm?.mainUrl ?? snapshot?.selected.url ?? '').replace(/\/$/, '')
+          })
+        },
+        async () => {
+          const route = await owner()
+          const rows = await listConnections()
+
+          for (const row of rows) {
+            const vm = resolveBotVmOwner(rows, row.id)
+
+            if (vm?.connectionId === route.connectionId && vm.requestId === requestId) {
+              await window.hermesDesktop.connections.remove(row.id)
+            }
+          }
+        }
+      ),
     register: async (requestId: string) =>
       window.hermesDesktop.connections.registerProvisioned({
         connectionId: (await owner()).connectionId,

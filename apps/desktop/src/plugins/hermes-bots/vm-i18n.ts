@@ -1,4 +1,27 @@
 export interface VmMessages extends Record<string, string> {
+  deleteTitle: string
+  deleteDescription: string
+  deleteAction: string
+  retryDelete: string
+  deleteUnavailable: string
+  deleteLookupFailed: string
+  deleteRetrySame: string
+  deleteFailed: string
+  deleting: string
+  deleted: string
+  delete_failed: string
+  close: string
+  nameRequired: string
+  invalidUsername: string
+  passwordRequired: string
+  passwordInvalid: string
+  passwordLength: string
+  confirmationRequired: string
+  resourceBounds: string
+  checkingOwner: string
+  ownerUnavailable: string
+  lookupFailed: string
+  submitting: string
   reservedUsername: string
   resumePassword: string
   loginUnavailable: string
@@ -66,6 +89,30 @@ export interface VmMessages extends Record<string, string> {
 }
 
 export const vmEn: VmMessages = {
+  deleteTitle: 'Delete {name} and its VM?',
+  deleteDescription:
+    'This stops {name} and removes its VM, workspace and files. This cannot be undone. Existing backups are retained.',
+  deleteAction: 'Delete bot and VM',
+  retryDelete: 'Retry deletion',
+  deleteUnavailable: 'VM deletion is unavailable. Update or reconnect to the owning main gateway.',
+  deleteLookupFailed: 'Cannot check the deletion request. Close and reopen this dialog to recover its status.',
+  deleteRetrySame: 'Deletion outcome is unknown. Retry checks the saved operation before sending the same request.',
+  deleteFailed: 'VM deletion failed. The bot remains registered.',
+  deleting: 'Deleting VM and files…',
+  deleted: 'VM and files deleted.',
+  delete_failed: 'VM deletion failed',
+  close: 'Close',
+  nameRequired: 'Enter a bot name.',
+  invalidUsername: 'Use 1–32 lowercase ASCII letters, numbers, underscores or hyphens. Start with a letter.',
+  passwordRequired: 'Enter a VM password.',
+  passwordInvalid: 'The VM password cannot contain NUL or line breaks.',
+  passwordLength: 'Use {min}–{max} UTF-8 bytes for the VM password.',
+  confirmationRequired: 'Confirm the VM password.',
+  resourceBounds: '{resource} must be a whole number from {min} to {max}.',
+  checkingOwner: 'Checking the owning main gateway…',
+  ownerUnavailable: 'Cannot verify the owning main gateway. Close Create Bot, select the main gateway, then reopen it.',
+  lookupFailed: 'Cannot check the saved request. Retry its lookup before submitting again.',
+  submitting: 'Submitting the request…',
   reservedUsername: 'This Linux username is reserved. Choose another bot name.',
   resumePassword: 'The request was not found. Reenter the same VM password to retry this request.',
   loginUnavailable: 'VM login setup is unavailable. Update the main gateway before creating a bot.',
@@ -138,6 +185,30 @@ export const vmEn: VmMessages = {
 }
 
 export const vmJa: VmMessages = {
+  deleteTitle: '{name} と VM を削除しますか？',
+  deleteDescription:
+    '{name} を停止し、VM、作業領域、ファイルを削除します。元に戻せません。既存のバックアップは保持されます。',
+  deleteAction: 'ボットと VM を削除',
+  retryDelete: '削除を再試行',
+  deleteUnavailable: 'VM を削除できません。所有元のメインゲートウェイを更新するか再接続してください。',
+  deleteLookupFailed: '削除状態を確認できません。この画面を閉じて開き直してください。',
+  deleteRetrySame: '削除結果が不明です。再試行時は保存済みの操作を確認し、同じ要求を送ります。',
+  deleteFailed: 'VM の削除に失敗しました。ボットの登録は残っています。',
+  deleting: 'VM とファイルを削除中…',
+  deleted: 'VM とファイルを削除しました。',
+  delete_failed: 'VM の削除に失敗',
+  close: '閉じる',
+  nameRequired: 'ボット名を入力してください。',
+  invalidUsername: '名前は小文字の英字で始まる 1～32 文字の英数字・_・- です。',
+  passwordRequired: 'VM のパスワードを入力してください。',
+  passwordInvalid: 'VM のパスワードに NUL や改行は使用できません。',
+  passwordLength: 'VM のパスワードは UTF-8 で {min}～{max} バイトです。',
+  confirmationRequired: 'VM のパスワードを確認してください。',
+  resourceBounds: '{resource} は {min}～{max} の整数にしてください。',
+  checkingOwner: '所有元のメインゲートウェイを確認中…',
+  ownerUnavailable: '所有元を確認できません。作成画面を閉じ、メインゲートウェイを選択して開き直してください。',
+  lookupFailed: '保存済みの要求を確認できません。送信前に再度確認してください。',
+  submitting: '要求を送信中…',
   reservedUsername: 'この Linux ユーザー名は予約済みです。別のボット名を選択してください。',
   resumePassword: '要求が見つかりません。同じ VM パスワードを再入力して再試行してください。',
   loginUnavailable: 'VM のログイン設定を利用できません。ボットを作成する前にメインゲートウェイを更新してください。',
@@ -206,6 +277,29 @@ export const vmJa: VmMessages = {
 }
 
 export const vmZh: VmMessages = {
+  deleteTitle: '删除 {name} 及其虚拟机？',
+  deleteDescription: '这将停止 {name} 并删除其虚拟机、工作区和文件。此操作无法撤销。现有备份将保留。',
+  deleteAction: '删除机器人和虚拟机',
+  retryDelete: '重试删除',
+  deleteUnavailable: '虚拟机删除不可用。请更新或重新连接所属主网关。',
+  deleteLookupFailed: '无法查询删除状态。请关闭并重新打开此窗口。',
+  deleteRetrySame: '删除结果未知。重试会先查询已保存的操作，再发送同一请求。',
+  deleteFailed: '虚拟机删除失败。机器人仍保留注册。',
+  deleting: '正在删除虚拟机和文件…',
+  deleted: '虚拟机和文件已删除。',
+  delete_failed: '虚拟机删除失败',
+  close: '关闭',
+  nameRequired: '请输入机器人名称。',
+  invalidUsername: '名称须以小写英文字母开头，长度为 1–32 个英文字母、数字、下划线或连字符。',
+  passwordRequired: '请输入虚拟机密码。',
+  passwordInvalid: '虚拟机密码不能包含 NUL 或换行符。',
+  passwordLength: '虚拟机密码须为 {min}–{max} 个 UTF-8 字节。',
+  confirmationRequired: '请确认虚拟机密码。',
+  resourceBounds: '{resource} 须为 {min} 到 {max} 之间的整数。',
+  checkingOwner: '正在检查所属主网关…',
+  ownerUnavailable: '无法验证所属主网关。请关闭创建窗口，选择主网关后重新打开。',
+  lookupFailed: '无法查询已保存的请求。再次提交前请重试查询。',
+  submitting: '正在提交请求…',
   reservedUsername: '此 Linux 用户名已保留。请选择其他机器人名称。',
   resumePassword: '未找到请求。请重新输入相同的虚拟机密码后重试此请求。',
   loginUnavailable: '虚拟机登录设置不可用。请先更新主网关，再创建机器人。',
@@ -274,6 +368,29 @@ export const vmZh: VmMessages = {
 }
 
 export const vmZhHant: VmMessages = {
+  deleteTitle: '刪除 {name} 及其虛擬機？',
+  deleteDescription: '這將停止 {name} 並刪除其虛擬機、工作區和檔案。此操作無法復原。現有備份將保留。',
+  deleteAction: '刪除機器人和虛擬機',
+  retryDelete: '重試刪除',
+  deleteUnavailable: '虛擬機刪除無法使用。請更新或重新連接所屬主閘道。',
+  deleteLookupFailed: '無法查詢刪除狀態。請關閉並重新開啟此視窗。',
+  deleteRetrySame: '刪除結果未知。重試會先查詢已儲存的操作，再傳送同一請求。',
+  deleteFailed: '虛擬機刪除失敗。機器人仍保留註冊。',
+  deleting: '正在刪除虛擬機和檔案…',
+  deleted: '虛擬機和檔案已刪除。',
+  delete_failed: '虛擬機刪除失敗',
+  close: '關閉',
+  nameRequired: '請輸入機器人名稱。',
+  invalidUsername: '名稱須以小寫英文字母開頭，長度為 1–32 個英文字母、數字、底線或連字號。',
+  passwordRequired: '請輸入虛擬機密碼。',
+  passwordInvalid: '虛擬機密碼不能包含 NUL 或換行字元。',
+  passwordLength: '虛擬機密碼須為 {min}–{max} 個 UTF-8 位元組。',
+  confirmationRequired: '請確認虛擬機密碼。',
+  resourceBounds: '{resource} 須為 {min} 到 {max} 之間的整數。',
+  checkingOwner: '正在檢查所屬主閘道…',
+  ownerUnavailable: '無法驗證所屬主閘道。請關閉建立視窗，選擇主閘道後重新開啟。',
+  lookupFailed: '無法查詢已儲存的請求。再次提交前請重試查詢。',
+  submitting: '正在提交請求…',
   reservedUsername: '此 Linux 使用者名稱已保留。請選擇其他機器人名稱。',
   resumePassword: '找不到要求。請重新輸入相同的虛擬機密碼後重試此要求。',
   loginUnavailable: '虛擬機登入設定無法使用。請先更新主閘道，再建立機器人。',

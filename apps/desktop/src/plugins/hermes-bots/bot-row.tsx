@@ -52,7 +52,6 @@ import {
   botRosterKey,
   botSelectionKey,
   botSourceStatus,
-  isDefaultBot,
   newBotChat,
   ROSTER_KEY,
   saveBotMeta
@@ -89,6 +88,7 @@ import {
   moveBotsToSection,
   moveGroupChatsToSection
 } from './user-sections'
+import { VmDeleteMenuItem } from './vm-delete-menu'
 import { VmMenuItem } from './vm-open'
 
 // ── bot row ──────────────────────────────────────────────────────────────────
@@ -485,12 +485,7 @@ export function BotRow({ bot, onDelete, onEdit, onGroup, onNewSection, showHandl
             ) : null}
           </ContextMenuSubContent>
         </ContextMenuSub>
-        {isDefaultBot(bot) ? null : <ContextMenuSeparator />}
-        {isDefaultBot(bot) ? null : (
-          <ContextMenuItem onSelect={() => onDelete(bot)} variant="destructive">
-            {t.common.delete}
-          </ContextMenuItem>
-        )}
+        <VmDeleteMenuItem bot={bot} onDelete={onDelete} />
       </ContextMenuContent>
     </ContextMenu>
   )

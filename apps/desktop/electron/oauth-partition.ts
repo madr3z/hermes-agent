@@ -27,6 +27,8 @@
  *     by the upgrade.
  *   - `cloud` entries stay on the legacy partition: the silent per-agent
  *     cascade deliberately shares one jar with the Nous Portal session.
+ *   - A native-provenance managed guest at its canonical HTTPS proxy path uses
+ *     its owning main's existing cookie jar. Unrelated entries do not share it.
  *   - Token-auth remotes, portal URLs, and anything unmatched or malformed
  *     fall back to the legacy partition (cookie-free flows are unaffected).
  *   - Login flows may name the connection explicitly (`connectionId`): the
@@ -40,6 +42,9 @@
  * Kept free of `electron` imports so it unit-tests in the electron vitest
  * project; main.ts owns session.fromPartition() and injects nothing here.
  */
+
+import type { RegistryConnection } from './connection-registry'
+import { provisionedVmMain } from './provisioned-vm'
 
 export const LEGACY_OAUTH_PARTITION = 'persist:hermes-remote-oauth'
 
@@ -135,6 +140,50 @@ function entryField(entry: unknown, key: string): unknown {
   return Object.getOwnPropertyDescriptor(entry, key)?.value
 }
 
+function prefersBase(
+  candidate: { baseNorm: string; id: string },
+  current: { baseNorm: string; id: string } | null
+): boolean {
+  return (
+    !current ||
+    candidate.baseNorm.length > current.baseNorm.length ||
+    (candidate.baseNorm.length === current.baseNorm.length && candidate.id < current.id)
+  )
+}
+
+function managedCookieParent(requestNorm: string, connections: unknown[], wantedId: string): RegistryConnection | null {
+  const guests = connections.filter(
+    entry => entryField(entry, 'authMode') === 'oauth' && (!wantedId || entryField(entry, 'id') === wantedId)
+  )
+
+  for (const guest of guests) {
+    const id = entryField(guest, 'id')
+    const base = normalizeForMatch(entryField(guest, 'url'))
+
+    if (typeof id !== 'string' || !base || !matchesBase(requestNorm, base)) {
+      continue
+    }
+
+    // URL-only requests cannot borrow a parent's jar when another registration claims this exact base.
+    const aliases = connections.filter(
+      entry =>
+        entryField(entry, 'kind') === 'remote' &&
+        entryField(entry, 'authMode') === 'oauth' &&
+        normalizeForMatch(entryField(entry, 'url')) === base
+    )
+
+    if (!wantedId && aliases.length !== 1) {continue}
+
+    const main = provisionedVmMain(connections as RegistryConnection[], id)
+
+    if (main?.authMode === 'oauth') {
+      return main
+    }
+  }
+
+  return null
+}
+
 /**
  * Decide the Electron session partition a cookie-authenticated request against
  * `requestUrl` must ride. See the module header for the rules.
@@ -150,6 +199,16 @@ export function resolveOauthPartition(requestUrl: unknown, opts: ResolveOauthPar
 
   if (!registry || typeof registry !== 'object' || !Array.isArray(registry.connections)) {
     return LEGACY_OAUTH_PARTITION
+  }
+
+  const parent = managedCookieParent(
+    requestNorm,
+    registry.connections,
+    typeof opts.connectionId === 'string' ? opts.connectionId.trim() : ''
+  )
+
+  if (parent) {
+    return resolveOauthPartition(parent.url, { ...opts, connectionId: parent.id })
   }
 
   const primaryId = typeof registry.primary === 'string' ? registry.primary : ''
@@ -235,7 +294,7 @@ export function resolveOauthPartition(requestUrl: unknown, opts: ResolveOauthPar
     // Longest base-url prefix wins (sub-path gateways behind one proxy);
     // identical URLs tie-break on the lexicographically smallest id so the
     // choice is deterministic across processes and launches.
-    if (!best || baseNorm.length > best.baseNorm.length || (baseNorm.length === best.baseNorm.length && id < best.id)) {
+    if (prefersBase({ baseNorm, id }, best)) {
       best = { baseNorm, id }
     }
   }
