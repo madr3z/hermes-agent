@@ -2,7 +2,10 @@ import Foundation
 
 @MainActor public final class GatewayClient {
     public let endpoint: GatewayEndpoint
-    private let token: String
+    private let token: String?
+    private let authenticationEndpoint: GatewayEndpoint
+    private let onAuthenticationChange: (() throws -> Void)?
+    private var connectionGeneration = UUID()
     private let session: URLSession
     private var socket: URLSessionWebSocketTask?
     private var reader: Task<Void, Never>?
@@ -14,8 +17,10 @@ import Foundation
     public var onDisconnect: ((String) -> Void)?
     public private(set) var connected = false
 
-    public init(endpoint: GatewayEndpoint, token: String, session: URLSession = .shared) {
+    public init(endpoint: GatewayEndpoint, token: String?, session: URLSession = .shared, authenticationEndpoint: GatewayEndpoint? = nil, onAuthenticationChange: (() throws -> Void)? = nil) {
         self.endpoint = endpoint; self.token = token; self.session = session
+        self.authenticationEndpoint = authenticationEndpoint ?? endpoint
+        self.onAuthenticationChange = onAuthenticationChange
     }
     deinit {
         reader?.cancel(); heartbeat?.cancel()
@@ -23,7 +28,16 @@ import Foundation
     }
     public func connect() async throws {
         disconnect()
-        let ws = session.webSocketTask(with: endpoint.webSocketURL(token: token))
+        let generation = connectionGeneration
+        let url: URL
+        if let token { url = endpoint.webSocketURL(token: token) }
+        else {
+            var parts = URLComponents(url: endpoint.url(path: "api/ws"), resolvingAgainstBaseURL: false)!
+            parts.scheme = "wss"; parts.queryItems = [URLQueryItem(name: "ticket", value: try await webSocketTicket())]
+            url = parts.url!
+        }
+        guard generation == connectionGeneration, !Task.isCancelled else { throw GatewayError.message("Connection cancelled.") }
+        let ws = session.webSocketTask(with: url)
         socket = ws; ws.resume()
         reader = Task { [weak self] in
             do {
@@ -64,6 +78,7 @@ import Foundation
         _ = try await request("gateway.ping", [:], timeout: timeout)
     }
     public func disconnect() {
+        connectionGeneration = UUID()
         connected = false
         Array(disconnectObservers.values).forEach { $0() }
         let old = socket; socket = nil
@@ -105,19 +120,29 @@ import Foundation
         let id = UUID(); observers[id] = events; disconnectObservers[id] = disconnected; return id
     }
     public func removeObserver(_ id: UUID) { observers.removeValue(forKey: id); disconnectObservers.removeValue(forKey: id) }
-    public func remoteSocket(_ stream: RemoteStream) -> URLSessionWebSocketTask {
-        session.webSocketTask(with: stream.request(endpoint: endpoint, token: token))
+    public func remoteSocket(_ stream: RemoteStream) async throws -> URLSessionWebSocketTask {
+        let ticket = token == nil ? try await webSocketTicket() : nil
+        return session.webSocketTask(with: stream.request(endpoint: endpoint, token: token, ticket: ticket))
     }
-
+    private func webSocketTicket() async throws -> String {
+        let result = try await http("api/auth/ws-ticket", profile: nil, body: .object([:]), at: authenticationEndpoint)
+        guard let ticket = result["ticket"].string, !ticket.isEmpty else { throw GatewayError.message("Controller did not return a WebSocket ticket. Sign in again.") }
+        return ticket
+    }
     public func http(_ path: String, profile: String? = nil, body: JSON? = nil) async throws -> JSON {
-        var request = URLRequest(url: endpoint.url(path: path, profile: profile))
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        try await http(path, profile: profile, body: body, at: endpoint)
+    }
+    private func http(_ path: String, profile: String?, body: JSON?, at owner: GatewayEndpoint) async throws -> JSON {
+        var request = URLRequest(url: owner.url(path: path, profile: profile))
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 60
         if let body {
             request.httpMethod = "POST"; request.httpBody = try JSONEncoder().encode(body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await session.data(for: request)
+        try onAuthenticationChange?()
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let payload = try? JSONDecoder().decode(JSON.self, from: data)

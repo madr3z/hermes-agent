@@ -48,7 +48,7 @@ final class WireIntegrationTests: XCTestCase {
         defer { client.disconnect() }
         try await client.connect()
         // Real WSS must use main query auth plus the independent guest ticket.
-        let display = client.remoteSocket(.display(ticket: "guest+ticket &?"))
+        let display = try await client.remoteSocket(.display(ticket: "guest+ticket &?"))
         display.resume()
         let greeting = try await display.receive()
         guard case .data(let version) = greeting else { return XCTFail("Expected binary RFB") }
@@ -58,7 +58,7 @@ final class WireIntegrationTests: XCTestCase {
         guard case .data(let echoed) = try await display.receive() else { return XCTFail("Expected binary pointer echo") }
         XCTAssertEqual(echoed, pointer)
         display.cancel(with: RemoteStream.closeCode(intentional: false), reason: nil)
-        let terminal = client.remoteSocket(.terminal); terminal.resume()
+        let terminal = try await client.remoteSocket(.terminal); terminal.resume()
         guard case .data(let ansi) = try await terminal.receive() else { return XCTFail("Expected raw terminal bytes") }
         XCTAssertTrue(String(decoding: ansi, as: UTF8.self).contains("guest shell"))
         let keyboard = Data("echo phone\r".utf8)
@@ -149,4 +149,50 @@ final class WireIntegrationTests: XCTestCase {
         do { _ = try await client.request("unknown.method", [:]); XCTFail("Expected server error") }
         catch { XCTAssertEqual(error.localizedDescription, "Unsupported fixture RPC") }
     }
+    @MainActor func testCookieMainAndManagedGuestUseFreshTicketsForEveryWebSocket() async throws {
+        let process = Process(), pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["python3", Bundle.module.url(forResource: "gateway", withExtension: "py", subdirectory: "Fixtures")!.path]
+        process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
+        try process.run()
+        defer { if process.isRunning { process.terminate(); process.waitUntilExit() } }
+        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: watchdog)
+        defer { watchdog.cancel() }
+        var metadataData = Data()
+        while metadataData.count < 8192 {
+            guard let byte = try pipe.fileHandleForReading.read(upToCount: 1), !byte.isEmpty else { break }
+            if byte == Data([10]) { break }; metadataData.append(byte)
+        }
+        let metadata = try JSONDecoder().decode(JSON.self, from: metadataData)
+        let port = Int(try XCTUnwrap(metadata["port"].number))
+        let certificate = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(metadata["certificate"].string)))
+        let session = URLSession(configuration: .ephemeral, delegate: FixtureTrust(certificate: certificate), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let main = try GatewayEndpoint(label: "Main", baseURL: URL(string: "https://127.0.0.1:\(port)")!)
+        var login = URLRequest(url: main.url(path: "auth/password-login"))
+        login.httpMethod = "POST"; login.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        login.httpBody = try JSONEncoder().encode(JSON.object(["provider": .string("basic"), "username": .string("fixture-user"), "password": .string("fixture-password"), "next": .string("")]))
+        let (_, response) = try await session.data(for: login)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        let client = GatewayClient(endpoint: main, token: nil, session: session)
+        defer { client.disconnect() }
+        try await client.connect()
+        let endpoint = try GatewayEndpoint(label: "VM", baseURL: main.url(path: "api/plugins/bot-provisioning/v1/gateways/vm"))
+        let guest = GatewayClient(endpoint: endpoint, token: nil, session: session, authenticationEndpoint: main)
+        defer { guest.disconnect() }
+        try await guest.connect()
+        let display = try await guest.remoteSocket(.display(ticket: "guest+ticket &?")); display.resume()
+        guard case .data(let rfb) = try await display.receive() else { return XCTFail("Expected RFB bytes") }
+        XCTAssertEqual(String(decoding: rfb, as: UTF8.self), "RFB 003.008\n")
+        display.cancel(with: .normalClosure, reason: nil)
+        let terminal = try await guest.remoteSocket(.terminal); terminal.resume()
+        guard case .data(let ansi) = try await terminal.receive() else { return XCTFail("Expected terminal bytes") }
+        XCTAssertTrue(String(decoding: ansi, as: UTF8.self).contains("guest shell"))
+        terminal.cancel(with: .normalClosure, reason: nil)
+        guest.disconnect(); try await guest.connect()
+        let count = try await client.http("api/fixture/tickets")["minted"].number
+        XCTAssertEqual(count, 5) // Main RPC, guest RPC, screen, terminal and guest reconnect each consume a fresh ticket.
+    }
+
 }

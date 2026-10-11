@@ -3,18 +3,20 @@ import CryptoKit
 
 public enum RemoteStream: Equatable {
     case display(ticket: String), terminal
-    public func request(endpoint: GatewayEndpoint, token: String) -> URLRequest {
+    public func request(endpoint: GatewayEndpoint, token: String?, ticket: String? = nil) -> URLRequest {
         let path: String
         switch self { case .display: path = "api/display/ws"; case .terminal: path = "api/terminal/ws" }
         var parts = URLComponents(url: endpoint.url(path: path), resolvingAgainstBaseURL: false)!
         parts.scheme = "wss"
         // Hermes' WS authentication seam consumes a query token, independently
         // of the guest's single-use display ticket. This URL never enters WebKit.
-        parts.queryItems = [URLQueryItem(name: "token", value: token)]
+        parts.queryItems = []
+        if let token { parts.queryItems?.append(URLQueryItem(name: "token", value: token)) }
+        else if let ticket { parts.queryItems?.append(URLQueryItem(name: "ticket", value: ticket)) }
         if case .display(let ticket) = self { parts.queryItems?.append(URLQueryItem(name: "display_ticket", value: ticket)) }
         parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         var request = URLRequest(url: parts.url!)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         return request
     }
     public static func closeCode(intentional: Bool) -> URLSessionWebSocketTask.CloseCode {

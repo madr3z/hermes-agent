@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import os
+import secrets
 import ssl
 import struct
 import subprocess
@@ -34,7 +35,7 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path.endswith("/api/fixture/remote_events"):
             self.json_reply(200, {"events": self.server.remote_events})
         elif parsed.path.endswith("/api/ws"):
-            if parse_qs(parsed.query).get("token") != ["fixture+token &?"]:
+            if not self.ws_authorized(parsed):
                 self.json_reply(401, {"error": "unauthorized"})
                 return
             accept = base64.b64encode(hashlib.sha1((self.headers["Sec-WebSocket-Key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
@@ -44,8 +45,44 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Sec-WebSocket-Accept", accept)
             self.end_headers()
             self.frames()
-        elif self.headers.get("Authorization") == "Bearer fixture+token &?":
+        elif parsed.path == "/api/fixture/tickets" and self.cookie_authorized():
+            self.json_reply(200, {"minted": self.server.ticket_count})
+        elif self.headers.get("Authorization") == "Bearer fixture+token &?" or self.cookie_authorized():
             self.json_reply(200, {"ok": True, "path": parsed.path, "profile": parse_qs(parsed.query).get("profile", [None])[0]})
+        else:
+            self.json_reply(401, {"error": "unauthorized"})
+
+    def cookie_authorized(self):
+        return "__Host-hermes_session_at=fixture-session" in self.headers.get("Cookie", "")
+
+    def ws_authorized(self, parsed):
+        query = parse_qs(parsed.query)
+        if "token" in query:
+            return query["token"] == ["fixture+token &?"]
+        ticket = query.get("ticket", [""])[0]
+        with self.server.clients_lock:
+            if ticket not in self.server.tickets:
+                return False
+            self.server.tickets.remove(ticket)
+        return True
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+        if parsed.path == "/auth/password-login" and data == {"provider": "basic", "username": "fixture-user", "password": "fixture-password", "next": ""}:
+            body = json.dumps({"ok": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Set-Cookie", "__Host-hermes_session_at=fixture-session; Path=/; Max-Age=3600; Secure; HttpOnly")
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/auth/ws-ticket" and self.cookie_authorized():
+            ticket = secrets.token_urlsafe(24)
+            with self.server.clients_lock:
+                self.server.tickets.add(ticket)
+                self.server.ticket_count += 1
+            self.json_reply(200, {"ticket": ticket, "ttl_seconds": 30})
         else:
             self.json_reply(401, {"error": "unauthorized"})
 
@@ -53,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
         # Match the production query-token seam, deliberately ignoring Bearer.
         query = parse_qs(parsed.query)
         display = parsed.path.endswith("/api/display/ws")
-        if query.get("token") != ["fixture+token &?"] or (display and query.get("display_ticket") != ["guest+ticket &?"]):
+        if not self.ws_authorized(parsed) or (display and query.get("display_ticket") != ["guest+ticket &?"]):
             self.json_reply(403, {"error": "unauthorized"})
             return
         accept = base64.b64encode(hashlib.sha1((self.headers["Sec-WebSocket-Key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
@@ -213,6 +250,8 @@ with tempfile.TemporaryDirectory(prefix="hermes-phone-wire-") as directory:
     server.prompt_count = 0
     server.queued_turns = []
     server.remote_events = []
+    server.tickets = set()
+    server.ticket_count = 0
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
     server.socket = context.wrap_socket(server.socket, server_side=True)

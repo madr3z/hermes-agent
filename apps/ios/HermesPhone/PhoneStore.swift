@@ -10,27 +10,32 @@ import HermesGateway
     var vmOwners: [String: ProvisionedOwner] = [:]
     var clients: [UUID: GatewayClient] = [:]
     var vmDeletionControllers: Set<UUID> = []
+    private var controllerSessions: [UUID: ControllerSession] = [:]
     private let preferences: UserDefaults
     init(preferences: UserDefaults = .standard) {
         self.preferences = preferences
         if let data = preferences.data(forKey: "vm-owners"), let saved = try? JSONDecoder().decode([String: ProvisionedOwner].self, from: data) { vmOwners = saved }
         if let data = preferences.data(forKey: "gateways"), let saved = try? JSONDecoder().decode([GatewayEndpoint].self, from: data) { endpoints = saved }
     }
-    func add(label: String, address: String, token: String) async throws {
+    func add(label: String, address: String, token: String, replacing id: UUID? = nil) async throws {
         guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let url = URL(string: address) else { throw GatewayError.message("Enter a gateway URL and access token.") }
-        let endpoint = try GatewayEndpoint(label: label.isEmpty ? url.host ?? "Gateway" : label, baseURL: url)
+        let endpoint = try GatewayEndpoint(id: id ?? UUID(), label: label.isEmpty ? url.host ?? "Gateway" : label, baseURL: url)
         let client = GatewayClient(endpoint: endpoint, token: token)
         try await client.connect()
         let rows = try await client.request("profiles.list", ["include_sessions": .bool(true)])
         try GatewayKeychain.save(token, id: endpoint.id)
-        endpoints.append(endpoint); clients[endpoint.id] = client
+        disconnectController(endpoint.id)
+        controllerSessions.removeValue(forKey: endpoint.id)?.session.invalidateAndCancel()
+        if !endpoints.contains(where: { $0.id == endpoint.id }) { endpoints.append(endpoint) }
+        clients[endpoint.id] = client
+        bots.removeAll { $0.endpointID == endpoint.id }
         bots += rows["profiles"].array.map { Bot(endpointID: endpoint.id, row: $0) }
         preferences.set(try JSONEncoder().encode(endpoints), forKey: "gateways")
     }
     func client(for id: UUID) async throws -> GatewayClient {
         if let client = clients[id], client.connected { return client }
         guard let endpoint = endpoints.first(where: { $0.id == id }) else { throw GatewayError.message("Gateway no longer exists.") }
-        let client = GatewayClient(endpoint: endpoint, token: try GatewayKeychain.read(id))
+        let client = try makeClient(for: endpoint)
         try await client.connect(); clients[id] = client
         return client
     }
@@ -74,13 +79,61 @@ import HermesGateway
     }
     func addProvisioned(_ row: JSON, main: GatewayEndpoint) async throws {
         let gateway = try main.provisionedGateway(row)
-        let url = gateway.baseURL
-        if !endpoints.contains(where: { $0.baseURL == url }) {
-            try await add(label: gateway.label, address: url.absoluteString, token: GatewayKeychain.read(main.id))
-        }
-        guard let endpoint = endpoints.first(where: { $0.baseURL == url }), let owner = ProvisionedOwner.matchingRegistryRow(row, main: main, gateway: endpoint) else { throw GatewayError.message("Missing provisioned VM identity.") }
+        let endpoint = endpoints.first(where: { $0.baseURL == gateway.baseURL }) ?? gateway
+        guard let owner = ProvisionedOwner.matchingRegistryRow(row, main: main, gateway: endpoint),
+              endpoint.baseURL == main.url(path: "api/plugins/bot-provisioning/v1/gateways/" + owner.requestID) else { throw GatewayError.message("Missing canonical managed VM identity.") }
+        let client = try makeClient(for: endpoint, owner: owner)
+        try await client.connect()
+        let rows = try await client.request("profiles.list", ["include_sessions": .bool(true)])
+        if !endpoints.contains(where: { $0.id == endpoint.id }) { endpoints.append(endpoint) }
+        clients[endpoint.id]?.disconnect(); clients[endpoint.id] = client
+        bots.removeAll { $0.endpointID == endpoint.id }
+        bots += rows["profiles"].array.map { Bot(endpointID: endpoint.id, row: $0) }
         vmOwners[endpoint.id.uuidString] = owner
+        preferences.set(try JSONEncoder().encode(endpoints), forKey: "gateways")
         preferences.set(try JSONEncoder().encode(vmOwners), forKey: "vm-owners")
+    }
+    private func makeClient(for endpoint: GatewayEndpoint, owner explicitOwner: ProvisionedOwner? = nil) throws -> GatewayClient {
+        let owner = explicitOwner ?? vmOwners[endpoint.id.uuidString]
+        let authenticationEndpoint: GatewayEndpoint
+        if let owner {
+            guard owner.owns(endpoint), let main = endpoints.first(where: { $0.id == owner.mainID }),
+                  endpoint.baseURL == main.url(path: "api/plugins/bot-provisioning/v1/gateways/" + owner.requestID) else { throw GatewayError.message("Managed VM no longer matches its controller. Reconnect it from the registry.") }
+            authenticationEndpoint = main
+        } else { authenticationEndpoint = endpoint }
+        let id = authenticationEndpoint.id
+        if controllerSessions[id] == nil {
+            controllerSessions[id] = try ControllerSession.restore(endpoint: authenticationEndpoint, data: GatewayKeychain.readData(id))
+        }
+        if let controller = controllerSessions[id] {
+            return GatewayClient(endpoint: endpoint, token: nil, session: controller.session, authenticationEndpoint: authenticationEndpoint, onAuthenticationChange: { [weak self, weak controller] in
+                guard let self, let controller, self.controllerSessions[id] === controller else { return }
+                try GatewayKeychain.saveData(controller.savedData(), id: id)
+            })
+        }
+        return GatewayClient(endpoint: endpoint, token: try GatewayKeychain.read(id))
+    }
+    func signIn(endpoint: GatewayEndpoint, controller: ControllerSession) async throws {
+        guard controller.endpoint.baseURL == endpoint.baseURL else { throw GatewayError.message("Controller address changed. Restart sign-in.") }
+        let client = GatewayClient(endpoint: endpoint, token: nil, session: controller.session, onAuthenticationChange: { [weak self, weak controller] in
+            guard let self, let controller, self.controllerSessions[endpoint.id] === controller else { return }
+            try GatewayKeychain.saveData(controller.savedData(), id: endpoint.id)
+        })
+        try await client.connect()
+        let rows = try await client.request("profiles.list", ["include_sessions": .bool(true)])
+        do { try GatewayKeychain.saveData(controller.savedData(), id: endpoint.id) }
+        catch { client.disconnect(); throw error }
+        disconnectController(endpoint.id)
+        controllerSessions[endpoint.id]?.session.invalidateAndCancel()
+        controllerSessions[endpoint.id] = controller
+        clients[endpoint.id] = client
+        if !endpoints.contains(where: { $0.id == endpoint.id }) { endpoints.append(endpoint) }
+        bots.removeAll { $0.endpointID == endpoint.id }
+        bots += rows["profiles"].array.map { Bot(endpointID: endpoint.id, row: $0) }
+        preferences.set(try JSONEncoder().encode(endpoints), forKey: "gateways")
+    }
+    private func disconnectController(_ mainID: UUID) {
+        for id in Array(clients.keys) where id == mainID || vmOwners[id.uuidString]?.mainID == mainID { clients.removeValue(forKey: id)?.disconnect() }
     }
     func recordManagedOwner(_ row: JSON, mainID: UUID) throws {
         guard let main = endpoints.first(where: { $0.id == mainID }) else { return }

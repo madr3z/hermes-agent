@@ -132,7 +132,8 @@ import HermesGateway
                 guard capability["available"].bool, capability["protocol"].string == "hermes-terminal-v1" else { throw GatewayError.message("This guest does not support the persistent terminal yet.") }
                 stream = .terminal
             }
-            let ws = client.remoteSocket(stream)
+            let ws = try await client.remoteSocket(stream)
+            guard current == generation, !Task.isCancelled else { ws.cancel(with: .normalClosure, reason: nil); return }
             socket = ws; ws.resume()
             try await call("opened")
             guard current == generation else { return }
