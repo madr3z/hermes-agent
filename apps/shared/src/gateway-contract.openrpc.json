@@ -1717,6 +1717,96 @@
       }
     },
     {
+      "name": "login.handoff.callback",
+      "summary": "",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/LoginHandoffCallbackParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/LoginHandoffActionResult"
+        }
+      }
+    },
+    {
+      "name": "login.handoff.cancel",
+      "summary": "",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/LoginHandoffActionParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/LoginHandoffActionResult"
+        }
+      }
+    },
+    {
+      "name": "login.handoff.continue",
+      "summary": "",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/LoginHandoffActionParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/LoginHandoffActionResult"
+        }
+      }
+    },
+    {
+      "name": "login.handoff.list",
+      "summary": "",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/LoginHandoffParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/LoginHandoffListResult"
+        }
+      }
+    },
+    {
+      "name": "login.handoff.start",
+      "summary": "",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/LoginHandoffActionParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/LoginHandoffActionResult"
+        }
+      }
+    },
+    {
       "name": "mcp.catalog",
       "summary": "Curated MCP presets with per-profile installed/enabled state and the env keys each needs.",
       "params": [
@@ -17712,6 +17802,273 @@
         ],
         "title": "LocaleSurface",
         "type": "string"
+      },
+      "LoginHandoffActionParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "client_redirect_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Redirect Uri"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "LoginHandoffActionParams",
+        "type": "object"
+      },
+      "LoginHandoffActionResult": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/LoginHandoffRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "LoginHandoffActionResult",
+        "type": "object"
+      },
+      "LoginHandoffCallbackParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "client_redirect_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Redirect Uri"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Code"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "iss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Iss"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "LoginHandoffCallbackParams",
+        "type": "object"
+      },
+      "LoginHandoffListResult": {
+        "additionalProperties": false,
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/LoginHandoffRequest"
+            },
+            "title": "Requests",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requests"
+        ],
+        "title": "LoginHandoffListResult",
+        "type": "object"
+      },
+      "LoginHandoffParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "LoginHandoffParams",
+        "type": "object"
+      },
+      "LoginHandoffRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_profile": {
+            "title": "Owner Profile",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "account_ref": {
+            "title": "Account Ref",
+            "type": "string"
+          },
+          "user_code": {
+            "title": "User Code",
+            "type": "string"
+          },
+          "verification_url": {
+            "title": "Verification Url",
+            "type": "string"
+          },
+          "auth_url": {
+            "title": "Auth Url",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "continued": {
+            "title": "Continued",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "name",
+          "owner_profile",
+          "scopes",
+          "status",
+          "detail",
+          "account_ref",
+          "user_code",
+          "verification_url",
+          "auth_url",
+          "expires_at",
+          "continued"
+        ],
+        "title": "LoginHandoffRequest",
+        "type": "object"
       },
       "LoopSnapshot": {
         "additionalProperties": false,

@@ -1908,6 +1908,47 @@ export interface ClientCapabilitiesResult {
   server_requests: string[]
   declines_not_shown?: boolean
 }
+export interface LoginHandoffParams {
+  session_id: string
+  profile?: string | null
+}
+export interface LoginHandoffListResult {
+  requests: LoginHandoffRequest[]
+}
+export interface LoginHandoffRequest {
+  id: string
+  provider: string
+  name: string
+  owner_profile: string
+  scopes: string[]
+  status: string
+  detail: string
+  account_ref: string
+  user_code: string
+  verification_url: string
+  auth_url: string
+  expires_at: number
+  continued: boolean
+}
+export interface LoginHandoffActionParams {
+  session_id: string
+  profile?: string | null
+  request_id: string
+  client_redirect_uri?: string | null
+}
+export interface LoginHandoffActionResult {
+  request: LoginHandoffRequest
+}
+export interface LoginHandoffCallbackParams {
+  session_id: string
+  profile?: string | null
+  request_id: string
+  client_redirect_uri?: string | null
+  code?: string | null
+  state?: string | null
+  error?: string | null
+  iss?: string | null
+}
 /** ``word`` is the token under the cursor (``@`` prefix = context reference); ``cwd`` / ``session_id`` pick the directory the listing resolves against. */
 export interface CompletePathParams {
   profile?: string | null
@@ -5219,6 +5260,11 @@ export interface RpcMethods {
   'learning.frames': { params: LearningFramesParams; result: LearningFramesResult }
   /** Stateless one-shot LLM completion (titles, ideas) on the session's or the task backend. */
   'llm.oneshot': { params: LlmOneshotParams; result: LlmOneshotResult }
+  'login.handoff.callback': { params: LoginHandoffCallbackParams; result: LoginHandoffActionResult }
+  'login.handoff.cancel': { params: LoginHandoffActionParams; result: LoginHandoffActionResult }
+  'login.handoff.continue': { params: LoginHandoffActionParams; result: LoginHandoffActionResult }
+  'login.handoff.list': { params: LoginHandoffParams; result: LoginHandoffListResult }
+  'login.handoff.start': { params: LoginHandoffActionParams; result: LoginHandoffActionResult }
   /** Curated MCP presets with per-profile installed/enabled state and the env keys each needs. */
   'mcp.catalog': { params: ProfileParams; result: McpCatalogResult }
   /** Add a server to the profile's config from a catalog preset and/or an explicit config. */
@@ -5643,6 +5689,11 @@ export const RPC_METHODS = [
   'learning.edit',
   'learning.frames',
   'llm.oneshot',
+  'login.handoff.callback',
+  'login.handoff.cancel',
+  'login.handoff.continue',
+  'login.handoff.list',
+  'login.handoff.start',
   'mcp.catalog',
   'mcp.servers.add',
   'mcp.servers.list',

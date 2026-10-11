@@ -827,8 +827,21 @@ def run_mcp_operation(
     error = validate_mcp_names(action, names)
     if error:
         return tool_error(error)
-    runner = open_runner(action, backend)
     session_key = operation_session_key(session_id)
+    if action == "authorize" and backend is None and connection_callback is not None:
+        from tui_gateway.server import _current_runtime_session_record
+        session = _current_runtime_session_record.get()
+        if session and session.get("_login_handoff_chat"):
+            from hermes_constants import get_hermes_home
+            from tools.connectors.login_handoff import create_mcp
+            try:
+                requests = [create_mcp(get_hermes_home(), session["_login_handoff_chat"], name) for name in names]
+            except ValueError as exc:
+                return tool_error(str(exc))
+            return json.dumps({"status": "awaiting_human", "requests": [
+                {"id": r["id"], "name": r["name"], "status": r["status"]} for r in requests],
+                "note": "A sign-in card is waiting in this chat. End this turn and wait for the user's authorization. No new toolset was loaded."})
+    runner = open_runner(action, backend)
     # Every interactive surface that renders the card attaches this callback. Registry dispatch and
     # messaging sessions attach none, so they receive the link instead of opening an unanswerable op.
     if connection_callback is None:

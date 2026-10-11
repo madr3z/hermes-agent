@@ -1,5 +1,7 @@
 import { createContext, memo, useCallback, useContext, useMemo, useRef, useState } from 'react'
 
+import { LoginHandoffCards } from '@/components/assistant-ui/login-handoff-cards'
+
 import { ChatEmptySlot } from '@/components/assistant-ui/chat-empty-slot'
 import { AssistantMessage } from '@/components/assistant-ui/thread/assistant-message'
 import { ThreadMessageList } from '@/components/assistant-ui/thread/list'
@@ -181,7 +183,7 @@ export const Thread = memo(function Thread({
   return (
     <ThreadEditContext.Provider value={editContext}>
       <div
-        className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]"
+        className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-transparent contain-[layout_paint]"
         data-slot="thread"
       >
         <ThreadMessageList
@@ -194,6 +196,7 @@ export const Thread = memo(function Thread({
           sessionKey={sessionKey}
           sessionLoading={loading === 'session'}
         />
+        {!isHistorical && <LoginHandoffCards gateway={gateway} sessionId={sessionId} />}
         {loading === 'session' && <CenteredThreadSpinner />}
         <ThreadTimeline />
         <ConfirmDialog
