@@ -10,7 +10,8 @@ struct ChatFileCard: View {
     @State private var localURL: URL?
     @State private var previewURL: URL?
     @State private var downloading = false
-    @State private var requested = false
+    @State private var requestID = 0
+    @State private var operation: UUID?
     @State private var error: String?
     private var ownerKey: String { "\(client?.endpoint.id.uuidString ?? ""):\(profile):\(storedSessionID ?? ""):\(attachment.path)" }
     var body: some View {
@@ -30,28 +31,29 @@ struct ChatFileCard: View {
                     Button("Preview") { previewURL = localURL }
                     ShareLink(item: localURL) { Label("Save or share", systemImage: "square.and.arrow.up") }
                 } else {
-                    Button("Download", systemImage: "arrow.down.circle") { requested = true }.disabled(downloading || client == nil || storedSessionID == nil)
+                    Button("Download", systemImage: "arrow.down.circle") { requestID += 1 }.disabled(downloading || client == nil || storedSessionID == nil)
                 }
             }.font(.caption)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
         }.padding(10).background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
             .quickLookPreview($previewURL)
-            .task(id: ownerKey + (requested ? ":requested" : "")) {
+            .task(id: ownerKey + ":\(requestID)") {
                 removeLocalFile()
-                if attachment.isImage || requested { await download() }
+                if attachment.isImage || requestID > 0 { await download() }
             }
-            .onDisappear { removeLocalFile() }
+            .onDisappear { operation = nil; downloading = false; removeLocalFile() }
     }
     private func download() async {
-        guard !downloading, localURL == nil, let client, let storedSessionID else { return }
+        guard !Task.isCancelled, localURL == nil, let client, let storedSessionID else { return }
+        let operation = UUID(); self.operation = operation
         downloading = true; error = nil
-        defer { downloading = false }
+        defer { if self.operation == operation { downloading = false } }
         do {
             let result = try await client.downloadFile(attachment, profile: profile, storedSessionID: storedSessionID)
-            if Task.isCancelled { try? FileManager.default.removeItem(at: result.deletingLastPathComponent()); return }
+            if Task.isCancelled || self.operation != operation { try? FileManager.default.removeItem(at: result.deletingLastPathComponent()); return }
             localURL = result
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { if self.operation == operation, !Task.isCancelled { self.error = error.localizedDescription } }
     }
     private func removeLocalFile() {
         if let localURL { try? FileManager.default.removeItem(at: localURL.deletingLastPathComponent()) }
