@@ -67,17 +67,30 @@ then use the repository's supported PM/update-finish and build steps. Explain
 this substitution. Do not invent flags, use forced resets, or run raw pip/uv
 against a managed Hermes environment.
 
-Resolve conflicts by intended behavior, not by accepting all of either side.
-Inspect upstream history for changed APIs and deliberate behavior changes.
-After integration, verify the resulting source still contains each required
-custom behavior. A clean merge is not proof of compatibility.
+Compare upstream changes against the feature inventory before replaying custom
+commits. Inspect upstream history for fixes, changed APIs, and deliberate behavior
+changes in areas we customized. Include overlaps that produce no Git conflict.
+Report each relevant overlap as equivalent, partial, or incompatible, with
+upstream commit/release links and the practical difference.
 
-Compare upstream changes against the feature inventory. Report each relevant
-overlap as equivalent, partial, or incompatible, with upstream commit/release
-links and the practical difference. Prefer upstream code when it meets the
-same behavior and ownership contract. Remove a redundant local patch only
-after proving equivalence with affected tests; retain adaptations needed for
-our deployments. Ask before a meaningful behavior loss or data conversion.
+When upstream main addresses behavior that our custom branch changed, prefer
+the upstream implementation as the foundation. Tailor the custom patch around
+that update. Preserve the upstream fix and retain only the adaptations still
+needed for our required behavior and deployments. Do not restore an older custom
+implementation over the upstream update merely to preserve the patch.
+
+During rebase, drop a superseded custom commit after proving that upstream covers
+its required behavior. For a partial overlap, rework the commit to keep only the
+remaining custom behavior and use the updated upstream APIs and control flow.
+Apply the same rule when integrating by merge. Resolve conflicts by intended
+behavior; do not accept all of either side.
+
+After integration, run affected behavior tests to prove that the upstream fix
+still works and each required custom behavior remains. Retain relevant upstream
+regression coverage and adapt custom tests to the resulting behavior. A clean
+merge is not proof of compatibility. If the two behavior contracts cannot be
+reconciled without meaningful feature loss or data conversion, explain the
+specific conflict and ask for that decision before proceeding.
 
 ## Verify and build
 
@@ -165,7 +178,7 @@ failures, expand permissions, or repeat green suites without new evidence.
 Save a concise update record in the existing project delivery records. Include:
 
 - Upstream before/after revisions and custom release commits.
-- Conflicts resolved, upstream feature overlaps, patches retired or retained,
+- Conflicts resolved, upstream feature overlaps, patches retired, adapted, or retained,
   and material concerns.
 - Tests, client artifacts, published digests, observed deployment versions,
   and a per-guest updated/pending result.
