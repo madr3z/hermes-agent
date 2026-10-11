@@ -92,16 +92,16 @@ struct ChatView: View {
             }
             if let error = chat.voice.error { PhoneNotice(title: "Voice call", message: error, systemImage: "phone.badge.exclamationmark") }
             if !chat.connected || chat.busy {
-            HStack {
-                Label(chat.status, systemImage: chat.connected ? "checkmark.circle" : "network")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    .accessibilityLabel("Connection status: \(chat.status)")
-                Spacer()
-                if chat.busy {
-                    Button("Stop", systemImage: "stop.circle") { Task { await chat.interrupt() } }
-                        .font(.subheadline).frame(minHeight: 44)
+                HStack {
+                    Label(chat.status, systemImage: chat.connected ? "checkmark.circle" : "network")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        .accessibilityLabel("Connection status: \(chat.status)")
+                    Spacer()
+                    if chat.busy {
+                        Button("Stop", systemImage: "stop.circle") { Task { await chat.interrupt() } }
+                            .font(.subheadline).frame(minHeight: 44)
+                    }
                 }
-            }
             }
             if importingPhotos { ProgressView("Preparing photos…").font(.subheadline) }
             if !chat.uploads.isEmpty {

@@ -65,7 +65,7 @@ private struct ChatMarkdown: View {
                     Text((try? AttributedString(markdown: body, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(body))
                         .font(isHeading ? (heading <= 2 ? .title3.weight(.semibold) : .headline) : .body)
                         .lineSpacing(4)
-                        .foregroundStyle(quote ? .secondary : .primary)
+                        .foregroundStyle(.primary)
                         .textSelection(.enabled)
                         .accessibilityAddTraits(isHeading ? .isHeader : [])
                 }.fixedSize(horizontal: false, vertical: true)

@@ -39,6 +39,7 @@ struct LoginHandoffCards: View {
 }
 
 struct LoginHandoffCard: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let request: LoginHandoff
     let botName: String
     let working: Bool
@@ -48,8 +49,10 @@ struct LoginHandoffCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: request.status == "authorized" ? "checkmark.shield" : "person.badge.key")
-                    .font(.title2).foregroundStyle(.tint).accessibilityHidden(true)
+                if !typeSize.isAccessibilitySize {
+                    Image(systemName: request.status == "authorized" ? "checkmark.shield" : "person.badge.key")
+                        .font(.title2).foregroundStyle(.tint).accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(request.status == "authorized" ? "Account connected" : "Sign in to continue").font(.headline)
                     Text(request.name + " · " + botName).font(.subheadline).foregroundStyle(.secondary)
@@ -70,7 +73,7 @@ struct LoginHandoffCard: View {
                     if !request.accountReference.isEmpty { Text("Account: \(request.accountReference)").textSelection(.enabled) }
                     Text("Authorization stays on this bot. Use Computer for other website logins.")
                 }.font(.footnote).foregroundStyle(.secondary).padding(.top, 6)
-            }.font(.subheadline)
+            }.font(.subheadline).frame(minHeight: 44)
             if request.status == "authorized" {
                 if request.continued {
                     Label("Task continuation submitted", systemImage: "checkmark.circle").font(.subheadline)

@@ -31,7 +31,7 @@ struct VMControlView: View {
                                 .font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
                             Text(control.working ? "Connecting to your computer…" : "Your bot’s computer")
                                 .font(.headline)
-                            Text(control.working ? "Opening a secure remote view." : "Reconnect to view the screen. Your bot keeps working when you leave.")
+                            Text(control.working ? "Opening a secure remote view." : control.mode == .display && control.status["installed"].bool && !control.desktopRunning ? "Choose Start desktop to open the screen. Your bot keeps working when you leave." : "Reconnect to view the screen. Your bot keeps working when you leave.")
                                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             if control.working { ProgressView() }
                         }
@@ -137,26 +137,32 @@ struct VMControlView: View {
         if power.working { ProgressView() }
     }
     private var remoteStatus: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(control.connection, systemImage: control.connected ? "checkmark.circle" : "network")
-                .font(.caption).foregroundStyle(.secondary)
-            ScrollView(.horizontal) {
-                HStack(spacing: 12) {
-                    if control.mode == .display {
-                        if !control.desktopRunning {
-                            Button("Start desktop", systemImage: "desktopcomputer") { Task { await control.startDesktop() } }
-                                .disabled(control.working || !control.status["installed"].bool)
-                        } else if control.controlling {
-                            Button("Hand back", systemImage: "arrow.uturn.backward") { Task { await control.releaseControl() } }
-                        } else {
-                            Button("Take control", systemImage: "cursorarrow") { Task { await control.takeControl() } }.disabled(!control.connected)
-                        }
-                    }
-                    Button("Paste", systemImage: "doc.on.clipboard") { showPaste = true }
-                        .disabled(!control.connected || (control.mode == .display && !control.controlling))
-                    Button("Reconnect", systemImage: "arrow.clockwise") { Task { await control.reconnect(store: store) } }.disabled(control.working)
-                }.font(.subheadline).buttonStyle(.bordered).controlSize(.large)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(control.connection, systemImage: control.connected ? "checkmark.circle" : "network")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button("Reconnect", systemImage: "arrow.clockwise") { Task { await control.reconnect(store: store) } }
+                    .font(.subheadline).frame(minHeight: 44).disabled(control.working)
             }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { remoteActions }
+                VStack(alignment: .leading, spacing: 8) { remoteActions }
+            }.font(.subheadline).buttonStyle(.bordered).controlSize(.large)
         }.padding(.horizontal).padding(.bottom, 8)
+    }
+    @ViewBuilder private var remoteActions: some View {
+        if control.mode == .display {
+            if !control.desktopRunning {
+                Button("Start desktop", systemImage: "desktopcomputer") { Task { await control.startDesktop() } }
+                    .disabled(control.working || !control.status["installed"].bool)
+            } else if control.controlling {
+                Button("Hand back", systemImage: "arrow.uturn.backward") { Task { await control.releaseControl() } }
+            } else {
+                Button("Take control", systemImage: "cursorarrow") { Task { await control.takeControl() } }.disabled(!control.connected)
+            }
+        }
+        Button("Paste", systemImage: "doc.on.clipboard") { showPaste = true }
+            .disabled(!control.connected || (control.mode == .display && !control.controlling))
     }
 }

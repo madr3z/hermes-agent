@@ -13,11 +13,12 @@ struct BotAvatar: View {
 }
 
 struct BotIdentityLabel: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let name: String
     let detail: String
     var body: some View {
         HStack(spacing: 14) {
-            BotAvatar()
+            if !typeSize.isAccessibilitySize { BotAvatar() }
             VStack(alignment: .leading, spacing: 4) {
                 Text(name).font(.title3.weight(.semibold))
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
@@ -30,15 +31,18 @@ struct BotIdentityLabel: View {
 }
 
 struct PhoneFeatureRow: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let title: String
     let detail: String
     let systemImage: String
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: systemImage)
-                .font(.body.weight(.medium)).foregroundStyle(.tint)
-                .frame(width: 30, height: 30)
-                .accessibilityHidden(true)
+            if !typeSize.isAccessibilitySize {
+                Image(systemName: systemImage)
+                    .font(.body.weight(.medium)).foregroundStyle(.tint)
+                    .frame(width: 30, height: 30)
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.body.weight(.medium)).foregroundStyle(.primary)
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)

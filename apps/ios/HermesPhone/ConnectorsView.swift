@@ -8,6 +8,7 @@ struct ConnectorsView: View {
 }
 
 private struct BotConnectorsView: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let bot: Bot
     let store: PhoneStore
     @State private var connectors: ConnectorsStore
@@ -80,15 +81,18 @@ private struct BotConnectorsView: View {
             ForEach(connectors.servers) { server in
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: server.provider.contains("icloud") ? "icloud" : "puzzlepiece.extension")
-                            .font(.title3).foregroundStyle(.tint)
-                            .frame(width: 40, height: 40)
-                            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                            .accessibilityHidden(true)
+                        if !typeSize.isAccessibilitySize {
+                            Image(systemName: server.provider.contains("icloud") ? "icloud" : "puzzlepiece.extension")
+                                .font(.title3).foregroundStyle(.tint)
+                                .frame(width: 40, height: 40)
+                                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                                .accessibilityHidden(true)
+                        }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(server.label).font(.headline)
                             if let identity = server.verifiedIdentity {
-                                Label(identity, systemImage: "checkmark.seal").font(.subheadline).foregroundStyle(.secondary)
+                                Text(identity).font(.subheadline).foregroundStyle(.secondary)
+                                    .accessibilityLabel("Verified account: " + identity)
                             } else if !server.requestedIdentity.isEmpty {
                                 Text(server.requestedIdentity).font(.subheadline).foregroundStyle(.secondary)
                                 Text("Account not yet verified").font(.caption).foregroundStyle(.secondary)
@@ -118,7 +122,7 @@ private struct BotConnectorsView: View {
                                 }
                             }
                         }.padding(.top, 8)
-                    }.font(.subheadline).tint(.secondary)
+                    }.font(.subheadline).tint(.secondary).frame(minHeight: 44)
                 }.padding(.vertical, 10)
             }
             sectionError("MCP servers")
