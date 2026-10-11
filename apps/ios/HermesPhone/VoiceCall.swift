@@ -9,7 +9,15 @@ import WebRTC
     var connecting = false
     var muted = false
     var error: String?
-    var transcript = ""
+    private(set) var conversation = VoiceConversation()
+    private(set) var activity = "Ready to call"
+    private(set) var startedAt: Date?
+    private(set) var audioOutput = "Speaker"
+    private(set) var hasPendingTranscript = false
+    private var activityTask: Task<Void, Never>?
+    private var opening = VoiceOpening()
+    private var routeObserver: NSObjectProtocol?
+    var turns: [VoiceTranscriptTurn] { conversation.turns }
     private var factory: RTCPeerConnectionFactory?
     private var peer: RTCPeerConnection?
     private var channel: RTCDataChannel?
@@ -18,9 +26,6 @@ import WebRTC
     private var profile = ""
     private var runtimeID = ""
     private var callID = ""
-    private var utteranceID = ""
-    private var lastSpeaker = ""
-    private var lastEnd = 0.0
     private var delegation = VoiceDelegationTracker()
     private var fragments: [(speaker: String, text: String)] = []
     private var pending: [JSON] = []
@@ -33,11 +38,12 @@ import WebRTC
 
     static func stopCurrent() { current?.stop() }
 
-    func start(client: GatewayClient, profile: String, runtimeID: String, history: [ChatMessage], managedAudio: Bool = false) async {
+    func start(client: GatewayClient, profile: String, runtimeID: String, history: [ChatMessage], managedAudio: Bool = false, openingReason: String? = nil) async {
         guard !active && !connecting && peer == nil else { return }
         Self.current?.stop()
         Self.current = self; self.managedAudio = managedAudio
-        connecting = true; error = nil
+        connecting = true; error = nil; activity = "Connecting securely…"
+        opening = VoiceOpening(reason: openingReason); startedAt = nil
         let generation = UUID(); startup = generation
         defer { if startup == generation { connecting = false } }
         do {
@@ -47,8 +53,8 @@ import WebRTC
             guard allowed else { throw GatewayError.message("Enable microphone access in Settings to use GPT Live.") }
             guard startup == generation else { return }
             self.client = client; self.profile = profile; self.runtimeID = runtimeID
-            callID = UUID().uuidString; utteranceID = ""; lastSpeaker = ""; lastEnd = 0
-            fragments = []; transcript = ""; muted = false
+            callID = UUID().uuidString
+            fragments = []; conversation = VoiceConversation(); muted = false
             try configureOutbox(client: client, profile: profile, runtimeID: runtimeID)
             try await flush()
             let audioConfiguration = VoiceAudioConfiguration.install()
@@ -60,6 +66,10 @@ import WebRTC
                     try audio.setConfiguration(audioConfiguration, active: true)
                     audio.unlockForConfiguration()
                 } catch { audio.unlockForConfiguration(); throw error }
+            }
+            updateAudioOutput()
+            routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.updateAudioOutput() }
             }
             RTCInitializeSSL()
             let factory = RTCPeerConnectionFactory(); self.factory = factory
@@ -126,7 +136,9 @@ import WebRTC
     }
     func stop() {
         let hadAudio = peer != nil
-        startup = nil; active = false; connecting = false
+        startup = nil; active = false; connecting = false; activity = "Call ended"
+        activityTask?.cancel(); activityTask = nil; opening = VoiceOpening()
+        if let routeObserver { NotificationCenter.default.removeObserver(routeObserver); self.routeObserver = nil }
         send(["type": .string("session.close")])
         track?.isEnabled = false; channel?.delegate = nil; channel?.close(); peer?.close()
         channel = nil; peer = nil; track = nil; factory = nil; delegation.cancel()
@@ -142,6 +154,25 @@ import WebRTC
         muted.toggle(); track?.isEnabled = !muted
         send(["type": .string(muted ? "session.input_audio.mute" : "session.input_audio.unmute"), "event_id": .string(UUID().uuidString)])
     }
+    func toggleSpeaker() {
+        do {
+            let audio = AVAudioSession.sharedInstance()
+            try audio.overrideOutputAudioPort(audio.currentRoute.outputs.contains { $0.portType == .builtInSpeaker } ? .none : .speaker)
+            updateAudioOutput()
+        } catch { self.error = "Could not change audio output. Choose a route in Control Center." }
+    }
+    private func updateAudioOutput() {
+        let output = AVAudioSession.sharedInstance().currentRoute.outputs.first
+        audioOutput = output?.portType == .builtInSpeaker ? "Speaker" : output?.portName ?? "Audio output"
+    }
+    private func showActivity(_ text: String, for seconds: Double = 2) {
+        activityTask?.cancel(); activity = text
+        activityTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self, self.active else { return }
+            self.activity = self.delegation.currentID == nil ? "Listening" : "Working on your request"
+        }
+    }
     func taskFinished(_ payload: JSON) {
         if let result = delegation.complete(payload) { speak(result) }
     }
@@ -155,9 +186,11 @@ import WebRTC
         guard channel?.readyState == .open, let data = try? JSONEncoder().encode(JSON.object(fields)) else { return }
         _ = channel?.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
-    private func handle(_ event: JSON) async {
+    func receive(_ event: JSON) async {
         switch event["type"].string {
-        case "session.started": active = true; connecting = false
+        case "session.started":
+            active = true; connecting = false; startedAt = startedAt ?? Date(); activity = "Listening"
+            if let fields = opening.event(sessionReady: channel?.readyState == .open) { send(fields) }
         case "session.input_transcript.delta", "session.output_transcript.delta":
             let speaker = event["type"].string == "session.input_transcript.delta" ? "user" : "assistant"
             let text = event["delta"].string ?? ""
@@ -167,11 +200,11 @@ import WebRTC
                 self.error = "GPT Live returned an invalid transcript fragment. The call has stopped to avoid losing further speech."
                 stop(); return
             }
-            if speaker != lastSpeaker || start - lastEnd > 1500 { utteranceID = UUID().uuidString }
-            lastSpeaker = speaker; lastEnd = end
+            let eventID = event["event_id"].string ?? UUID().uuidString
+            guard let turn = try? conversation.append(speaker: speaker, text: text, startMS: start, endMS: end, eventID: eventID) else { return }
             fragments.append((speaker, text)); fragments = Array(fragments.suffix(100))
-            transcript += text
-            pending.append(.object(["call_id": .string(callID), "utterance_id": .string(utteranceID), "event_id": event["event_id"].string.map(JSON.string) ?? .string(UUID().uuidString), "speaker": .string(speaker), "text": .string(text), "start_ms": .number(start), "end_ms": .number(end)]))
+            showActivity(speaker == "user" ? "You’re speaking" : "Speaking", for: max(2, min(8, (end - start) / 1000)))
+            pending.append(.object(["call_id": .string(callID), "utterance_id": .string(turn.id), "event_id": .string(eventID), "speaker": .string(speaker), "text": .string(text), "start_ms": .number(start), "end_ms": .number(end)]))
             do { try persist(); try await flush() }
             catch { self.error = "Transcript waiting to sync: \(error.localizedDescription)" }
         case "session.delegation.created":
@@ -181,7 +214,7 @@ import WebRTC
             let prompt = recent.prefix(while: { $0.speaker == "user" }).reversed().map(\.text).joined()
             guard !prompt.isEmpty else { self.error = "No spoken request was available to delegate."; return }
             let supersedesOwnTask = delegation.currentID != nil
-            delegation.begin(id)
+            delegation.begin(id); activityTask?.cancel(); activity = "Working on your request"
             let clientTurnID = delegation.clientTurnID!
             do {
                 if supersedesOwnTask { _ = try await client.request("session.interrupt", owner()) }
@@ -205,7 +238,9 @@ import WebRTC
                 if delegation.currentID == id && delegation.clientTurnID == clientTurnID { self.error = error.localizedDescription; delegation.cancel() }
             }
         case "session.closed": stop()
-        case "error": error = event["error"]["message"].string ?? "GPT Live reported an error."
+        case "error":
+            error = event["error"]["message"].string ?? "The voice connection reported an error."
+            stop()
         default: break
         }
     }
@@ -214,6 +249,7 @@ import WebRTC
     }
     private func persist() throws {
         guard let outboxURL else { return }
+        hasPendingTranscript = !pending.isEmpty
         try JSONEncoder().encode(pending).write(to: outboxURL, options: [.atomic, managedAudio ? .completeFileProtectionUntilFirstUserAuthentication : .completeFileProtection])
     }
     private func flush() async throws {
@@ -249,7 +285,7 @@ extension VoiceCall: RTCPeerConnectionDelegate, RTCDataChannelDelegate {
         guard let event = try? JSONDecoder().decode(JSON.self, from: buffer.data) else { return }
         Task { @MainActor in
             guard self.channel === dataChannel else { return }
-            await self.handle(event)
+            await self.receive(event)
         }
     }
 }

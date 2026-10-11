@@ -8,7 +8,6 @@ struct ChatView: View {
     @State private var chat: ChatStore
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var composerFocused: Bool
-    @State private var showVoice = false
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var importingPhotos = false
@@ -46,7 +45,7 @@ struct ChatView: View {
                 }.accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Call", systemImage: "phone") { composerFocused = false; showVoice = true }
+                Button(chat.voice.active || chat.voice.connecting ? "Return to call" : "Call", systemImage: chat.voice.active ? "phone.fill" : "phone") { composerFocused = false; CallPresentation.shared.open(chat) }
                     .disabled(!chat.connected || chat.sending).accessibilityIdentifier("startVoice")
                     .accessibilityLabel("Voice call with \(chat.bot.name)")
             }
@@ -61,9 +60,8 @@ struct ChatView: View {
         .task { await chat.open(store: store) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await chat.open(store: store) } }
-            else if phase == .background { chat.voice.stop() }
+
         }
-        .onDisappear { chat.voice.stop() }
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): urls.forEach { chat.importFile($0) }
@@ -71,7 +69,6 @@ struct ChatView: View {
             }
         }
         .task(id: photos) { await importPhotos() }
-        .sheet(isPresented: $showVoice) { VoiceView(chat: chat) }
     }
     private var composer: some View {
         VStack(spacing: 8) {
@@ -145,30 +142,4 @@ struct ChatView: View {
         photos = []
     }
 
-}
-
-private struct VoiceView: View {
-    @Bindable var chat: ChatStore
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                Image(systemName: chat.voice.active ? "waveform.circle.fill" : "waveform.circle").font(.system(size: 88)).foregroundStyle(.tint)
-                Text(chat.voice.active ? "Listening" : chat.voice.connecting ? "Connecting…" : "GPT Live").font(.title2)
-                Text("Speak naturally and interrupt by speaking. Requests for work are delegated to \(chat.bot.name).").multilineTextAlignment(.center).foregroundStyle(.secondary)
-                ScrollView { Text(chat.voice.transcript).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
-                if let error = chat.voice.error { Text(error).font(.callout).foregroundStyle(.red) }
-                HStack {
-                    if chat.voice.active {
-                        Button(chat.voice.muted ? "Unmute" : "Mute", systemImage: chat.voice.muted ? "mic.slash" : "mic") { chat.voice.toggleMute() }.buttonStyle(.bordered)
-                        Button("End Call", role: .destructive) { chat.voice.stop(); dismiss() }.buttonStyle(.borderedProminent)
-                    } else {
-                        Button("Start Call") { Task { await chat.startVoice() } }.buttonStyle(.borderedProminent).disabled(chat.voice.connecting)
-                    }
-                }
-                Text("Spoken transcripts are saved with Bot Chat. The microphone stops when this sheet closes or the app enters the background.").font(.footnote).foregroundStyle(.secondary)
-            }.padding(24).navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { chat.voice.stop(); dismiss() } } }
-        }.onDisappear { chat.voice.stop() }
-    }
 }

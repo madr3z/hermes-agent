@@ -79,31 +79,11 @@ struct MobileCallBanner: View {
     @State private var editingCall: MobileDeferredCall?
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if contact.voice.active || contact.voice.connecting {
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(contact.detail?.name ?? "Hermes").font(.headline)
-                        Text(contact.voice.connecting ? "Connecting voice…" : "GPT Live call").font(.caption)
-                    }
-                    Spacer()
-                    Button(contact.voice.muted ? "Unmute" : "Mute") { contact.voice.toggleMute() }
-                    Button("End", role: .destructive) { contact.end() }
-                }
-            } else if let incoming = contact.callInvitation, incoming.isCurrent(), let detail = contact.detail, detail.kind == "call" {
-                Text(detail.name + " is calling").font(.headline)
-                Text(detail.reason).font(.caption)
-                HStack {
-                    Menu("Ring again") {
-                        Button("In 15 minutes") { Task { await contact.postpone(incoming, until: Date().addingTimeInterval(15 * 60)) } }
-                        Button("In 1 hour") { Task { await contact.postpone(incoming, until: Date().addingTimeInterval(60 * 60)) } }
-                        Button("Choose a time…") { editingCall = nil; selectedTime = Date().addingTimeInterval(15 * 60); contact.chooseCallTime = true }
-                    }.disabled(contact.postponing || !detail.canPostpone)
-                    Spacer()
-                    Button("Decline", role: .destructive) { contact.end() }
-                }
-            } else if let detail = contact.detail, detail.kind == "notification" {
-                HStack { Text(detail.name).font(.headline); Spacer(); Button("Dismiss") { contact.detail = nil } }
-                Text(detail.reason)
+            if contact.callInvitation != nil {
+                CallSummary(name: contact.detail?.name ?? "Hermes",
+                            status: contact.callIsAccepted ? contact.voice.activity : "Incoming call",
+                            endLabel: contact.callIsAccepted ? "End" : "Decline",
+                            onReturn: { contact.callPresentation.isPresented = true }, onEnd: { contact.end() })
             }
             ForEach(contact.deferredCalls) { call in
                 HStack {
@@ -120,7 +100,7 @@ struct MobileCallBanner: View {
                 HStack { Text(error).font(.caption).foregroundStyle(.red); Spacer(); Button("Dismiss") { contact.error = nil } }
             }
         }
-        .padding(contact.detail != nil || !contact.deferredCalls.isEmpty || contact.error != nil ? 12 : 0)
+        .padding(contact.callInvitation != nil || !contact.deferredCalls.isEmpty || contact.error != nil ? 12 : 0)
         .background(.regularMaterial)
         .task { await contact.refreshDeferredCalls() }
         .sheet(isPresented: $contact.chooseCallTime) {
@@ -131,14 +111,14 @@ struct MobileCallBanner: View {
                     Button("Ask agent to ring again") {
                         Task {
                             if let editingCall { await contact.changeTime(editingCall, to: selectedTime) }
-                            else if let incoming = contact.callInvitation { await contact.postpone(incoming, until: selectedTime) }
+                            else if let incoming = contact.postponeTarget ?? contact.callInvitation { await contact.postpone(incoming, until: selectedTime) }
                             if contact.error == nil { contact.chooseCallTime = false }
                         }
                     }.disabled(contact.postponing)
                     if let error = contact.error { Text(error).foregroundStyle(.red) }
                 }
                 .navigationTitle("Ring again")
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { contact.chooseCallTime = false } } }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { contact.chooseCallTime = false; contact.postponeTarget = nil } } }
             }
         }
     }

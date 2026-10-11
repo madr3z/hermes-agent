@@ -21,7 +21,10 @@ struct MobileContactSettings: Codable {
     private(set) var settings: [UUID: MobileContactSettings] = [:]
     var error: String?
     var detail: MobileInvitation?
-    private(set) var callInvitation: MobilePush?
+    var callPresentation = IncomingCallPresentation()
+    var callInvitation: MobilePush? { callPresentation.invitation }
+    var postponeTarget: MobilePush?
+    var callIsAccepted: Bool { callPresentation.accepted }
     private(set) var deferredCalls: [MobileDeferredCall] = []
     var postponing = false
     var chooseCallTime = false
@@ -33,8 +36,8 @@ struct MobileContactSettings: Codable {
     private var alertToken: String?
     private let provider: CXProvider
     private let callController = CXCallController()
-    private var push: MobilePush?
-    private var accepted = false
+    private var push: MobilePush? { callPresentation.invitation }
+    private var accepted: Bool { callPresentation.accepted }
     private var audioActive = false
     private var guestClient: GatewayClient?
     private var runtimeID: String?
@@ -179,13 +182,18 @@ struct MobileContactSettings: Codable {
         update.hasVideo = false; update.supportsHolding = false; update.supportsGrouping = false; update.supportsUngrouping = false; update.supportsDTMF = false
         handled = handled.filter { $0.value > Date().timeIntervalSince1970 - 86400 }
         let eligible = incoming.map { Self.buildEnabled && push == nil && $0.isCurrent() && settings[$0.controllerID]?.calls == true && handled[id.uuidString] == nil } ?? false
-        if eligible { push = incoming; callInvitation = incoming; detail = nil; accepted = false }
+        if eligible, let incoming { callPresentation.begin(incoming); detail = nil; error = nil }
         // Report before any network request, even if the local ownership check fails.
         provider.reportNewIncomingCall(with: id, update: update) { [weak self] failure in
             completion()
             Task { @MainActor in
                 guard let self else { return }
-                if failure != nil { if eligible && self.push == incoming { self.push = nil }; return }
+                if failure != nil {
+                    if eligible, let incoming, self.callPresentation.finish(incoming.invitationID) {
+                        self.detail = nil; self.error = "iPhone could not present this call. Check Focus and call settings."
+                    }
+                    return
+                }
                 guard eligible, let incoming, self.push == incoming else {
                     self.provider.reportCall(with: id, endedAt: Date(), reason: .failed); return
                 }
@@ -211,7 +219,6 @@ struct MobileContactSettings: Codable {
                             catch {
                                 if self.push == incoming, !self.accepted, !self.postponing {
                                     self.finish(reason: .remoteEnded, notifyServer: false)
-                                    self.callInvitation = nil; self.detail = nil
                                 }
                                 return
                             }
@@ -240,7 +247,7 @@ struct MobileContactSettings: Codable {
             let record = try MobileDeferredCall(value, controllerID: incoming.controllerID, allowedGuests: settings[incoming.controllerID]?.bots ?? [])
             deferredCalls.removeAll { $0.id == record.id }; deferredCalls.append(record)
             if push == incoming { finish(reason: .remoteEnded, notifyServer: false) }
-            if callInvitation == incoming { callInvitation = nil; detail = nil }
+            if postponeTarget == incoming { postponeTarget = nil }; chooseCallTime = false
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [incoming.invitationID.uuidString])
         } catch { self.error = "Could not schedule another ring: " + error.localizedDescription }
     }
@@ -282,7 +289,7 @@ struct MobileContactSettings: Codable {
     private func prepare(_ incoming: MobilePush) async throws {
         let invitation = try await resolve(incoming, accepting: true)
         guard push == incoming, let record = settings[incoming.controllerID] else { throw CancellationError() }
-        accepted = true; expiryTask?.cancel(); ringingTask?.cancel()
+        callPresentation.accept(incoming.invitationID); expiryTask?.cancel(); ringingTask?.cancel()
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [incoming.invitationID.uuidString])
         // Derive the URL from the saved controller and authenticated registry identity.
         let main = try client(incoming.controllerID, background: true)
@@ -305,7 +312,7 @@ struct MobileContactSettings: Codable {
         guard let runtime = opened["session_id"].string else { throw GatewayError.message("The canonical conversation returned no runtime session.") }
         callHistory = ChatMessage.project(opened["messages"].array).filter { $0.role == "user" || $0.role == "assistant" }
         callHistory.append(ChatMessage(id: "incoming-call-reason-" + incoming.invitationID.uuidString, role: "user", text: "I accepted the incoming Hermes call. The bot requested this call for: " + invitation.reason))
-        runtimeID = runtime; detail = invitation; accepted = true; expiryTask?.cancel()
+        runtimeID = runtime; detail = invitation; callPresentation.accept(incoming.invitationID); expiryTask?.cancel()
         eventObserver = guest.observe(events: { [weak self] event in
             guard let self else { return }
             guard event["type"].string == "message.complete", event["session_id"].string == self.runtimeID || event["payload"]["session_id"].string == self.runtimeID else { return }
@@ -316,8 +323,14 @@ struct MobileContactSettings: Codable {
         guard accepted, audioActive, let incoming = push, let guestClient, let runtimeID, !voice.connecting, !voice.active else { return }
         setupTask = Task { [weak self] in
             guard let self, self.push == incoming else { return }
-            await self.voice.start(client: guestClient, profile: "default", runtimeID: runtimeID, history: self.callHistory, managedAudio: true)
+            await self.voice.start(client: guestClient, profile: "default", runtimeID: runtimeID, history: self.callHistory, managedAudio: true, openingReason: self.detail?.reason)
             if !self.voice.active, self.push == incoming { self.error = self.voice.error; self.finish(reason: .failed) }
+        }
+    }
+    func answer() {
+        guard let incoming = push, incoming.isCurrent(), !accepted else { return }
+        callController.request(CXTransaction(action: CXAnswerCallAction(call: incoming.invitationID))) { [weak self] failure in
+            if failure != nil { Task { @MainActor in self?.error = "Could not answer this call. Try the iPhone call controls." } }
         }
     }
     func end() {
@@ -329,7 +342,8 @@ struct MobileContactSettings: Codable {
     private func finish(reason: CXCallEndedReason, notifyServer: Bool = true) {
         guard let old = push else { return }
         let wasAccepted = accepted
-        push = nil; accepted = false; audioActive = false
+        callPresentation.finish(old.invitationID); detail = nil; audioActive = false
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [old.invitationID.uuidString])
         setupTask?.cancel(); expiryTask?.cancel(); ringingTask?.cancel(); runtimeID = nil; callHistory = []
         if let eventObserver { guestClient?.removeObserver(eventObserver); self.eventObserver = nil }
         voice.stop(); guestClient?.disconnect(); guestClient = nil
@@ -407,14 +421,14 @@ extension MobileContact: PKPushRegistryDelegate, CXProviderDelegate, UNUserNotif
                 case "ring-60": await postpone(incoming, until: Date().addingTimeInterval(60 * 60))
                 default:
                     // The custom picker needs no private details. Submission validates the invitation.
-                    callInvitation = incoming; chooseCallTime = true
+                    postponeTarget = incoming; chooseCallTime = true
                 }
             } else if settings[incoming.controllerID]?.notifications == true {
                 do { detail = try await resolve(incoming) } catch { self.error = "This notification expired or its bot is no longer available." }
             }
         }
     }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([]) }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([.banner, .list, .sound]) }
 }
 
 final class HermesApplicationDelegate: NSObject, UIApplicationDelegate {

@@ -17,6 +17,9 @@ private enum RosterSheet: Identifiable {
 struct RosterView: View {
     @Bindable var store: PhoneStore
     @State private var sheet: RosterSheet?
+    @Bindable private var contact = MobileContact.shared
+    @Bindable private var calls = CallPresentation.shared
+    @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         NavigationStack {
             List {
@@ -94,7 +97,15 @@ struct RosterView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }.listRowBackground(Color.clear)
             }
-            .safeAreaInset(edge: .bottom) { MobileCallBanner() }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    MobileCallBanner()
+                    if let outgoing = calls.outgoing, outgoing.voice.active || outgoing.voice.connecting {
+                        CallSummary(name: outgoing.bot.name, status: outgoing.voice.activity, endLabel: "End",
+                                    onReturn: { calls.isPresented = true }, onEnd: { outgoing.voice.stop() })
+                    }
+                }
+            }
             .navigationTitle("Bots")
             .navigationDestination(for: Bot.self) { bot in ChatView(bot: bot, store: store) }
             .toolbar {
@@ -105,6 +116,15 @@ struct RosterView: View {
                     } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Add bot or gateway")
                 }
+            }
+            .fullScreenCover(item: callDestination) { destination in
+                switch destination {
+                case .incoming: IncomingCallView(contact: contact)
+                case .outgoing(let chat): VoiceView(chat: chat)
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { calls.outgoing?.voice.stop() }
             }
             .refreshable { await store.refresh() }
             .task { await store.refresh() }
@@ -117,6 +137,15 @@ struct RosterView: View {
                 }
             }
         }
+    }
+    private var callDestination: Binding<CallDestination?> {
+        Binding(get: {
+            if contact.callPresentation.isPresented, let incoming = contact.callInvitation { return .incoming(incoming.invitationID) }
+            if calls.isPresented, let outgoing = calls.outgoing { return .outgoing(outgoing) }
+            return nil
+        }, set: { value in
+            if value == nil { contact.callPresentation.isPresented = false; calls.closeScreen() }
+        })
     }
 }
 
