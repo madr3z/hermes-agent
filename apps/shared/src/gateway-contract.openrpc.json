@@ -1093,7 +1093,7 @@
         {
           "name": "params",
           "schema": {
-            "$ref": "#/components/schemas/PingParams"
+            "$ref": "#/components/schemas/GatewayCapabilitiesParams"
           }
         }
       ],
@@ -14702,11 +14702,36 @@
         "title": "FreeTierStatusResult",
         "type": "object"
       },
+      "GatewayCapabilitiesParams": {
+        "additionalProperties": false,
+        "description": "Build-wide flags; profile is accepted for clients that pin every operation to a bot.",
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          }
+        },
+        "title": "GatewayCapabilitiesParams",
+        "type": "object"
+      },
       "GatewayCapabilitiesResult": {
         "additionalProperties": false,
         "properties": {
           "per_session_exclusive_submit": {
             "title": "Per Session Exclusive Submit",
+            "type": "boolean"
+          },
+          "skills_install_next_session": {
+            "default": false,
+            "title": "Skills Install Next Session",
             "type": "boolean"
           }
         },
@@ -35008,6 +35033,11 @@
             ],
             "default": null,
             "title": "Page Size"
+          },
+          "next_session": {
+            "default": false,
+            "title": "Next Session",
+            "type": "boolean"
           }
         },
         "title": "SkillsManageParams",
@@ -35073,6 +35103,19 @@
             ],
             "default": null,
             "title": "Name"
+          },
+          "activation": {
+            "anyOf": [
+              {
+                "const": "next_session",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Activation"
           },
           "items": {
             "anyOf": [

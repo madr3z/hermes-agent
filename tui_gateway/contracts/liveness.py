@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .base import Params, Result
+from .common import ProfileParams
 from .registry import method
 
 
@@ -18,11 +19,16 @@ method("ping", params=PingParams, result=PingResult,
        doc="Cheapest liveness probe; answered on the WS reader thread even while every agent is mid-turn.")
 
 
+class GatewayCapabilitiesParams(ProfileParams):
+    """Build-wide flags; profile is accepted for clients that pin every operation to a bot."""
+
+
 class GatewayCapabilitiesResult(Result):
     per_session_exclusive_submit: bool
+    skills_install_next_session: bool = False
 
 
-method("gateway.capabilities", params=PingParams, result=GatewayCapabilitiesResult,
+method("gateway.capabilities", params=GatewayCapabilitiesParams, result=GatewayCapabilitiesResult,
        doc="What THIS build enforces (a client withholds a feature unless advertised).")
 
 

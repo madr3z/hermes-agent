@@ -16,6 +16,9 @@ method = _registry.method
 _profile_scoped = _registry.profile_scoped
 
 
+SKILLS_INSTALL_NEXT_SESSION = True
+
+
 # ─── Shared helpers ──────────────────────────────────────────────────────────
 def _profile_scoped_rpc(
     fail_code: int, *, required=(), catch_resolve: bool = True, prefix: str = "",
@@ -1460,6 +1463,10 @@ def _skills_install(rid, params, query):
     RPC must carry the outcome itself. The install path prints a full scan report before the
     gate (skills_hub._scan_quarantined); a blocked or failed install returned `installed: True`
     before, which read as success to every caller (#63307 Part B)."""
+    next_session = params.get("next_session", False)
+    if not isinstance(next_session, bool):
+        return _err(rid, 4000, "next_session must be a boolean")
+
     class _Capture:
         """Console stand-in: collect lines so the verdict travels with the response."""
 
@@ -1470,7 +1477,8 @@ def _skills_install(rid, params, query):
             self.lines.append(" ".join(str(a) for a in args))
 
     captured = _Capture()
-    verdict = _tools_mod("hermes_cli.skills_hub").do_install(query, skip_confirm=True, console=captured)
+    verdict = _tools_mod("hermes_cli.skills_hub").do_install(
+        query, skip_confirm=True, console=captured, **({"invalidate_cache": False} if next_session else {}))
     bundled = _tools_mod("tools.skills_sync_bundled_ops").bundled_skill_for_install
     installed = verdict is True or (verdict is None and bool(bundled(query)))  # an active built-in is no failure
     if not installed:
@@ -1479,7 +1487,8 @@ def _skills_install(rid, params, query):
         log = "\n".join(captured.lines[-12:]).strip()
         return _err(rid, 5031, log.splitlines()[-1] if log else "skill install failed",
                     data={"installed": False, "name": query, "log": log or None})
-    return _ok(rid, {"installed": True, "name": query})
+    return _ok(rid, {"installed": True, "name": query,
+                     **({"activation": "next_session"} if next_session else {})})
 
 
 def _skills_browse(rid, params, query):
@@ -1507,6 +1516,8 @@ def _run_action(rid, params: dict, table: dict, label: str, *extra) -> dict:
 @_scoped_rpc("skills.manage")
 def _(rid, params: dict) -> dict:
     """list/install use the scoped profile's skills dir; search/browse/inspect hit the shared hub."""
+    if "next_session" in params and params.get("action", "list") != "install":
+        return _err(rid, 4000, "next_session is supported only for skill install")
     return _run_action(rid, params, _SKILLS_ACTIONS, "skills", params.get("query", ""))
 
 

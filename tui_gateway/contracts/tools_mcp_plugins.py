@@ -8,7 +8,9 @@ Every ``mcp.servers.*``, ``mcp.catalog``, ``skills.manage`` and ``plugins.manage
 
 from __future__ import annotations
 
-from pydantic import Field
+from typing import Literal
+
+from pydantic import Field, StrictBool
 
 from .base import JsonValue, Params, Result, WireEnum
 from .common import OpenModel, ProfileParams, SessionLiveInfo
@@ -157,6 +159,8 @@ class SkillsManageParams(ProfileParams):
     query: str | None = None
     page: int | None = None
     page_size: int | None = None
+    #: Opt-in install for future sessions; preserves active prompt caches and snapshots.
+    next_session: StrictBool = False
 
 
 class SkillHubHit(Result):
@@ -193,6 +197,7 @@ class SkillsManageResult(Result):
     results: list[SkillHubHit] | None = None
     installed: bool | None = None
     name: str | None = None
+    activation: Literal["next_session"] | None = None
     items: list[SkillBrowseItem] | None = None
     page: int | None = None
     total_pages: int | None = None

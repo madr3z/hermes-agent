@@ -1898,8 +1898,13 @@ export type PingParams = Record<string, never>
 export interface PingResult {
   pong: boolean
 }
+/** Build-wide flags; profile is accepted for clients that pin every operation to a bot. */
+export interface GatewayCapabilitiesParams {
+  profile?: string | null
+}
 export interface GatewayCapabilitiesResult {
   per_session_exclusive_submit: boolean
+  skills_install_next_session?: boolean
 }
 export interface ClientCapabilitiesParams {
   server_requests?: boolean
@@ -4108,6 +4113,7 @@ export interface SkillsManageParams {
   query?: string | null
   page?: number | null
   page_size?: number | null
+  next_session?: boolean
 }
 export type SkillsAction = 'list' | 'search' | 'install' | 'browse' | 'inspect'
 /** Shape follows the action: ``list`` → ``skills`` (category → names); ``search`` → ``results``; ``install`` → ``installed`` + ``name``; ``browse`` → ``items`` + paging; ``inspect`` → ``info``. */
@@ -4116,6 +4122,7 @@ export interface SkillsManageResult {
   results?: SkillHubHit[] | null
   installed?: boolean | null
   name?: string | null
+  activation?: 'next_session' | null
   items?: SkillBrowseItem[] | null
   page?: number | null
   total_pages?: number | null
@@ -5231,7 +5238,7 @@ export interface RpcMethods {
   /** Pure read of the focused profile's free-tier identity state (no network, no side effects). */
   'free_tier.status': { params: ProfileParams; result: FreeTierStatusResult }
   /** What THIS build enforces (a client withholds a feature unless advertised). */
-  'gateway.capabilities': { params: PingParams; result: GatewayCapabilitiesResult }
+  'gateway.capabilities': { params: GatewayCapabilitiesParams; result: GatewayCapabilitiesResult }
   /** Resolve one exact pending approval raised by a local or peer room member. */
   'groups.approve': { params: GroupsApproveParams; result: GroupsApproveResult }
   /** Describe the hosted-room protocol implemented by this gateway. */
