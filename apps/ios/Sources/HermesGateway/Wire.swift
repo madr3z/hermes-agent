@@ -44,7 +44,8 @@ public struct GatewayEndpoint: Codable, Identifiable, Equatable, Sendable {
         var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         parts.path = parts.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         parts.path = "/" + ([parts.path, path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))].filter { !$0.isEmpty }.joined(separator: "/"))
-        parts.queryItems = query.filter { $0.name != "profile" } + (profile.map { [URLQueryItem(name: "profile", value: $0)] } ?? [])
+        let items = query.filter { $0.name != "profile" } + (profile.map { [URLQueryItem(name: "profile", value: $0)] } ?? [])
+        parts.queryItems = items.isEmpty ? nil : items
         return parts.url!
     }
     public func provisionedGateway(_ row: JSON) throws -> GatewayEndpoint {
