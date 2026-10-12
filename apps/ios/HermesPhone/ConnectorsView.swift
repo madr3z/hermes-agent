@@ -141,7 +141,10 @@ private struct BotConnectorsView: View {
         Section("Plugins") {
             ForEach(connectors.plugins) { plugin in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(plugin.name).font(.headline)
+                    NavigationLink {
+                        AgentPluginView(pluginID: plugin.id, bot: bot, store: store)
+                            .onDisappear { Task { await connectors.load(store: store) } }
+                    } label: { Text(plugin.name).font(.headline) }
                     Text(plugin.status).font(.caption).foregroundStyle(.secondary)
                     if !plugin.settings.isEmpty { Button("Settings") { sheet = .pluginSettings(plugin) }.font(.caption) }
                 }
