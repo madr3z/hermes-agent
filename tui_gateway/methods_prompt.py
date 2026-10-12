@@ -1164,11 +1164,12 @@ def _(rid, params: dict) -> dict:
     answer = params.get("answer", "")
     if answer is not None and not isinstance(answer, str):
         answer = json.dumps(answer, ensure_ascii=False)
-    if (proxied := _lock_compute_host_clarify(rid, request_id, question_id, answer)) is not None:
+    if (proxied := _lock_compute_host_clarify(rid, request_id, question_id, answer, params=params)) is not None:
         return proxied
     from tui_gateway import server_requests
     try:
-        remaining = server_requests.lock_answer(request_id, question_id, answer)
+        remaining = server_requests.lock_answer(request_id, question_id, answer, current_transport() or _stdio_transport,
+                                                session_id=params.get("session_id"), profile=params.get("profile"))
     except ValueError as e:
         return _err(rid, 4002, str(e))
     if remaining is None:
@@ -1188,7 +1189,8 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4002, "id and an object result required")
     from tui_gateway import server_requests
     frame = {"jsonrpc": "2.0", "id": request_id, "result": result}
-    if server_requests.resolve_response(frame) or _relay_compute_host_response(frame):
+    if server_requests.resolve_response(frame, current_transport() or _stdio_transport,
+                                        session_id=params.get("session_id"), profile=params.get("profile")) or _relay_compute_host_response(frame, params=params):
         return _ok(rid, {"status": "ok"})
     return _ok(rid, {"status": "expired"})
 
@@ -1204,9 +1206,12 @@ def _(rid, params: dict) -> dict:
 
 @method("approval.received")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
+    if not _request_session_authorized(str(params.get("session_id") or ""), session, current_transport() or _stdio_transport,
+                                       params.get("session_id"), params.get("profile"), "approval"):
+        return _err(rid, 4001, "Session not owned by this connection")
     if not isinstance(request_id := params.get("request_id"), str) or not request_id:
         return _err(rid, 4006, "request_id required")
     return _approval_reply(

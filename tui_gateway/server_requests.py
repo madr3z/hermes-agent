@@ -56,6 +56,7 @@ class ServerRequest:
         "locked",
         "method",
         "on_result",
+        "owner",
         "params",
         "qids",
         "result",
@@ -66,6 +67,7 @@ class ServerRequest:
                  on_result: Callable[[dict | None], None] | None = None) -> None:
         self.id = f"srq-{uuid.uuid4().hex[:12]}"
         self.sid = sid
+        self.owner = _owner(sid)
         self.method = method
         self.params = dict(params)
         self.event = threading.Event()
@@ -116,6 +118,16 @@ NOT_SHOWN_MESSAGE = ("No Hermes Desktop window is showing this chat, so its prev
 # Client transports that sent ``client.capabilities {server_requests: true}`` (identity set: StdioTransport
 # has __slots__ and cannot be weak-referenced; ws.py forgets a peer on disconnect).
 _answering_clients: set = set()
+_client_methods: dict[Any, frozenset[str]] = {}
+_owner: Callable[[str], Any] = lambda sid: None
+_authorize: Callable[..., bool] = lambda req, transport, sid, profile: True
+_method_answerable: Callable[[str, str], bool] = lambda sid, method: True
+
+
+def bind_authority(owner: Callable, authorize: Callable, answerable: Callable) -> None:
+    global _owner, _authorize, _method_answerable
+    _owner, _authorize, _method_answerable = owner, authorize, answerable
+
 
 
 def bind_sinks(write_json: Callable[[dict], Any], emit: Callable[[str, str, dict], Any],
@@ -126,11 +138,14 @@ def bind_sinks(write_json: Callable[[dict], Any], emit: Callable[[str, str, dict
         _clients = clients
 
 
-def advertise(transport: Any, server_requests: bool) -> None:
+def advertise(transport: Any, server_requests: bool, methods: list[str] | None = None) -> None:
     """Record whether *transport*'s client answers server→client requests (``client.capabilities``)."""
     with _lock:
-        if server_requests:
+        _client_methods.pop(transport, None)
+        if server_requests or methods:
             _answering_clients.add(transport)
+            if methods is not None:
+                _client_methods[transport] = frozenset(methods)
         else:
             _answering_clients.discard(transport)
 
@@ -139,15 +154,17 @@ def forget(transport: Any) -> None:
     """Drop a disconnected transport's advertisement."""
     with _lock:
         _answering_clients.discard(transport)
+        _client_methods.pop(transport, None)
 
 
-def answers_requests(transport: Any) -> bool:
+def answers_requests(transport: Any, method: str | None = None) -> bool:
     with _lock:
-        return transport in _answering_clients
+        return (transport in _answering_clients and
+                (method is None or transport not in _client_methods or method in _client_methods[transport]))
 
 
 def _unanswerable(method: str, sid: str) -> bool:
-    if _answerable(sid):
+    if _answerable(sid) and _method_answerable(sid, method):
         return False
     logger.info("server request %s for %s not sent: the attached client predates server→client requests "
                 "(update the Hermes app)", method, sid)
@@ -245,7 +262,7 @@ def _decline(rid: str, transport: Any) -> bool:
     if req is None:
         logger.debug("server request %s: decline dropped, request no longer open", rid)
         return False
-    clients = set(_clients(req.sid)) if transport is not None else set()
+    clients = {peer for peer in _clients(req.sid) if answers_requests(peer, req.method)} if transport is not None else set()
     with _lock:
         if _open.get(rid) is not req:
             return True  # settled meanwhile
@@ -262,18 +279,22 @@ def _decline(rid: str, transport: Any) -> bool:
     return True
 
 
-def resolve_response(frame: dict, transport: Any = None) -> bool:
+def resolve_response(frame: dict, transport: Any = None, *, session_id: str | None = None,
+                     profile: str | None = None) -> bool:
     """Route one client response frame to its open request. False when nothing is waiting for that id
     (already timed out / cancelled, or owned by another process — see the compute-host bridge).
     *transport* is the client connection the frame arrived on (counts a NOT_SHOWN_CODE decline)."""
     rid = frame.get("id")
     if not isinstance(rid, str):
         return False
+    with _lock:
+        req = _open.get(rid)
+    if req is None or not _authorize(req, transport, session_id, profile):
+        return False
     if _is_not_shown(frame):
         return _decline(rid, transport)
     with _lock:
-        req = _open.get(rid)
-        if req is None:
+        if _open.get(rid) is not req:
             # Already settled (timed out, cancelled, answered from another surface) or owned by
             # another process; say so — a dropped answer used to vanish without a trace.
             logger.debug("server request %s: response dropped, request no longer open", rid)
@@ -305,13 +326,17 @@ def resolve_response(frame: dict, transport: Any = None) -> bool:
     return True
 
 
-def lock_answer(request_id: str, question_id: str, answer: str | None) -> list[str] | None:
+def lock_answer(request_id: str, question_id: str, answer: str | None, transport: Any = None,
+                *, session_id: str | None = None, profile: str | None = None) -> list[str] | None:
     """Lock one batch-clarify answer (update-in-place; ``None`` = skipped). Returns the question ids
     still unanswered; the last lock resolves the request with the full ``{"answers"}`` set. ``None``
     when no open batch has that id (expired or foreign); ``ValueError`` for an unknown question id."""
     with _lock:
         req = _open.get(request_id)
-        if req is None or req.qids is None:
+    if req is None or req.qids is None or not _authorize(req, transport, session_id, profile):
+        return None
+    with _lock:
+        if _open.get(request_id) is not req:
             return None
         if question_id not in req.qids:
             raise ValueError(f"unknown question_id {question_id!r}")
@@ -376,3 +401,4 @@ def reset_for_tests() -> None:
     with _lock:
         _open.clear()
         _answering_clients.clear()
+        _client_methods.clear()

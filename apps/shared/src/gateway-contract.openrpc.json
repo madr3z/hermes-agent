@@ -7932,6 +7932,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
           }
         },
         "required": [
@@ -8176,6 +8188,21 @@
             "default": false,
             "title": "Server Requests",
             "type": "boolean"
+          },
+          "server_request_methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Server Request Methods"
           }
         },
         "title": "ClientCapabilitiesParams",
@@ -8194,6 +8221,19 @@
           "declines_not_shown": {
             "default": false,
             "title": "Declines Not Shown",
+            "type": "boolean"
+          },
+          "server_request_methods": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Server Request Methods",
+            "type": "array"
+          },
+          "scoped_request_answers": {
+            "default": false,
+            "title": "Scoped Request Answers",
             "type": "boolean"
           }
         },
@@ -28275,6 +28315,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
           }
         },
         "required": [

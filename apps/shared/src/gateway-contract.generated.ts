@@ -1903,10 +1903,13 @@ export interface GatewayCapabilitiesResult {
 }
 export interface ClientCapabilitiesParams {
   server_requests?: boolean
+  server_request_methods?: string[] | null
 }
 export interface ClientCapabilitiesResult {
   server_requests: string[]
   declines_not_shown?: boolean
+  server_request_methods?: string[]
+  scoped_request_answers?: boolean
 }
 export interface LoginHandoffParams {
   session_id: string
@@ -2883,6 +2886,7 @@ export interface ClarifyLockParams {
   question_id: string
   answer?: unknown
   profile?: string | null
+  session_id?: string | null
 }
 /** ``remaining`` lists the qids still unanswered; the lock that empties it resolves the request. ``expired``: the wait already ended (timeout / cancel) — not an error. */
 export interface ClarifyLockResult {
@@ -2894,6 +2898,7 @@ export interface RequestAnswerParams {
   id: string
   result: Record<string, unknown>
   profile?: string | null
+  session_id?: string | null
 }
 export interface RequestAnswerResult {
   status: ClarifyLockStatus

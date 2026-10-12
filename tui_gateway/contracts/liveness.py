@@ -31,6 +31,7 @@ class ClientCapabilitiesParams(Params):
     #: error for methods it has no handler for. A WebSocket client that never says so is treated as a
     #: build older than server→client requests and every such request fails fast for it.
     server_requests: bool = False
+    server_request_methods: list[str] | None = None
 
 
 class ClientCapabilitiesResult(Result):
@@ -41,6 +42,8 @@ class ClientCapabilitiesResult(Result):
     #: answer: the request settles only once every attached client declined (server_requests.py).
     #: An older backend settles on the first error, so a client sends the decline only when this is true.
     declines_not_shown: bool = False
+    server_request_methods: list[str] = []
+    scoped_request_answers: bool = False
 
 
 method("client.capabilities", params=ClientCapabilitiesParams, result=ClientCapabilitiesResult,

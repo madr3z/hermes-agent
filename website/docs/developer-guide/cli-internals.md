@@ -208,3 +208,17 @@ operations are HOME-anchored (`_get_profiles_root()` returns
 `hermes -p coder profile list` sees all profiles regardless of which one is active — intentional.
 Profile-safe coding rules are in the root `AGENTS.md`; multiplex secret-scope rules in
 `gateway/AGENTS.md`.
+
+### Selective human requests on mobile
+
+Mobile advertises `client.capabilities.server_request_methods` with `approval` and `clarify`.
+The backend returns the accepted methods and `scoped_request_answers: true` only when it enforces
+request ownership. Full clients can still advertise `server_requests: true`. Selective clients do
+not receive unsupported live request methods and cannot answer them. Saved request snapshots remain
+scoped to the owning session; clients render only their supported methods.
+
+`request.answer` and `clarify.lock` accept an optional `session_id` for older-client compatibility.
+Mobile always supplies the captured session and profile. Both RPCs and raw response frames require
+an attached connection on the current owning session record. A foreign profile, login, connection,
+or stale request cannot settle the wait. Trusted in-process and stdio bridges keep their existing path.
+Saved REST transcripts use the canonical skill invocation projection without changing model history.

@@ -63,7 +63,7 @@ def test_compute_host_routes_relayed_response_and_lock_to_its_open_request(monke
     try:
         host._handle_respond({"sid": sid, "request_id": "relay-lock",
                               "params": {"lock": {"request_id": req.id, "question_id": "q0", "answer": "a"}}})
-        assert locks == [("relay-lock", {"request_id": req.id, "question_id": "q0", "answer": "a"})]
+        assert locks == [("relay-lock", {"request_id": req.id, "question_id": "q0", "answer": "a", "session_id": sid})]
         assert _json_lines(out)[-1]["response"] == {"result": {"status": "ok", "remaining": []}}
 
         host._handle_respond({"sid": sid, "request_id": "relay-response",

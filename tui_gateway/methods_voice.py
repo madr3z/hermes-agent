@@ -446,8 +446,13 @@ def _(rid, params: dict) -> dict:
     instead of stalling the agent for the deadline (#112548)."""
     from tui_gateway import server_requests
     from tui_gateway.contracts import registry as contracts
-    server_requests.advertise(_caller_transport(), bool(params.get("server_requests")))
-    return _ok(rid, {"server_requests": sorted(contracts.SERVER_REQUESTS), "declines_not_shown": True})
+    methods = params.get("server_request_methods")
+    if methods is not None:
+        methods = sorted(set(methods) & contracts.SERVER_REQUESTS.keys())
+    server_requests.advertise(_caller_transport(), bool(params.get("server_requests")), methods)
+    accepted = methods if methods is not None else (sorted(contracts.SERVER_REQUESTS) if params.get("server_requests") else [])
+    return _ok(rid, {"server_requests": sorted(contracts.SERVER_REQUESTS), "declines_not_shown": True,
+                     "server_request_methods": accepted, "scoped_request_answers": True})
 
 
 @method("ping")

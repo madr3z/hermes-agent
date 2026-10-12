@@ -248,7 +248,7 @@ class FanoutTransport:
         except Exception:
             logger.debug("fanout overflow close failed; membership already dropped", exc_info=True)
 
-    def write(self, obj: dict) -> bool:
+    def write(self, obj: dict, *, recipients: set | None = None) -> bool:
         # Freeze the queued frame so a caller cannot mutate it after admission. Same serialization
         # guard as the single-peer transports: an unserializable frame reaches every peer as -32603.
         encoded = serialize_frame(obj, "fanout", logger)
@@ -257,7 +257,7 @@ class FanoutTransport:
         overflowed: list[Transport] = []
         with self._lock:
             for peer in list(self._peers):
-                if not peer.attached:
+                if not peer.attached or (recipients is not None and peer.transport not in recipients):
                     continue
                 if (len(peer.pending) >= self._MAX_PENDING_FRAMES
                         or peer.pending_bytes + size > self._MAX_PENDING_BYTES):

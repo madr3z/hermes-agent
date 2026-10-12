@@ -259,6 +259,7 @@ class ClarifyLockParams(Params):
     question_id: str
     answer: JsonValue = ""  # non-string answers are JSON-encoded server-side
     profile: str | None = None
+    session_id: str | None = None
 
 
 class ClarifyLockStatus(WireEnum):
@@ -282,6 +283,7 @@ class RequestAnswerParams(Params):
     id: str  # the open server→client request id
     result: dict[str, JsonValue]
     profile: str | None = None
+    session_id: str | None = None
 
 
 class RequestAnswerResult(Result):

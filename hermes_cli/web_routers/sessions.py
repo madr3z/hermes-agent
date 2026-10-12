@@ -698,6 +698,11 @@ def _project_for_display(messages: list, *, home=None, inline_images: bool = Tru
             projected["display_kind"] = "hidden"
             projected_messages.append(projected)
             continue
+        # Render the invocation through the same helper as session.resume; retain stored model context.
+        if message.get("role") == "user":
+            from agent.skill_commands import describe_skill_invocation
+            if invocation := describe_skill_invocation(message.get("content"), separator=" "):
+                message = {**message, "display_content": invocation, "display_kind": "skill_invocation"}
         # Mid-turn steer: the user's own words, not the model-facing marker (same as session.resume).
         if message.get("role") == "user" and message.get("display_kind") == STEER_DISPLAY_KIND and (
                 steer_text := _extract_steer_text_from_message(message)):

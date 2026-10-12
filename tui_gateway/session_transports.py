@@ -35,7 +35,7 @@ def _session_has_live_transport(session: dict | None, *, excluding=None) -> bool
     return any(peer is not excluding for peer in _session_live_transports(session))
 
 
-def _session_client_answers_requests(sid: str) -> bool:
+def _session_client_answers_requests(sid: str, method: str | None = None) -> bool:
     """Whether a server→client request for *sid* can be answered: False only when every live WebSocket
     client attached to the session is a build that never sent ``client.capabilities`` (Desktop / dashboard
     update separately from this backend; the stdio TUI ships with it). No attached client is still True — the
@@ -44,7 +44,7 @@ def _session_client_answers_requests(sid: str) -> bool:
     from tui_gateway import server_requests
     from tui_gateway.ws import WSTransport
     clients = [peer for peer in _session_live_transports(_sessions.get(sid)) if isinstance(peer, WSTransport)]
-    return not clients or any(server_requests.answers_requests(peer) for peer in clients)
+    return not clients or any(server_requests.answers_requests(peer, method) for peer in clients)
 
 
 def _session_answering_clients(sid: str) -> list:

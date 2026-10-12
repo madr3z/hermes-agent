@@ -179,13 +179,18 @@ def _compute_host_request_session(request_id: str) -> tuple[str, dict] | None:
     return None
 
 
-def _relay_compute_host_response(frame: dict) -> bool:
+def _relay_compute_host_response(frame: dict, *, params: dict | None = None) -> bool:
     """Forward a client's response frame to the compute-host child that owns the request. False when no
     child owns that id."""
     located = _compute_host_request_session(str(frame.get("id") or ""))
     if located is None or not _session_uses_compute_host(located[1]):
         return False
     sid, session = located
+    params = params or {}
+    method = session["_compute_host_open_request"].get("method")
+    if not _request_session_authorized(sid, session, current_transport() or _stdio_transport,
+                                       params.get("session_id"), params.get("profile"), method):
+        return False
     with _history_lock(session):
         session.pop("_compute_host_open_request", None)
     try:
@@ -195,13 +200,18 @@ def _relay_compute_host_response(frame: dict) -> bool:
     return True
 
 
-def _lock_compute_host_clarify(rid: str, request_id: str, question_id: str, answer: str | None) -> dict | None:
+def _lock_compute_host_clarify(rid: str, request_id: str, question_id: str, answer: str | None,
+                               *, params: dict | None = None) -> dict | None:
     """Proxy a batch-clarify lock into the child that owns the request; keeps the parent mirror's locked
     answers current for reconnect snapshots. None when the request is not host-owned."""
     located = _compute_host_request_session(request_id)
     if located is None or not _session_uses_compute_host(located[1]):
         return None
     sid, session = located
+    params = params or {}
+    if not _request_session_authorized(sid, session, current_transport() or _stdio_transport,
+                                       params.get("session_id"), params.get("profile"), "clarify"):
+        return _ok(rid, {"status": "expired"})
     try:
         ack = _get_compute_host_supervisor().respond(
             sid, {"lock": {"request_id": request_id, "question_id": question_id, "answer": answer}})
