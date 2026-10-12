@@ -94,6 +94,9 @@ private struct BotRoutineDetail: View {
                     LabeledContent("Results", value: current.delivery == "bot-chat" ? "Bot Chat" : current.delivery)
                 }
                 Section("Instructions preview") { Text(current.prompt.isEmpty ? "No preview available" : current.prompt).textSelection(.enabled) }
+                Section {
+                    NavigationLink { RoutineOperationsView(bot: routines.bot, jobID: job.id, store: store) } label: { Label("Edit, run and history", systemImage: "clock.arrow.circlepath") }
+                }
                 Section("Last run") {
                     if let date = current.lastRun { Text(routineDate(date)) }
                     Text(current.lastStatus ?? "No result recorded")
