@@ -9,6 +9,9 @@ struct BotToolsView: View {
         List {
             Section { BotIdentityLabel(name: bot.name, detail: "Your bot, set up your way") }
             Section("Work with your bot") {
+                NavigationLink { BotToolsetsView(bot: bot, store: store, runtimeID: runtimeID) } label: {
+                    PhoneFeatureRow(title: "Tools and toolsets", detail: "Enabled settings and current chat tools", systemImage: "wrench.and.screwdriver")
+                }
                 NavigationLink { ConnectorsView(bot: bot, store: store) } label: {
                     PhoneFeatureRow(title: "Connectors", detail: "Accounts, apps and services", systemImage: "puzzlepiece.extension")
                 }
