@@ -175,3 +175,21 @@ allow actions. Each clarification answer is submitted or skipped explicitly.
 Reconnect restores server-accepted answers; withdrawal, disconnection and owner
 changes invalidate cards. An uncertain response disables the request until an
 explicit reconnect, and is never replayed automatically.
+
+
+## Call controls and audio routes
+
+During a call, choose **iPhone** for the ear receiver, **Speaker** for loudspeaker,
+or a connected headset such as AirPods from the audio control. Calls started by
+raising the phone prefer the receiver and preserve an attached headset. The
+proximity sensor keeps the display off at the ear while receiver audio is active.
+
+The existing `request_mobile_contact` plugin tool supports `kind=end_call` for
+one current call and delegated turn. The backend binds the exact call, turn,
+profile and client transport. A typed event requests closure; spoken text cannot
+hang up. The phone keeps receiving final transcript events until `session.closed`,
+then releases media and CallKit once. An eight-second timeout releases resources
+when provider finalization is unconfirmed. GPT-Live exposes no WebRTC playback
+completion event, so this does not claim that a final goodbye was fully played.
+The updated plugin schema takes effect in a fresh agent tool snapshot; saved chat
+history is retained. Both the gateway and phone must support the call binding RPCs.

@@ -1,6 +1,5 @@
 import SwiftUI
 import HermesGateway
-import AVKit
 
 /// The same conversation surface is used for both call directions.
 struct CallScreen: View {
@@ -119,7 +118,17 @@ struct CallScreen: View {
             controlLayout {
                 callControl(voice.muted ? "Unmute" : "Mute", icon: voice.muted ? "mic.slash.fill" : "mic.fill", colour: voice.muted ? .orange : .secondary) { voice.toggleMute() }.disabled(!voice.active)
                 controlContentLayout {
-                    AudioOutputPicker().frame(width: 56, height: 56).background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                    Menu {
+                        Button("iPhone", systemImage: "iphone") { voice.selectAudioRoute(.receiver) }
+                        Button("Speaker", systemImage: "speaker.wave.2.fill") { voice.selectAudioRoute(.speaker) }
+                        ForEach(voice.audioAccessories, id: \.id) { route in
+                            Button(route.name, systemImage: "headphones") { voice.selectAudioRoute(.accessory(route.id)) }
+                        }
+                    } label: {
+                        Image(systemName: voice.audioOutput == "Speaker" ? "speaker.wave.2.fill" : voice.audioOutput == "iPhone" ? "iphone" : "headphones")
+                            .font(.system(size: 22)).foregroundStyle(.primary)
+                            .frame(width: 56, height: 56).background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                    }.accessibilityLabel("Choose audio output")
                     Text(voice.audioOutput).font(typeSize.isAccessibilitySize ? .body : .caption).lineLimit(1)
                 }.frame(maxWidth: .infinity)
                 callControl("End call", icon: "phone.down.fill", colour: .red, action: onEnd)
@@ -143,17 +152,6 @@ struct CallScreen: View {
             }.frame(maxWidth: .infinity)
         }.buttonStyle(.plain).accessibilityLabel(title)
     }
-}
-
-private struct AudioOutputPicker: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let view = AVRoutePickerView()
-        view.tintColor = .label; view.activeTintColor = .tintColor
-        view.prioritizesVideoDevices = false
-        view.accessibilityLabel = "Choose audio output"
-        return view
-    }
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
 struct CallSummary: View {

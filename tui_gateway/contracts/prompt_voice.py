@@ -567,3 +567,22 @@ method("voice.live.transcript.append", params=VoiceLiveTranscriptParams, result=
        doc="Idempotently persist received spoken text for display; never submits a model turn.")
 method("voice.live.transcript.list", params=SessionParams, result=VoiceLiveTranscriptListResult,
        doc="Read the live session's durable spoken display history, including its compression lineage.")
+
+
+class VoiceLiveCallParams(SessionParams):
+    call_id: str = Field(min_length=1, max_length=200)
+
+
+class VoiceLiveCallBindParams(VoiceLiveCallParams):
+    delegation_id: str | None = Field(default=None, min_length=1, max_length=200)
+    client_turn_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class VoiceLiveCallResult(Result):
+    bound: bool
+
+
+method("voice.live.call.bind", params=VoiceLiveCallBindParams, result=VoiceLiveCallResult,
+       doc="Bind one phone call and its current delegated turn to the exact owning transport.")
+method("voice.live.call.unbind", params=VoiceLiveCallParams, result=VoiceLiveCallResult,
+       doc="Revoke only this transport's matching call control binding.")

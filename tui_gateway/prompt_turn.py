@@ -812,7 +812,9 @@ def _invoke_agent(
     try:
         from agent.notification_presentation import notification_turn, event_presentation_muted
         with notification_turn(agent, muted=event_presentation_muted("message.delta", sid), session_id=sid):
-            st.result = agent.run_conversation(run_message, **st.run_kwargs)
+            from tui_gateway.voice_call_control import voice_call_turn
+            with voice_call_turn(session, st.client_turn_id):
+                st.result = agent.run_conversation(run_message, **st.run_kwargs)
     finally:
         # Stop AND join before anything emits: a tick surviving past message.complete would
         # roll the client's usage back to a stale snapshot (unbounded join: same worst case).

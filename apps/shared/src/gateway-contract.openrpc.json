@@ -4597,6 +4597,42 @@
       }
     },
     {
+      "name": "voice.live.call.bind",
+      "summary": "Bind one phone call and its current delegated turn to the exact owning transport.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/VoiceLiveCallBindParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/VoiceLiveCallResult"
+        }
+      }
+    },
+    {
+      "name": "voice.live.call.unbind",
+      "summary": "Revoke only this transport's matching call control binding.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/VoiceLiveCallParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/VoiceLiveCallResult"
+        }
+      }
+    },
+    {
       "name": "voice.live.transcript.append",
       "summary": "Idempotently persist received spoken text for display; never submits a model turn.",
       "params": [
@@ -39917,6 +39953,138 @@
         "title": "VerificationStatusResult",
         "type": "object"
       },
+      "VoiceLiveCallBindParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "call_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "delegation_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delegation Id"
+          },
+          "client_turn_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Turn Id"
+          }
+        },
+        "required": [
+          "session_id",
+          "call_id"
+        ],
+        "title": "VoiceLiveCallBindParams",
+        "type": "object"
+      },
+      "VoiceLiveCallEndPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "delegation_id": {
+            "title": "Delegation Id",
+            "type": "string"
+          },
+          "client_turn_id": {
+            "title": "Client Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "delegation_id",
+          "client_turn_id"
+        ],
+        "title": "VoiceLiveCallEndPayload",
+        "type": "object"
+      },
+      "VoiceLiveCallParams": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "call_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "call_id"
+        ],
+        "title": "VoiceLiveCallParams",
+        "type": "object"
+      },
+      "VoiceLiveCallResult": {
+        "additionalProperties": false,
+        "properties": {
+          "bound": {
+            "title": "Bound",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bound"
+        ],
+        "title": "VoiceLiveCallResult",
+        "type": "object"
+      },
       "VoiceLiveTranscriptListResult": {
         "additionalProperties": false,
         "properties": {
@@ -42262,6 +42430,18 @@
           "schema": {
             "type": "object",
             "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "voice.live.call.end",
+      "summary": "A typed end request for one active call and delegated turn; direct delivery only.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/VoiceLiveCallEndPayload"
           }
         }
       ]

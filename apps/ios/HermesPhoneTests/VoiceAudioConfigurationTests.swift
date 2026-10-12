@@ -19,4 +19,12 @@ final class VoiceAudioConfigurationTests: XCTestCase {
         XCTAssertEqual(startup.sampleRate, original.sampleRate)
         XCTAssertEqual(startup.ioBufferDuration, original.ioBufferDuration)
     }
+    func testReceiverStartupDoesNotForceSpeakerAndRetainsBluetooth() {
+        let original = RTCAudioSessionConfiguration.webRTC()
+        defer { RTCAudioSessionConfiguration.setWebRTC(original) }
+        let configuration = VoiceAudioConfiguration.install(preferReceiver: true)
+        XCTAssertFalse(configuration.categoryOptions.contains(.defaultToSpeaker))
+        XCTAssertTrue(configuration.categoryOptions.contains(.allowBluetoothHFP))
+        XCTAssertTrue(RTCAudioSessionConfiguration.webRTC() === configuration)
+    }
 }

@@ -773,3 +773,13 @@ class VoiceLiveTranscriptPayload(Payload):
 
 event("voice.live.transcript", VoiceLiveTranscriptPayload,
       doc="A committed spoken display message; replace by display_metadata.voice_message_id.")
+
+
+class VoiceLiveCallEndPayload(Payload):
+    call_id: str
+    delegation_id: str
+    client_turn_id: str
+
+
+event("voice.live.call.end", VoiceLiveCallEndPayload,
+      doc="A typed end request for one active call and delegated turn; direct delivery only.")

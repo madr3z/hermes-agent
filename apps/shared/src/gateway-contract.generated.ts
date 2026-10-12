@@ -3114,6 +3114,21 @@ export type ToolLabelKind = 'connector' | 'mcp' | 'tool'
 export interface VoiceLiveTranscriptListResult {
   messages: TranscriptMessage[]
 }
+export interface VoiceLiveCallBindParams {
+  session_id: string
+  profile?: string | null
+  call_id: string
+  delegation_id?: string | null
+  client_turn_id?: string | null
+}
+export interface VoiceLiveCallResult {
+  bound: boolean
+}
+export interface VoiceLiveCallParams {
+  session_id: string
+  profile?: string | null
+  call_id: string
+}
 export interface SessionCreateParams {
   profile?: string | null
   cols?: number | null
@@ -5123,6 +5138,11 @@ export type ChangeSignalPayload = Record<string, unknown>
 export interface VoiceLiveTranscriptPayload {
   message: TranscriptMessage
 }
+export interface VoiceLiveCallEndPayload {
+  call_id: string
+  delegation_id: string
+  client_turn_id: string
+}
 export type ConnectorErrorReason = 'INVALID_PARAMS' | 'NOT_OWNER' | 'UNSUPPORTED_RUNTIME' | 'CONNECTOR_REQUEST_FAILED' | 'INVALID_CONNECTOR_RESPONSE' | 'UNKNOWN_TARGET' | 'LINK_STILL_VALID' | 'REISSUE_REFUSED' | 'UNKNOWN_OPERATION' | 'INVALID_ANSWER' | 'NEEDS_NOUS_AUTH' | 'CONNECTOR_NOT_FOUND' | 'TOOLS_UNAVAILABLE' | 'CONNECTORS_UNAVAILABLE' | 'CATALOG_UNAVAILABLE' | 'ACCOUNTS_UNAVAILABLE' | 'CONNECTION_NOT_FOUND' | 'POLICY_UNAVAILABLE' | 'POLICY_CONFLICT' | 'FORBIDDEN_SCOPE' | 'ORG_REQUIRED' | 'ORG_ACCESS_DENIED' | 'INVALID_POLICY'
 
 // ── Client→server methods ──
@@ -5628,6 +5648,10 @@ export interface RpcMethods {
   'vault.unlock': { params: VaultUnlockParams; result: VaultUnlockResult }
   /** Best known verification evidence for a cwd/session; read-only, never runs checks. */
   'verification.status': { params: VerificationStatusParams; result: VerificationStatusResult }
+  /** Bind one phone call and its current delegated turn to the exact owning transport. */
+  'voice.live.call.bind': { params: VoiceLiveCallBindParams; result: VoiceLiveCallResult }
+  /** Revoke only this transport's matching call control binding. */
+  'voice.live.call.unbind': { params: VoiceLiveCallParams; result: VoiceLiveCallResult }
   /** Idempotently persist received spoken text for display; never submits a model turn. */
   'voice.live.transcript.append': { params: VoiceLiveTranscriptParams; result: VoiceLiveTranscriptResult }
   /** Read the live session's durable spoken display history, including its compression lineage. */
@@ -5908,6 +5932,8 @@ export const RPC_METHODS = [
   'vault.sources',
   'vault.unlock',
   'verification.status',
+  'voice.live.call.bind',
+  'voice.live.call.unbind',
   'voice.live.transcript.append',
   'voice.live.transcript.list',
   'voice.record',
@@ -6117,6 +6143,8 @@ export interface BackendGatewayEventMap {
   'tool.start': ToolStartPayload
   /** Barge-in: the spoken interjection interrupted the turn; no payload. */
   'voice.interrupted': Record<string, never>
+  /** A typed end request for one active call and delegated turn; direct delivery only. */
+  'voice.live.call.end': VoiceLiveCallEndPayload
   /** A committed spoken display message; replace by display_metadata.voice_message_id. */
   'voice.live.transcript': VoiceLiveTranscriptPayload
   /** Live STT text so far while the user is still speaking. */
@@ -6203,6 +6231,7 @@ export const GATEWAY_EVENT_TYPES = [
   'tool.output_risk',
   'tool.start',
   'voice.interrupted',
+  'voice.live.call.end',
   'voice.live.transcript',
   'voice.partial',
   'voice.status',

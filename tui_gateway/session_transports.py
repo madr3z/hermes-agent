@@ -108,6 +108,8 @@ def _detach_session_transport(session: dict | None, transport) -> bool:
     if not session:
         return False
     with _session_transport_lock:
+        if (session.get("voice_live_call") or {}).get("transport") is transport:
+            session.pop("voice_live_call", None)
         (session.get("viewers") or {}).pop(transport, None)
         existing = session.get("transport")
         if isinstance(existing, FanoutTransport):

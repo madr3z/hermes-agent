@@ -74,5 +74,33 @@ def _voice_live_payload(session, payload):
     return payload
 
 
+@method("voice.live.call.bind")
+@_profile_scoped
+def _(rid, params):
+    from tui_gateway.voice_call_control import bind_call
+    session, error = _voice_live_session(rid, params)
+    if error:
+        return error
+    transport = current_transport()
+    if not _transport_is_live_peer(transport):
+        return _err(rid, 4001, "Call controls require a live owning client")
+    try:
+        bind_call(session, transport, params)
+    except ValueError as exc:
+        return _err(rid, 4090, str(exc))
+    return _ok(rid, {'bound': True})
+
+
+@method("voice.live.call.unbind")
+@_profile_scoped
+def _(rid, params):
+    from tui_gateway.voice_call_control import unbind_call
+    session, error = _voice_live_session(rid, params)
+    if error:
+        return error
+    unbind_call(session, current_transport(), params['call_id'])
+    return _ok(rid, {'bound': False})
+
+
 def register(server):
     bind_module(globals(), server, skip=('_',))

@@ -201,9 +201,9 @@ import HermesGateway
         }
         catch { self.error = error.localizedDescription }
     }
-    func startVoice() async {
+    func startVoice(preferReceiver: Bool = false) async {
         guard let client, let runtimeID, connected else { return }
-        await voice.start(client: client, profile: bot.profile, runtimeID: runtimeID, history: messages.filter { ["user", "assistant"].contains($0.role) })
+        await voice.start(client: client, profile: bot.profile, runtimeID: runtimeID, history: messages.filter { ["user", "assistant"].contains($0.role) }, preferReceiver: preferReceiver)
     }
     private func refreshSnapshot() async {
         guard let client, let runtimeID, connected, client.connected else { return }
