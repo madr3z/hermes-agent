@@ -13,6 +13,8 @@ import Foundation
     private var pending: [String: CheckedContinuation<JSON, Error>] = [:]
     private var observers: [UUID: (JSON) -> Void] = [:]
     private var disconnectObservers: [UUID: () -> Void] = [:]
+    private var requestObservers: [UUID: (JSON) -> Void] = [:]
+    public private(set) var scopedRequestAnswers = false
     public var onEvent: ((JSON) -> Void)?
     public var onDisconnect: ((String) -> Void)?
     public private(set) var connected = false
@@ -57,6 +59,15 @@ import Foundation
             }
         }
         _ = try await request("profiles.list", ["include_sessions": .bool(true)])
+        do {
+            let capabilities = try await request("client.capabilities", ["server_request_methods": .array([.string("approval"), .string("clarify")])])
+            let methods = Set(capabilities["server_request_methods"].array.compactMap(\.string))
+            scopedRequestAnswers = capabilities["scoped_request_answers"].bool && methods.isSuperset(of: ["approval", "clarify"])
+        } catch GatewayError.rpc {
+            // Older gateways do not accept selective capabilities. Keep their fan-out unanswered.
+            scopedRequestAnswers = false
+        }
+        guard generation == connectionGeneration, socket === ws, !Task.isCancelled else { throw GatewayError.message("Connection cancelled.") }
         connected = true
         heartbeat = Task { [weak self] in
             while !Task.isCancelled {
@@ -79,7 +90,7 @@ import Foundation
     }
     public func disconnect() {
         connectionGeneration = UUID()
-        connected = false
+        connected = false; scopedRequestAnswers = false
         Array(disconnectObservers.values).forEach { $0() }
         let old = socket; socket = nil
         reader?.cancel(); heartbeat?.cancel()
@@ -108,18 +119,24 @@ import Foundation
             let event = frame["params"]
             onEvent?(event); Array(observers.values).forEach { $0(event) }; return
         }
+        if frame["method"].string != nil, frame["id"].string != nil {
+            if scopedRequestAnswers { Array(requestObservers.values).forEach { $0(frame) } }
+            return
+        }
         if let id = frame["id"].string, let continuation = pending.removeValue(forKey: id) {
             if let error = frame["error"]["message"].string { continuation.resume(throwing: GatewayError.rpc(code: Int(frame["error"]["code"].number ?? 0), message: error)) }
             else { continuation.resume(returning: frame["result"]) }
         }
-        // This client never advertises server_requests. On a shared transport, silence
-        // preserves another capable client's authority to answer the fan-out request.
+        // Unsupported requests stay unanswered so another capable client can handle them.
     }
 
     public func observe(events: @escaping (JSON) -> Void, disconnected: @escaping () -> Void) -> UUID {
         let id = UUID(); observers[id] = events; disconnectObservers[id] = disconnected; return id
     }
-    public func removeObserver(_ id: UUID) { observers.removeValue(forKey: id); disconnectObservers.removeValue(forKey: id) }
+    public func observeRequests(_ handler: @escaping (JSON) -> Void) -> UUID {
+        let id = UUID(); requestObservers[id] = handler; return id
+    }
+    public func removeObserver(_ id: UUID) { observers.removeValue(forKey: id); disconnectObservers.removeValue(forKey: id); requestObservers.removeValue(forKey: id) }
     public func remoteSocket(_ stream: RemoteStream) async throws -> URLSessionWebSocketTask {
         let ticket = token == nil ? try await webSocketTicket() : nil
         return session.webSocketTask(with: stream.request(endpoint: endpoint, token: token, ticket: ticket))
@@ -164,11 +181,11 @@ import Foundation
             return destination
         } catch { try? FileManager.default.removeItem(at: directory); throw error }
     }
-    public func http(_ path: String, profile: String? = nil, body: JSON? = nil, method: String? = nil) async throws -> JSON {
-        try await http(path, profile: profile, body: body, at: endpoint, method: method)
+    public func http(_ path: String, profile: String? = nil, body: JSON? = nil, method: String? = nil, query: [URLQueryItem] = []) async throws -> JSON {
+        try await http(path, profile: profile, body: body, at: endpoint, method: method, query: query)
     }
-    private func http(_ path: String, profile: String?, body: JSON?, at owner: GatewayEndpoint, method: String? = nil) async throws -> JSON {
-        var request = URLRequest(url: owner.url(path: path, profile: profile))
+    private func http(_ path: String, profile: String?, body: JSON?, at owner: GatewayEndpoint, method: String? = nil, query: [URLQueryItem] = []) async throws -> JSON {
+        var request = URLRequest(url: owner.url(path: path, profile: profile, query: query))
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 60

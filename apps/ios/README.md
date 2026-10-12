@@ -130,8 +130,8 @@ Commands do not consume pending attachments.
 
 The gateway advertises `mobile` and `mobile_subcommands` for command availability.
 An older gateway can expose its catalog but cannot authorize command execution
-on the phone. Session-history management, background/side-question lifecycle,
-exports and approval dialogs still require the appropriate existing Mac controls.
+on the phone. Session mutation and background/side-question lifecycle still
+require the appropriate existing Mac controls.
 
 Use **+ → Photos** to open the system photo picker, or **+ → Files** for documents.
 Use the system **Paste** button beside **+** for a copied photo or file. The app
@@ -146,3 +146,27 @@ requires account confirmation. A confirmed task-continuation receipt hides the
 card after refresh or reopening; an unconfirmed admission keeps its check-chat
 notice. Canceled requests are hidden. Proactive account sign-in remains in
 **Bot settings → Connectors**.
+
+
+## Saved chats and human requests
+
+Open **+ → Saved chats** to browse the selected bot’s gateway and profile. Search
+uses saved message search. Opening a row reads its stored transcript and never
+resumes, activates, renames, forks or replaces Bot Chat. Lists and transcripts
+load 100 rows per page. Share exports only loaded visible messages; the export
+states when earlier messages may remain. Hidden and model-only rows are not
+exported. Managed gateways require the read-only session routes in their proxy.
+An unavailable route reports an error; the phone does not switch to another
+profile or resume a session as a fallback.
+
+Approval and batch-clarification cards require a gateway that acknowledges
+`server_request_methods:["approval","clarify"]` and `scoped_request_answers:true`.
+Older gateways keep those cards on their capable Mac/TUI clients. The phone does
+not advertise blanket server-request support or answer password, vault or
+Desktop bridge requests. Each response carries the exact profile, live runtime,
+request ID and question ID where applicable. Ordinary chat text cannot approve
+a tool action. Only offered permissions appear, with deliberate confirmation for
+allow actions. Each clarification answer is submitted or skipped explicitly.
+Reconnect restores server-accepted answers; withdrawal, disconnection and owner
+changes invalidate cards. An uncertain response disables the request until an
+explicit reconnect, and is never replayed automatically.

@@ -6,6 +6,7 @@ import os
 import secrets
 import ssl
 import struct
+import sys
 import subprocess
 import tempfile
 import threading
@@ -215,6 +216,8 @@ class Handler(BaseHTTPRequestHandler):
                 reply = {"jsonrpc": "2.0", "id": request["id"], "result": {"ok": True}}
                 threading.Timer(0.5, self.send, args=(reply,)).start()
                 continue
+            if self.server.scoped_requests:
+                handlers.update({"client.capabilities": self.capabilities, "fixture.native_question": self.native_question, "request.answer": self.answer_native})
             handler = handlers.get(method)
             if handler is None:
                 self.send({"jsonrpc": "2.0", "id": request["id"], "error": {"code": -32601, "message": "Unsupported fixture RPC"}})
@@ -228,6 +231,22 @@ class Handler(BaseHTTPRequestHandler):
                 for seq, kind, payload in [(1, "message.start", {}), (2, "message.delta", {"text": "Real wire "}), (3, "message.delta", {"text": "stream"}), (4, "message.complete", {"text": "Real wire stream"})]:
                     self.send({"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": "runtime", "seq": seq, "payload": payload}})
 
+
+    def capabilities(self, params):
+        assert params == {"server_request_methods": ["approval", "clarify"]}
+        return {"server_request_methods": ["approval", "clarify"], "scoped_request_answers": True}
+
+    def native_question(self, _):
+        self.send({"jsonrpc": "2.0", "id": "srq-native", "method": "approval", "params": {"session_id": "runtime", "request_id": "queue-native", "command": "synthetic action", "choices": ["once", "deny"]}})
+        self.send({"jsonrpc": "2.0", "id": "srq-foreign", "method": "approval", "params": {"session_id": "foreign", "request_id": "queue-foreign", "choices": ["once", "deny"]}})
+        self.send({"jsonrpc": "2.0", "id": "srq-unsupported", "method": "secret", "params": {"session_id": "runtime", "env_var": "FIXTURE_ONLY", "prompt": "Never answered"}})
+        return {"started": True}
+
+    def answer_native(self, params):
+        assert params == {"profile": "writer", "session_id": "runtime", "id": "srq-native", "result": {"choice": "once"}}
+        assert self.server.question_answer is None
+        self.server.question_answer = params["result"]
+        return {"status": "ok"}
 
     def shared_question(self, _):
         frame = {"jsonrpc": "2.0", "id": "shared-question", "method": "approval", "params": {"session_id": "runtime", "command": "fixture action", "choices": ["once", "deny"]}}
@@ -273,6 +292,7 @@ with tempfile.TemporaryDirectory(prefix="hermes-phone-wire-") as directory:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.clients = []
     server.clients_lock = threading.Lock()
+    server.scoped_requests = "scoped-requests" in sys.argv
     server.question_answer = None
     server.prompt_count = 0
     server.queued_turns = []

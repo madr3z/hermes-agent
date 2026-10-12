@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var chat: ChatStore
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var composerFocused: Bool
+    @State private var showSavedChats = false
     @State private var showFiles = false
     @State private var showPhotos = false
     @State private var photos: [PhotosPickerItem] = []
@@ -26,6 +27,7 @@ struct ChatView: View {
                     }
                     ForEach(chat.messages) { message in ChatMessageView(message: message, client: chat.client, profile: chat.bot.profile, storedSessionID: chat.storedSessionID, botName: chat.bot.name).id(message.id) }
                     LoginHandoffCards(chat: chat)
+                    ChatRequestsView(chat: chat)
                     ChatActivityView(activity: chat.activity, botName: chat.bot.name).id("activity")
                     Color.clear.frame(height: 1).id("bottom")
                 }.padding(.horizontal, 20).padding(.vertical, 24)
@@ -83,6 +85,7 @@ struct ChatView: View {
             if phase == .active { Task { await chat.open(store: store) } }
 
         }
+        .sheet(isPresented: $showSavedChats) { SavedChatsView(chat: chat) }
         .sheet(item: $chat.commands.output) { ChatCommandOutputView(output: $0) }
         .sheet(item: $chat.commands.route) { route in
             NavigationStack {
@@ -166,6 +169,7 @@ struct ChatView: View {
                 Menu {
                     Button("Photos", systemImage: "photo") { composerFocused = false; showPhotos = true }
                     Button("Files", systemImage: "doc") { composerFocused = false; showFiles = true }
+                    Button("Saved chats", systemImage: "clock") { composerFocused = false; showSavedChats = true }
                     Button("Commands", systemImage: "command") { composerFocused = false; chat.commands.route = .help }
                 } label: { Image(systemName: "plus").font(.title3).frame(width: 44, height: 44) }
                 .accessibilityLabel("Attach photos or files").disabled(chat.sending || importingPhotos)

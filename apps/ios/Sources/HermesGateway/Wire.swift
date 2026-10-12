@@ -40,11 +40,11 @@ public struct GatewayEndpoint: Codable, Identifiable, Equatable, Sendable {
         }
         self.id = id; self.label = label; self.baseURL = baseURL
     }
-    public func url(path: String, profile: String? = nil) -> URL {
+    public func url(path: String, profile: String? = nil, query: [URLQueryItem] = []) -> URL {
         var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         parts.path = parts.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         parts.path = "/" + ([parts.path, path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))].filter { !$0.isEmpty }.joined(separator: "/"))
-        parts.queryItems = profile.map { [URLQueryItem(name: "profile", value: $0)] }
+        parts.queryItems = query.filter { $0.name != "profile" } + (profile.map { [URLQueryItem(name: "profile", value: $0)] } ?? [])
         return parts.url!
     }
     public func provisionedGateway(_ row: JSON) throws -> GatewayEndpoint {

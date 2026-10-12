@@ -47,6 +47,7 @@ final class WireIntegrationTests: XCTestCase {
         let client = GatewayClient(endpoint: endpoint, token: "fixture+token &?", session: session)
         defer { client.disconnect() }
         try await client.connect()
+        XCTAssertFalse(client.scopedRequestAnswers) // Legacy gateway cannot authorize native answers.
         // Real WSS must use main query auth plus the independent guest ticket.
         let display = try await client.remoteSocket(.display(ticket: "guest+ticket &?"))
         display.resume()
@@ -148,6 +149,49 @@ final class WireIntegrationTests: XCTestCase {
         XCTAssertEqual(resumed["stored_session_id"].string, "tip")
         do { _ = try await client.request("unknown.method", [:]); XCTFail("Expected server error") }
         catch { XCTAssertEqual(error.localizedDescription, "Unsupported fixture RPC") }
+    }
+    @MainActor func testSelectiveNativeRequestsUseScopedRPCWithoutAutoAnsweringFanout() async throws {
+        let process = Process(), pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["python3", Bundle.module.url(forResource: "gateway", withExtension: "py", subdirectory: "Fixtures")!.path, "scoped-requests"]
+        process.standardOutput = pipe; process.standardError = FileHandle.standardError
+        try process.run()
+        defer { if process.isRunning { process.terminate(); process.waitUntilExit() } }
+        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: watchdog)
+        defer { watchdog.cancel() }
+        var metadataData = Data()
+        while metadataData.count < 8192 {
+            guard let byte = try pipe.fileHandleForReading.read(upToCount: 1), !byte.isEmpty else { break }
+            if byte == Data([10]) { break }
+            metadataData.append(byte)
+        }
+        let metadata = try JSONDecoder().decode(JSON.self, from: metadataData)
+        let port = try XCTUnwrap(metadata["port"].number)
+        let certificate = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(metadata["certificate"].string)))
+        let session = URLSession(configuration: .ephemeral, delegate: FixtureTrust(certificate: certificate), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let endpoint = try GatewayEndpoint(label: "TLS fixture", baseURL: URL(string: "https://127.0.0.1:\(Int(port))")!)
+        let client = GatewayClient(endpoint: endpoint, token: "fixture+token &?", session: session)
+        defer { client.disconnect() }
+        try await client.connect()
+        XCTAssertTrue(client.scopedRequestAnswers)
+        var items: [ChatHumanRequest] = []
+        let observer = client.observeRequests { frame in
+            if let item = ChatHumanRequest(frame, runtimeID: "runtime") { items.append(item) }
+        }
+        _ = try await client.request("fixture.native_question", [:])
+        XCTAssertEqual(items.map(\.id), ["srq-native"])
+        let before = try await client.request("fixture.question_result", [:])
+        XCTAssertEqual(before["answer"], .null)
+        let api = ChatRequestsClient(profile: "writer", sessionID: "runtime") { try await client.request($0, $1) }
+        let accepted = try await api.answer(items[0], choice: "once")
+        XCTAssertTrue(accepted)
+        let after = try await client.request("fixture.question_result", [:])
+        XCTAssertEqual(after["answer"]["choice"], .string("once"))
+        client.removeObserver(observer)
+        client.disconnect()
+        XCTAssertFalse(client.scopedRequestAnswers)
     }
     @MainActor func testCookieMainAndManagedGuestUseFreshTicketsForEveryWebSocket() async throws {
         let process = Process(), pipe = Pipe()
