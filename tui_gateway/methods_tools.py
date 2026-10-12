@@ -760,7 +760,8 @@ def _dispatch_skill(rid, params, session, name, arg):
 
 
 def _cmd_queue(rid, params, session, name, arg):
-    return _ok(rid, {"type": "send", "message": arg}) if arg else _err(rid, 4004, "usage: /queue <prompt>")
+    from .session_commands import dispatch_queue
+    return dispatch_queue(rid, params, session, arg)
 
 
 def _prompt_builtin(module: str, fn: str, kw: str = ""):
@@ -920,17 +921,8 @@ def _cmd_goal(rid, params, session, name, arg):
 
 
 def _cmd_loop(rid, params, session, name, arg):
-    sid_key, loops, err = _session_key_or_err(rid, session, "hermes_cli.loops", "loops")
-    if err:
-        return err
-    result = loops.dispatch_loop_command(loops.LoopManager(session_id=sid_key), arg)
-    output = result.get("output") or ""
-    if result.get("created"):
-        with contextlib.suppress(Exception):
-            if loops.goal_blocks_loop_tick(sid_key):
-                output += ("\nNote: an active /goal is driving this session — loop "
-                           "wakeups defer until the goal finishes, pauses, or parks.")
-    return _exec_out(rid, output)
+    from .session_commands import dispatch_control
+    return dispatch_control(rid, session, name, arg)
 
 
 def _cmd_undo(rid, params, session, name, arg):
@@ -1095,7 +1087,8 @@ def _cmd_skills(rid, params, session, name, arg):
 _SLASH_BUILTINS = {
     "queue": _cmd_queue, "q": _cmd_queue, "learn": _cmd_learn, "plan": _cmd_plan, "init": _cmd_init,
     "moa": _cmd_moa, "focus": _cmd_focus, "retry": _cmd_retry, "steer": _cmd_steer, "goal": _cmd_goal,
-    "loop": _cmd_loop, "undo": _cmd_undo, "snapshot": _cmd_snapshot, "snap": _cmd_snapshot,
+    "loop": _cmd_loop, "heartbeat": _cmd_loop, "subgoal": _cmd_loop,
+    "undo": _cmd_undo, "snapshot": _cmd_snapshot, "snap": _cmd_snapshot,
     "compress": _cmd_compress, "compact": _cmd_compress, "initiate-setup": lambda *a: _cmd_initiate_setup(*a),
     "memory": _cmd_memory, "skills": _cmd_skills}
 
@@ -1141,7 +1134,7 @@ def _(rid, params: dict) -> dict:
     # Pending-input built-ins route straight to command.dispatch (some clients fail the
     # error-then-retry fallback); bundles go the same way under their resolved key.
     with _session_home_scope(session):  # a secondary-only bundle must route too (#110695)
-        target = base if base in _PENDING_INPUT_COMMANDS else _bundle_key_for(base)
+        target = base if base in _PENDING_INPUT_COMMANDS or base in {"heartbeat", "hb", "subgoal"} else _bundle_key_for(base)
     if target is not None:
         return _methods["command.dispatch"](rid, {"name": target.lstrip("/"), "arg": arg, "session_id": sid})
     # Recognized skills keep the 4018 gate so clients command.dispatch. A scan
