@@ -11,7 +11,7 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(RaiseToCallController.self) private var raiseToCall
     @State private var chatVisible = false
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
     @State private var showSavedChats = false
     @State private var showFiles = false
     @State private var showPhotos = false
