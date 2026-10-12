@@ -173,14 +173,13 @@ struct ChatView: View {
                     Button("Commands", systemImage: "command") { composerFocused = false; chat.commands.route = .help }
                 } label: { Image(systemName: "plus").font(.title3).frame(width: 44, height: 44) }
                 .accessibilityLabel("Attach photos or files").disabled(chat.sending || importingPhotos)
-                PasteButton(supportedContentTypes: ChatAttachmentImport.pasteTypes) { providers in
+                ChatComposer(text: $chat.draft, focused: Binding(get: { composerFocused }, set: { composerFocused = $0 }), placeholder: "Message \(chat.bot.name)") { providers in
                     Task { await importPasted(providers) }
-                }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel("Paste photo or file").disabled(chat.sending || importingPhotos)
-                TextField("Message \(chat.bot.name)", text: $chat.draft, axis: .vertical)
-                    .lineLimit(1...6).padding(.vertical, 12)
-                    .accessibilityLabel("Message \(chat.bot.name)")
-                    .focused($composerFocused).accessibilityIdentifier("chatComposer")
+                }
+                .overlay(alignment: .topLeading) {
+                    if chat.draft.isEmpty { Text("Message \(chat.bot.name)").foregroundStyle(.tertiary).allowsHitTesting(false) }
+                }
+                .padding(.vertical, 12)
                 Button { Task { await chat.send() } } label: {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 34)).frame(width: 44, height: 44)
                 }

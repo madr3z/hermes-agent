@@ -139,10 +139,10 @@ on the phone. Session mutation and background/side-question lifecycle still
 require the appropriate existing Mac controls.
 
 Use **+ → Photos** to open the system photo picker, or **+ → Files** for documents.
-Use the system **Paste** button beside **+** for a copied photo or file. The app
-reads only the items supplied by that action. Plain text still uses the text
-field’s normal paste action. Files must be local; a web URL cannot trigger a file
-download. Images are normalized for upload. The existing limit is five files and
+Long-press the message field and choose **Paste** for text, a copied photo or a
+file. The app reads only the items supplied by that action. Files must be local;
+a web URL cannot trigger a file download. Images are normalized for upload. The
+existing limit is five files and
 10 MiB combined. Choosing or pasting an item prepares a local draft; **Send**
 starts upload to the current bot’s chat.
 
