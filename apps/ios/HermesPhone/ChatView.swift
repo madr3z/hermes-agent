@@ -25,6 +25,7 @@ struct ChatView: View {
             _chat = State(initialValue: ChatStore(bot: bot))
         }
     }
+    init(chat: ChatStore, store: PhoneStore, messageID: String? = nil) { self.store = store; self.messageID = messageID; _chat = State(initialValue: chat) }
     var body: some View {
         ScrollViewReader { reader in
             ScrollView {

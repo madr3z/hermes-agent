@@ -32,8 +32,12 @@ struct ChatComposer: UIViewRepresentable {
         var parent: ChatComposer
         init(_ parent: ChatComposer) { self.parent = parent }
         func textViewDidChange(_ textView: UITextView) { parent.text = textView.text }
-        func textViewDidBeginEditing(_ textView: UITextView) { parent.focused = true }
-        func textViewDidEndEditing(_ textView: UITextView) { parent.focused = false }
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            if !parent.focused { parent.focused = true }
+        }
+        func textViewDidEndEditing(_ textView: UITextView) {
+            if parent.focused { parent.focused = false }
+        }
     }
 }
 
@@ -46,6 +50,11 @@ final class ChatComposerInput: UITextView, UITextPasteDelegate {
         configure()
     }
     required init?(coder: NSCoder) { super.init(coder: coder); configure() }
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        // UITextView excludes image-only boards from its plain-text edit menu.
+        if action == #selector(paste(_:)), isEditable, UIPasteboard.general.hasImages { return true }
+        return super.canPerformAction(action, withSender: sender)
+    }
     private func configure() {
         backgroundColor = .clear
         font = .preferredFont(forTextStyle: .body)

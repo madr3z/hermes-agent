@@ -5,6 +5,33 @@ import HermesGateway
 @testable import HermesPhone
 
 @MainActor final class ChatAttachmentImportTests: XCTestCase {
+    func testUIImageObjectAndSelectedPhotoBytesKeepDraftAndStageImageBytes() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 240)).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 320, height: 240))
+        }
+        let provider = NSItemProvider(object: image)
+        provider.suggestedName = "synthetic-photo"
+        let pasted = try await ChatAttachmentImport.paste(provider)
+        let selected = try ChatAttachmentImport.photo(XCTUnwrap(image.pngData()), name: "synthetic-selected-photo")
+        let chat = ChatStore(bot: Bot(endpointID: UUID(), row: .object(["name": .string("synthetic-media")])))
+        chat.draft = "Describe these images together"
+        for upload in [pasted, selected] {
+            chat.addUpload(name: upload.name, data: upload.data, image: upload.isImage)
+        }
+        XCTAssertEqual(chat.draft, "Describe these images together")
+        XCTAssertEqual(chat.uploads.count, 2)
+        XCTAssertTrue(chat.uploads.allSatisfy { $0.isImage && $0.staged == nil })
+        for upload in chat.uploads {
+            _ = try await upload.stage { method, params in
+                XCTAssertEqual(method, "file.attach")
+                let encoded = try XCTUnwrap(params["data_url"]?.string?.split(separator: ",", maxSplits: 1).last)
+                let bytes = try XCTUnwrap(Data(base64Encoded: String(encoded)))
+                XCTAssertNotNil(UIImage(data: bytes))
+                return .object(["attached": .bool(true), "path": .string("/synthetic/" + upload.name), "ref_text": .string("@file:/synthetic/" + upload.name)])
+            }
+        }
+        XCTAssertEqual(chat.draft, "Describe these images together")
+    }
     func testUserSuppliedImageAndFileProvidersBecomeUnsentAttachments() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 3, height: 3)).pngData { context in
             UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 3, height: 3))
