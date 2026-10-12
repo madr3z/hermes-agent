@@ -56,6 +56,7 @@ struct DispatchSettingsView: View {
     let mobile: (GatewayEndpoint) -> Void
     let add: () -> Void
     let create: () -> Void
+    let callSettings: () -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
@@ -66,6 +67,10 @@ struct DispatchSettingsView: View {
                         Button { mobile(endpoint) } label: { Label("Calls and notifications · \(endpoint.label)", systemImage: "bell") }
                     }
                     Button(action: add) { Label("Connect a gateway", systemImage: "plus") }
+                }
+                Section("Calls") {
+                    Button(action: callSettings) { Label("Call settings", systemImage: "phone.badge.waveform") }
+                        .accessibilityIdentifier("dispatchCallSettings")
                 }
                 Section("Bots") {
                     Button(action: create) { Label("Create Bot", systemImage: "person.badge.plus") }

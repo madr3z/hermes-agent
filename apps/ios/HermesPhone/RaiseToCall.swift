@@ -157,7 +157,7 @@ struct RaiseToCallGesture {
                     guard let row = rows["profiles"].array.first(where: { $0["name"].string == target.profile }) else {
                         throw GatewayError.message("The selected agent is no longer available. Choose an agent in Call settings.")
                     }
-                    chat = ChatStore(bot: Bot(endpointID: target.endpointID, row: row))
+                    chat = store.chat(for: Bot(endpointID: target.endpointID, row: row))
                     await chat.open(store: store)
                 }
                 try Task.checkCancellation()

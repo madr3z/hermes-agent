@@ -79,11 +79,14 @@ struct RosterView: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in
-                raiseToCall.configure(store: store, foreground: phase == .active)
+                raiseToCall.configure(store: store, foreground: phase == .active && sheet == nil)
                 if phase == .background { calls.outgoing?.voice.stop() }
             }
+            .onChange(of: sheet?.id) { _, _ in
+                raiseToCall.configure(store: store, foreground: scenePhase == .active && sheet == nil)
+            }
             .refreshable { await store.refresh() }
-            .task { raiseToCall.configure(store: store, foreground: scenePhase == .active); await store.refresh() }
+            .task { raiseToCall.configure(store: store, foreground: scenePhase == .active && sheet == nil); await store.refresh() }
             .task(id: contact.notificationToOpen?.id) { await openNotification() }
             .sheet(item: $sheet) { selected in
                 switch selected {
@@ -92,7 +95,8 @@ struct RosterView: View {
                                          edit: { sheet = .gateway($0) },
                                          mobile: { sheet = .mobile($0) },
                                          add: { sheet = .gateway(nil) },
-                                         create: { sheet = .create })
+                                         create: { sheet = .create },
+                                         callSettings: { sheet = .calls })
                 case .gateway(let endpoint): GatewayForm(store: store, existing: endpoint)
                 case .create: CreateBotView(store: store)
                 case .delete(let target): VMDeletionView(target: target, store: store)
