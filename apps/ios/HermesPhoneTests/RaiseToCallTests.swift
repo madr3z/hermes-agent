@@ -54,7 +54,7 @@ final class RaiseToCallGestureTests: XCTestCase {
 
 @MainActor final class RaiseToCallTargetTests: XCTestCase {
     private func bot(_ endpoint: GatewayEndpoint, profile: String) -> Bot {
-        Bot(endpointID: endpoint.id, row: ["name": .string(profile), "display_name": .string("Same name")])
+        Bot(endpointID: endpoint.id, row: .object(["name": .string(profile), "display_name": .string("Same name")]))
     }
     func testVisibleChatWinsDefaultAndOtherPagesReturnToExactSavedTarget() throws {
         let suite = "raise-tests-" + UUID().uuidString
