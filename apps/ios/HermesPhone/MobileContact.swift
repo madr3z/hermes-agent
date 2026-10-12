@@ -183,6 +183,9 @@ struct MobileNotificationRoute {
             _ = try await client.http("api/plugins/bot-provisioning/v1/mobile/invitations/" + push.invitationID.uuidString.lowercased() + "/actions", body: .object(["device_id": .string(record.deviceID.uuidString.lowercased()), "action": .string(action)]))
         } catch { self.error = "The controller could not confirm the call ended. The invitation will not ring again." }
     }
+    private func resolveRinging(_ incoming: MobilePush) async throws -> MobileInvitation {
+        try await MobileInvitationLookup.ringing(incoming) { try await self.resolve(incoming) }
+    }
     func receive(_ incoming: MobilePush?, completion: @escaping () -> Void) {
         let id = incoming?.invitationID ?? UUID()
         let update = CXCallUpdate(); update.localizedCallerName = "Hermes"; update.remoteHandle = CXHandle(type: .generic, value: "Hermes")
@@ -212,7 +215,7 @@ struct MobileNotificationRoute {
                     self.finish(reason: .unanswered)
                 }
                 do {
-                    let invitation = try await self.resolve(incoming)
+                    let invitation = try await self.resolveRinging(incoming)
                     guard self.push == incoming, !self.accepted else { return }
                     let details = CXCallUpdate(); details.localizedCallerName = invitation.name
                     self.provider.reportCall(with: id, updated: details)
@@ -222,18 +225,29 @@ struct MobileNotificationRoute {
                         while !Task.isCancelled {
                             try? await Task.sleep(for: .seconds(3))
                             guard !Task.isCancelled, let self, self.push == incoming, !self.accepted, !self.postponing else { return }
-                            do { _ = try await self.resolve(incoming) }
+                            do { _ = try await self.resolveRinging(incoming) }
                             catch {
                                 if self.push == incoming, !self.accepted, !self.postponing {
+                                    self.error = Self.ringingFailure(error)
                                     self.finish(reason: .remoteEnded, notifyServer: false)
                                 }
                                 return
                             }
                         }
                     }
-                } catch { if self.push == incoming && !self.accepted { self.finish(reason: .failed) } }
+                } catch {
+                    if self.push == incoming && !self.accepted {
+                        self.error = Self.ringingFailure(error)
+                        self.finish(reason: .failed)
+                    }
+                }
             }
         }
+    }
+    private static func ringingFailure(_ error: Error) -> String {
+        if case GatewayError.http(let status, _) = error { return "Could not verify the incoming call (HTTP \(status)). Check this controller's connection and sign-in." }
+        if let error = error as? URLError { return "Could not verify the incoming call (network \(error.code.rawValue))." }
+        return "The incoming call expired or its invitation could not be verified."
     }
     private func offerPostponement(_ incoming: MobilePush) async {
         let content = UNMutableNotificationContent()

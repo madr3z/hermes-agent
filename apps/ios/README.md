@@ -30,6 +30,11 @@ Managed guests share their verified owning main session only when their authenti
 
 ## GPT Live
 
+Incoming calls keep their original invitation expiry. A temporary network error
+or HTTP 408, 429 or 5xx during a ringing status read retries that read every three
+seconds until expiry. Authentication failures, invalid invitations and terminal
+server states end the ring. Answer and end actions are never retried by this check.
+
 Native WebRTC audio uses the gateway's existing `POST /api/audio/voice-live/session?profile=…` SDP exchange. The provider key stays on the gateway. An audio track and `oai-events` data channel handle full-duplex speech, provider-side barge-in, mute and close. `session.delegation.created` submits the latest spoken user request to the same bot runtime with bounded spoken context; task output returns through `session.commentary.append` only when its `client_turn_id` matches the UUID generated for that submitted delegation. This correlation survives queued and compute-isolated execution, and completion may arrive before the submit acknowledgement. Superseded, unrelated and duplicate results are ignored. The phone waits for an interrupted voice task to become idle before submitting its replacement.
 
 The gateway must support optional `client_turn_id` on `prompt.submit`, echo it on the accepted result, and carry it through queue/compute dispatch to `message.complete`. An older server that explicitly rejects this field during parameter validation is tried once without it; that rejection happens before dispatch, so it does not create a second model call. No uncertain or accepted submission is retried. Immediate legacy turns can still use their persisted user-row receipt; older queued/isolated turns without either identity remain visible in Bot Chat with an explicit unsupported message.
