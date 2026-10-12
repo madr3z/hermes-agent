@@ -854,10 +854,15 @@ def _merge_gateway_notes(
     ephemeral system prompt stays byte-stable: the gateway's staged notes, then the
     surface-switch correction. Multimodal (list) content can't take the string sidecar —
     append a durable text part instead."""
+    from agent.bot_chat_context import bot_chat_voice_context
+    current_content = (messages[current_turn_user_idx].get("content")
+                       if 0 <= current_turn_user_idx < len(messages)
+                       and isinstance(messages[current_turn_user_idx], dict) else None)
     _turn_notes = "\n\n".join(
         part for part in (consume_gateway_turn_context_notes(agent),
                           consume_surface_switch_note(agent),
-                          consume_skills_index_note(agent)) if part
+                          consume_skills_index_note(agent),
+                          bot_chat_voice_context(agent, current_content)) if part
     )
     if not _turn_notes:
         return plugin_user_context

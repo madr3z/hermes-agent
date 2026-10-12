@@ -105,3 +105,71 @@ def interleave_voice_messages(messages, spoken):
         result.append(pending)
     result.extend(speech)
     return result
+
+
+def _voice_lineages(db, session_id):
+    if session_id is not None:
+        ids = db._resume_lineage_ids(session_id)
+        return [(sid, ids[0]) for sid in ids]
+    sessions = db._read_all("SELECT DISTINCT session_id FROM voice_live_transcripts")
+    return [(row['session_id'], db._resume_lineage_ids(row['session_id'])[0]) for row in sessions]
+
+
+def recall_voice_utterances(db, session_id=None, *, query=None, limit=24, before=None,
+                            after=None, roles=None, exclude_sources=(), incorporated=()):
+    """Read bounded complete utterances from one store and verified compression lineage.
+
+    Receipt markers address the last included fragment of an utterance. New deltas of that
+    utterance remain eligible. Ordinary message anchors are separate from speech markers.
+    """
+    if not callable(getattr(db, '_read_one', None)) or not db._read_one(
+            "SELECT 1 FROM sqlite_master WHERE name = 'voice_live_transcripts'"):
+        return []
+    lineages = _voice_lineages(db, session_id)
+    if not lineages:
+        return []
+    clauses, values = [], [value for pair in lineages for value in pair]
+    for field, operator, value in (("timestamp", "<=", before), ("timestamp", ">", after)):
+        if value is not None:
+            clauses.append(f"v.{field} {operator} ?")
+            values.append(value)
+    if roles:
+        clauses.append(f"v.speaker IN ({','.join('?' for _ in roles)})")
+        values.extend(roles)
+    if exclude_sources:
+        clauses.append(f"s.source NOT IN ({','.join('?' for _ in exclude_sources)})")
+        values.extend(exclude_sources)
+    where = ' AND '.join(clauses) or '1'
+    grouping = 'lineage_root,call_id,utterance_id'
+    matching = "HAVING instr(lower(group_concat(text,'')),lower(?)) > 0" if query else ''
+    if query:
+        values.append(query)
+    values.append(min(max(int(limit), 1), 24))
+    rows = db._read_all(
+        "WITH lineages(session_id,lineage_root) AS (VALUES " + ','.join('(?,?)' for _ in lineages) + "), "
+        "eligible AS (SELECT v.*,s.title,l.lineage_root FROM voice_live_transcripts v "
+        "JOIN sessions s ON s.id=v.session_id JOIN lineages l ON l.session_id=v.session_id "
+        f"WHERE {where} ORDER BY v.id), "
+        f"selected AS (SELECT {grouping} FROM eligible GROUP BY {grouping} "
+        f"{matching} ORDER BY MAX(id) DESC LIMIT ?) "
+        f"SELECT e.* FROM eligible e JOIN selected u USING({grouping}) ORDER BY e.id", values)
+    utterances = {}
+    for row in rows:
+        key = (row['lineage_root'], row['call_id'], row['utterance_id'])
+        utterance = utterances.setdefault(key, [])
+        # A marker only acknowledges its own utterance, never intervening speakers.
+        if row['id'] in incorporated:
+            utterance.clear()
+        else:
+            utterance.append(row)
+    result = []
+    for fragments in utterances.values():
+        if not fragments:
+            continue
+        first, last = fragments[0], fragments[-1]
+        text = ''.join(row['text'] for row in fragments)
+        result.append(dict(voice_fragment_id=last['id'], session_id=last['session_id'],
+                           call_id=first['call_id'], utterance_id=first['utterance_id'],
+                           role=first['speaker'], content=text[:6000], content_chars=len(text),
+                           timestamp=first['timestamp'], title=last['title'], display_kind='voice_live'))
+    return sorted(result, key=lambda row: row['timestamp'])

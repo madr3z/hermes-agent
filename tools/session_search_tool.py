@@ -358,6 +358,10 @@ def _discover(db, query: str, role_filter: Optional[list[str]], limit: int, sort
     """Discovery shape: FTS5 plus adaptive or full result hydration."""
     current_lineage_root = _resolve_lineage(db, current_session_id) if current_session_id else None
     excluded_roots = _excluded_lineage_roots(db, exclude_session_ids or [])
+    from tools.session_search_voice import spoken_results
+    spoken = spoken_results(db, query=query, limit=limit, roles=role_filter or ["user", "assistant"],
+                            after=after_ts, before=before_ts, excluded_roots=excluded_roots,
+                            resolve_lineage=_resolve_lineage, exclude_sources=_HIDDEN_SESSION_SOURCES)
     title_result = _title_match_result(db, query, current_lineage_root)
     # FTS rows are time-bounded in SQL (_search_filter_clauses); the title match bypasses that
     # query, so it is the one place the window is re-checked in Python.
@@ -378,8 +382,8 @@ def _discover(db, query: str, role_filter: Optional[list[str]], limit: int, sort
     raw_results = sorted(raw_results, key=lambda r: (r.get("source") or "") in _DEMOTED_SESSION_SOURCES)
     # See #19434.
     if not raw_results and not title_result:
-        return _discover_payload(db, query, detail, [], message=(
-            "No matching sessions found. FTS5 ANDs all terms by default — "
+        return _discover_payload(db, query, detail, [], spoken_matches=spoken, message=(
+            "No matching ordinary messages found. Check spoken_matches for saved speech. FTS5 ANDs all terms by default — "
             "broaden with OR (`alpha OR beta`), exact-match with quoted "
             "phrases, exclude with NOT, or prefix-match with `deploy*`."))
     seen_sessions: dict[str, dict[str, Any]] = {}
@@ -423,7 +427,7 @@ def _discover(db, query: str, role_filter: Optional[list[str]], limit: int, sort
             results.append(entry)
     for entry in results:
         entry["link"] = _session_link(entry["session_id"], link_profile)
-    return _discover_payload(db, query, detail, results, sessions_searched=len(seen_sessions), link_hint=(
+    return _discover_payload(db, query, detail, results, spoken_matches=spoken, sessions_searched=len(seen_sessions), link_hint=(
         "When referring the user to a session, write its `link` value "
         "verbatim inline mid-sentence (it renders as a titled link) — never "
         "as markdown, in backticks, on its own line, or next to the "
@@ -455,8 +459,11 @@ def _read_session(db, session_id: str, head: int = 20, tail: int = 10, link_prof
         return err
     shaped = [_shape_message(m, max_content_len=_READ_MAX_CONTENT) for m in rows]
     total, truncated = len(shaped), len(shaped) > head + tail
+    from tools.session_search_voice import spoken_results
+    spoken = spoken_results(db, session_id=session_id, limit=24)
     return _ok(mode="read", session_id=session_id, link=_session_link(session_id, link_profile),
                session_meta=_session_meta_block(meta), message_count=total, truncated=truncated,
+               saved_speech=spoken,
                messages=shaped[:head] + shaped[-tail:] if truncated else shaped,
                **({"message": (f"Session has {total} messages; showing first {head} + last {tail}. "
                                "Pass around_message_id (any id above) to scroll the middle.")} if truncated else {}))
@@ -663,7 +670,9 @@ SESSION_SEARCH_SCHEMA = {
         "conclude 'not found' from history alone. Use for questions about past "
         "conversations: 'what did we do about X', 'where did we leave Y'. When "
         "referring the user to a session, write its `link` value verbatim "
-        "inline (it renders as a titled link)."
+        "inline (it renders as a titled link). Saved speech appears in bounded spoken_matches "
+        "(literal query text across transcript deltas) and saved_speech on session read. "
+        "Speech uses receipt time and separate voice_fragment_id values, not message anchors."
     ),
     "parameters": {
         "type": "object",

@@ -47,12 +47,30 @@ saved: submitting commentary to GPT Live is not evidence it was spoken or heard.
 
 ## Later model access
 
-Stored speech does not automatically enter later typed model turns. Starting a
-new GPT Live call uses the existing bounded history seeding, now including visible
-speech. During a live call, the existing delegation voice_context carries the
-recent spoken exchange into the one delegated Hermes turn. Transcript persistence
-adds no model call and does not alter that delegation mechanism or Codex provider
-selection.
+The next string user turn in the hidden canonical Bot Chat includes saved speech
+as a bounded historical-data note. It selects at most 24 complete utterances and
+keeps the whole note below 6,000 characters. It follows the verified compression
+lineage in the owning profile database. Receipt timestamps exclude speech that
+arrived after the turn started. Oversized utterances remain available through
+session_search instead of being partially acknowledged.
+
+The current turn's existing api_content sidecar stores the note and a receipt
+with the last included fragment of each utterance. Its display text stays clean.
+A restart or compression can reuse those receipts. Unpersisted attempts consume
+nothing. Later deltas of an acknowledged utterance remain eligible. A delegated
+GPT Live turn acknowledges speech already carried by its voice_context without
+repeating it. Multimodal turns defer this automatic bridge to the next string
+turn; session_search can still retrieve speech explicitly.
+
+Existing session_search discovery includes bounded spoken_matches. Session read
+includes saved_speech from the same verified lineage. Speech lookup uses literal
+query text across transcript deltas; ordinary-message search still uses FTS5.
+Speech markers are separate from ordinary message anchors. Search remains scoped
+to the current profile unless the caller explicitly selects another profile.
+
+Starting a new GPT Live call keeps the existing bounded history seeding, including
+visible speech. Transcript persistence adds no model call and does not alter the
+live delegation mechanism or Codex provider selection.
 
 ## Acceptance boundary
 
