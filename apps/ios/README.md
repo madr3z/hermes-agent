@@ -193,3 +193,23 @@ when provider finalization is unconfirmed. GPT-Live exposes no WebRTC playback
 completion event, so this does not claim that a final goodbye was fully played.
 The updated plugin schema takes effect in a fresh agent tool snapshot; saved chat
 history is retained. Both the gateway and phone must support the call binding RPCs.
+
+## Dispatch home
+
+The iPhone app opens on **Today**, with **Chats** and **Bots** below it. Today uses
+an ivory and forest palette, scalable serif headings, a decorative sage branch,
+and an adaptive dark palette. Settings retains controller sign-in, incoming-call
+preferences, and bot creation. Open a bot's conversation for accounts, skills,
+scheduled tasks and computer controls.
+
+**Needs you** summarizes unanswered questions, approval requests, and account
+handoffs from chats the user has already opened on this phone. It does not open
+other bots or resume their sessions to populate the home screen. A summary opens
+the owning chat; the existing scoped flow handles confirmation. A quiet home does
+not assert that all bots are free of pending requests.
+
+**Recent conversations** uses canonical chat previews from the roster, ordered
+by the gateway's last-active timestamp. It does not infer completed work from a
+preview or a bot description. The message shortcut opens the named bot's full
+composer, including photo/file attachment controls. Returning to the same bot
+retains its draft while that bot remains the active chat on its gateway.

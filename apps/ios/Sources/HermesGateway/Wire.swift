@@ -89,12 +89,16 @@ public struct Bot: Identifiable, Hashable {
     public let profile: String
     public let name: String
     public let preview: String
+    public let conversationPreview: String
+    public let lastActive: Double
     public var id: String { "\(endpointID.uuidString):\(profile)" }
     public init(endpointID: UUID, row: JSON) {
         self.endpointID = endpointID; profile = row["name"].string ?? "default"
         let display = row["display_name"].string ?? ""
         name = display.isEmpty ? profile : display
         preview = row["canonical_session"]["preview"].string ?? row["description"].string ?? ""
+        conversationPreview = row["canonical_session"]["preview"].string ?? ""
+        lastActive = row["canonical_session"]["last_active"].number ?? 0
     }
 }
 

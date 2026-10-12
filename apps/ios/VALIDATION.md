@@ -56,3 +56,65 @@ Logs and diagnostic artifacts are under `/private/tmp/hermes-iphone-build/`. The
 The first renderer harness run exposed a 30-second cold WebKit startup timeout and an off-window paint assertion; the harness now attaches to the real simulator key window, allows 60 seconds for cold initialization, and waits for paint before checking text. A second fixture error fulfilled an initial-resize expectation more than once on legitimate later resize notifications; the first notification is now observed once. Assertions were retained, and the actual renderer tests passed. Xcode verbose failure diagnostics caused lengthy cleanup stalls; subsequent focused runs use `-collect-test-diagnostics never` and exit normally. The Python wire fixture now resolves Python on PATH instead of Apple's developer-tool launcher, which timed out while the failing Xcode diagnostic run was active.
 
 Simulator tap-through remains unverified: the computer-use native pipe still fails to start. Test-runner WebKit execution and screenshots establish renderer behavior, not physical touch, software keyboard/IME, mobile connection or real VM acceptance. The private proxy/guest plugin and VM lifecycle service require the other owners' integrated runtime. No VM power action or real shell command was sent by these fixtures. Device/signing readiness is inspected separately after the source commit.
+
+## Dispatch design implementation — 12 October 2026
+
+Checkout: `/Users/madrez/.codex/worktrees/9eb0/hermes-agent`.
+The native Today/Chats/Bots shell, Dispatch home, account/request summaries,
+conversation list, settings entry, shared chat draft, adaptive palette, and sage
+branch asset are implemented here.
+
+### Completed validation
+
+- `swift test --package-path apps/ios --scratch-path /private/tmp/hermes-dispatch-swift-tests`:
+  **102 tests, zero failures**. This is local transport/model evidence, not real
+  gateway acceptance.
+- Native iPhone tests: **7 tests, zero failures**, final command exited 0 with
+  `TEST SUCCEEDED`. Suite: `DispatchTests` (3), `ChatRequestsStoreTests` (2), and
+  `ChatLoginControllerTests` (2). Rendering uses a real UIKit window to include
+  the SwiftUI scroll content.
+- `PATH="/Users/madrez/.local/bin:$PATH" UV_CACHE_DIR=/private/tmp/hermes-dispatch-uv python3 scripts/check --base HEAD`:
+  **11 checks passed**.
+- `git diff --check`: **passed**.
+- Visual comparison: **passed** after typography, spacing, scroll-edge fading,
+  and artwork crop fixes. Light, dark, and Accessibility 3 fixtures were inspected.
+  See `design-qa.md` for comparison files and accepted product adaptations.
+- Live simulator interaction: Today/Chats/Bots, Settings, both gateway form entry
+  routes, and Cancel back to Today passed. No credentials or gateway submission.
+
+Native command:
+
+```sh
+xcodebuild test -project apps/ios/HermesPhone.xcodeproj -scheme HermesPhone \
+  -derivedDataPath /private/tmp/hermes-dispatch-build \
+  -destination 'platform=iOS Simulator,id=FA701042-454F-4E7E-A97F-21068AB4F7D4,arch=arm64' \
+  CODE_SIGNING_ALLOWED=NO \
+  -only-testing:HermesPhoneTests/DispatchTests \
+  -only-testing:HermesPhoneTests/ChatRequestsStoreTests \
+  -only-testing:HermesPhoneTests/ChatLoginControllerTests \
+  -parallel-testing-enabled NO -collect-test-diagnostics never \
+  -resultBundlePath /private/tmp/hermes-dispatch-qa-final.xcresult
+```
+
+### Simulator recovery and evidence
+
+The original design-review simulator reported Booted but installation and shutdown
+stalled. XcodeBuildMCP requests timed out. An isolated Hermes Dispatch QA simulator
+(iPhone 17e, iOS 27.0, `FA701042-454F-4E7E-A97F-21068AB4F7D4`) was created.
+DeviceHub reported DeviceKit error 4002 while connecting its framebuffer.
+Restarting the current user's CoreDeviceService restored installation, launch,
+and screenshots. A supported DeviceHub Restart of the QA simulator then restored
+the XCTest handshake. Final test commands exited normally. No simulator erase,
+Mac reboot, credential change, or physical-phone action was used.
+
+Preserved diagnostics:
+`/Users/madrez/.codex/visualizations/2026/10/12/01a1319c-07eb-7411-bccb-695f5e3a1502/simulator-diagnostics/`.
+This includes `hermes-dispatch-qa-final.log`, `dispatch-final.xcresult`,
+`hermes-dispatch-swift-tests.log`, `hermes-dispatch-check-final.log`, and the
+installation/service samples and DeviceHub error. The recovery sequence does
+not establish the underlying cause of the Apple service stall.
+
+The earlier blocked result is superseded by this completed local run. Connected
+account submission, real backend conversation flows, physical-device installation,
+signing, CI, publication, and release acceptance remain separate and are not
+claimed for this change.

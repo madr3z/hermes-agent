@@ -9,6 +9,7 @@ import HermesGateway
     var error: String?
     var vmOwners: [String: ProvisionedOwner] = [:]
     var clients: [UUID: GatewayClient] = [:]
+    var activeChats: [UUID: ChatStore] = [:]
     var vmDeletionControllers: Set<UUID> = []
     private var controllerSessions: [UUID: ControllerSession] = [:]
     private let preferences: UserDefaults
@@ -16,6 +17,12 @@ import HermesGateway
         self.preferences = preferences
         if let data = preferences.data(forKey: "vm-owners"), let saved = try? JSONDecoder().decode([String: ProvisionedOwner].self, from: data) { vmOwners = saved }
         if let data = preferences.data(forKey: "gateways"), let saved = try? JSONDecoder().decode([GatewayEndpoint].self, from: data) { endpoints = saved }
+    }
+    func chat(for bot: Bot) -> ChatStore {
+        if let chat = activeChats[bot.endpointID], chat.bot.id == bot.id { return chat }
+        let chat = ChatStore(bot: bot)
+        activeChats[bot.endpointID] = chat
+        return chat
     }
     func add(label: String, address: String, token: String, replacing id: UUID? = nil) async throws {
         guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let url = URL(string: address) else { throw GatewayError.message("Enter a gateway URL and access token.") }
@@ -139,7 +146,10 @@ import HermesGateway
         preferences.set(try JSONEncoder().encode(endpoints), forKey: "gateways")
     }
     private func disconnectController(_ mainID: UUID) {
-        for id in Array(clients.keys) where id == mainID || vmOwners[id.uuidString]?.mainID == mainID { clients.removeValue(forKey: id)?.disconnect() }
+        for id in Array(clients.keys) where id == mainID || vmOwners[id.uuidString]?.mainID == mainID {
+            activeChats.removeValue(forKey: id)
+            clients.removeValue(forKey: id)?.disconnect()
+        }
     }
     func recordManagedOwner(_ row: JSON, mainID: UUID) throws {
         guard let main = endpoints.first(where: { $0.id == mainID }) else { return }
@@ -155,7 +165,7 @@ import HermesGateway
             return endpoint.id
         })
         for id in removed { try removeCredential(id) }
-        for id in removed { clients.removeValue(forKey: id)?.disconnect(); vmOwners.removeValue(forKey: id.uuidString) }
+        for id in removed { activeChats.removeValue(forKey: id); clients.removeValue(forKey: id)?.disconnect(); vmOwners.removeValue(forKey: id.uuidString) }
         endpoints.removeAll { removed.contains($0.id) }
         bots.removeAll { removed.contains($0.endpointID) }
         preferences.set(try JSONEncoder().encode(endpoints), forKey: "gateways")

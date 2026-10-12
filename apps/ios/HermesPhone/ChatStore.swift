@@ -23,6 +23,7 @@ import HermesGateway
     var commands = ChatCommandsStore()
     let savedChats = SavedChatsStore()
     let requests = ChatRequestsStore()
+    let login = ChatLoginController()
     private var requestObserverID: UUID?
     private var bufferedRequests: [JSON] = []
     private var streamID: String?

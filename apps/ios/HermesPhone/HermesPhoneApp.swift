@@ -8,9 +8,9 @@ import HermesGateway
 }
 
 private enum RosterSheet: Identifiable {
-    case gateway(GatewayEndpoint?), create, delete(VMDeletionTarget), mobile(GatewayEndpoint), calls
+    case gateway(GatewayEndpoint?), create, delete(VMDeletionTarget), mobile(GatewayEndpoint), calls, settings
     var id: String {
-        switch self { case .gateway(let endpoint): return "gateway-" + (endpoint?.id.uuidString ?? "new"); case .mobile(let endpoint): return "mobile-" + endpoint.id.uuidString; case .calls: return "calls"; case .create: return "create"; case .delete(let target): return "delete-\(target.id)" }
+        switch self { case .settings: return "settings"; case .gateway(let endpoint): return "gateway-" + (endpoint?.id.uuidString ?? "new"); case .mobile(let endpoint): return "mobile-" + endpoint.id.uuidString; case .calls: return "calls"; case .create: return "create"; case .delete(let target): return "delete-\(target.id)" }
     }
 }
 
@@ -24,88 +24,24 @@ struct RosterView: View {
     @State private var sheet: RosterSheet?
     @State private var path: [ChatDestination] = []
     @State private var raiseToCall = RaiseToCallController()
+    @State private var selectedTab: DispatchTab = .today
     @Bindable private var contact = MobileContact.shared
     @Bindable private var calls = CallPresentation.shared
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         NavigationStack(path: $path) {
-            List {
-                if store.endpoints.isEmpty {
-                    Section {
-                        ContentUnavailableView("Meet your bots", systemImage: "sparkles", description: Text("Chat, call and work with your bots from your iPhone. Connect your Hermes controller to get started."))
-                        Button { sheet = .gateway(nil) } label: {
-                            Label("Connect a gateway", systemImage: "network")
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("connectGateway")
-                    }.listRowBackground(Color.clear)
-                } else {
-                    Section {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("A little help, always here.").font(.title2.weight(.semibold))
-                            Text("Pick a bot to keep the conversation going.")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }.padding(.vertical, 8)
-                        if store.loading { ProgressView("Refreshing bots…") }
-                    }.listRowBackground(Color.clear)
+            Group {
+                switch selectedTab {
+                case .today:
+                    DispatchTodayView(store: store, attention: DispatchAttention.items(in: store), openChat: openChat,
+                                      openSettings: { sheet = .settings },
+                                      connect: { sheet = .gateway(nil) },
+                                      showChats: { selectedTab = .chats })
+                case .chats:
+                    DispatchChatsView(store: store, openChat: openChat)
+                case .bots:
+                    rosterList
                 }
-                ForEach(store.endpoints) { endpoint in
-                    Section {
-                        let rows = store.bots.filter { $0.endpointID == endpoint.id }
-                        if rows.isEmpty {
-                            PhoneNotice(title: store.loading ? "Loading bots…" : "No bots to show", message: "Pull down to refresh this gateway.", systemImage: "network")
-                        }
-                        ForEach(rows) { bot in
-                            NavigationLink(value: ChatDestination(bot: bot)) {
-                                HStack(alignment: .top, spacing: 12) {
-                                    BotAvatar()
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(bot.name).font(.headline).foregroundStyle(.primary)
-                                        Text(bot.preview.isEmpty ? "Start a conversation" : bot.preview)
-                                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                                        if bot.profile != bot.name {
-                                            Text(bot.profile).font(.caption).foregroundStyle(.tertiary)
-                                        }
-                                    }
-                                }.padding(.vertical, 12)
-                            }
-                            .accessibilityHint("Opens the saved conversation with \(bot.name)")
-                        }
-                    } header: {
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(endpoint.label).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                Label(endpoint.baseURL.path.contains("/gateways/") ? "Bot computer" : "Controller", systemImage: endpoint.baseURL.path.contains("/gateways/") ? "desktopcomputer" : "network")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if !endpoint.baseURL.path.contains("/gateways/") || store.vmOwners[endpoint.id.uuidString].map({ store.vmDeletionControllers.contains($0.mainID) }) == true {
-                                Menu {
-                                    if !endpoint.baseURL.path.contains("/gateways/") {
-                                        Button("Sign in to controller", systemImage: "person.crop.circle") { sheet = .gateway(endpoint) }
-                                        Button("Calls and notifications", systemImage: "bell") { sheet = .mobile(endpoint) }
-                                    }
-                                    if let owner = store.vmOwners[endpoint.id.uuidString], owner.owns(endpoint), store.vmDeletionControllers.contains(owner.mainID),
-                                       let target = VMDeletionTarget(mainID: owner.mainID, requestID: owner.requestID) {
-                                        Button("Delete Bot and VM…", systemImage: "trash", role: .destructive) { sheet = .delete(target) }
-                                    }
-                                } label: { Image(systemName: "ellipsis.circle").font(.title3).frame(minWidth: 44, minHeight: 44) }
-                                .accessibilityLabel("Manage \(endpoint.label)")
-                            }
-                        }.textCase(nil)
-                    }
-                }
-                if let error = store.error {
-                    Section {
-                        PhoneNotice(title: "Could not refresh", message: error)
-                        Button("Try again", systemImage: "arrow.clockwise") { Task { await store.refresh() } }.disabled(store.loading)
-                    }
-                }
-                Section {
-                    Label("Your conversations stay on your gateway.", systemImage: "lock.shield")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }.listRowBackground(Color.clear)
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 0) {
@@ -116,10 +52,16 @@ struct RosterView: View {
                     }
                 }
             }
-            .navigationTitle("Bots")
+            .navigationTitle(selectedTab.title)
+            .toolbar(path.isEmpty && selectedTab == .today ? .hidden : .visible, for: .navigationBar)
+            .toolbarBackground(DispatchStyle.paper, for: .navigationBar)
             .navigationDestination(for: ChatDestination.self) { target in
                 ChatView(bot: target.bot, store: store, messageID: target.messageID).id(target)
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if path.isEmpty { DispatchTabBar(selection: $selectedTab) }
+            }
+            .tint(DispatchStyle.forest)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -145,6 +87,12 @@ struct RosterView: View {
             .task(id: contact.notificationToOpen?.id) { await openNotification() }
             .sheet(item: $sheet) { selected in
                 switch selected {
+                case .settings:
+                    DispatchSettingsView(store: store,
+                                         edit: { sheet = .gateway($0) },
+                                         mobile: { sheet = .mobile($0) },
+                                         add: { sheet = .gateway(nil) },
+                                         create: { sheet = .create })
                 case .gateway(let endpoint): GatewayForm(store: store, existing: endpoint)
                 case .create: CreateBotView(store: store)
                 case .delete(let target): VMDeletionView(target: target, store: store)
@@ -157,6 +105,92 @@ struct RosterView: View {
         .alert("Could not start call", isPresented: Binding(get: { raiseToCall.error != nil }, set: { if !$0 { raiseToCall.error = nil } })) {
             Button("OK") { raiseToCall.error = nil }
         } message: { Text(raiseToCall.error ?? "") }
+    }
+    private func openChat(_ bot: Bot) {
+        _ = store.chat(for: bot)
+        path.append(ChatDestination(bot: bot))
+    }
+    private var rosterList: some View {
+        List {
+            if store.endpoints.isEmpty {
+                Section {
+                    ContentUnavailableView("Meet your bots", systemImage: "sparkles", description: Text("Chat, call and work with your bots from your iPhone. Connect your Hermes controller to get started."))
+                    Button { sheet = .gateway(nil) } label: {
+                        Label("Connect a gateway", systemImage: "network")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("connectGateway")
+                }.listRowBackground(Color.clear)
+            } else {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("A little help, always here.").font(.title2.weight(.semibold))
+                        Text("Pick a bot to keep the conversation going.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }.padding(.vertical, 8)
+                    if store.loading { ProgressView("Refreshing bots…") }
+                }.listRowBackground(Color.clear)
+            }
+            ForEach(store.endpoints) { endpoint in
+                Section {
+                    let rows = store.bots.filter { $0.endpointID == endpoint.id }
+                    if rows.isEmpty {
+                        PhoneNotice(title: store.loading ? "Loading bots…" : "No bots to show", message: "Pull down to refresh this gateway.", systemImage: "network")
+                    }
+                    ForEach(rows) { bot in
+                        NavigationLink(value: ChatDestination(bot: bot)) {
+                            HStack(alignment: .top, spacing: 12) {
+                                BotAvatar()
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(bot.name).font(.headline).foregroundStyle(.primary)
+                                    Text(bot.preview.isEmpty ? "Start a conversation" : bot.preview)
+                                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                                    if bot.profile != bot.name {
+                                        Text(bot.profile).font(.caption).foregroundStyle(.tertiary)
+                                    }
+                                }
+                            }.padding(.vertical, 12)
+                        }
+                        .accessibilityHint("Opens the saved conversation with \(bot.name)")
+                    }
+                } header: {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(endpoint.label).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                            Label(endpoint.baseURL.path.contains("/gateways/") ? "Bot computer" : "Controller", systemImage: endpoint.baseURL.path.contains("/gateways/") ? "desktopcomputer" : "network")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if !endpoint.baseURL.path.contains("/gateways/") || store.vmOwners[endpoint.id.uuidString].map({ store.vmDeletionControllers.contains($0.mainID) }) == true {
+                            Menu {
+                                if !endpoint.baseURL.path.contains("/gateways/") {
+                                    Button("Sign in to controller", systemImage: "person.crop.circle") { sheet = .gateway(endpoint) }
+                                    Button("Calls and notifications", systemImage: "bell") { sheet = .mobile(endpoint) }
+                                }
+                                if let owner = store.vmOwners[endpoint.id.uuidString], owner.owns(endpoint), store.vmDeletionControllers.contains(owner.mainID),
+                                   let target = VMDeletionTarget(mainID: owner.mainID, requestID: owner.requestID) {
+                                    Button("Delete Bot and VM…", systemImage: "trash", role: .destructive) { sheet = .delete(target) }
+                                }
+                            } label: { Image(systemName: "ellipsis.circle").font(.title3).frame(minWidth: 44, minHeight: 44) }
+                            .accessibilityLabel("Manage \(endpoint.label)")
+                        }
+                    }.textCase(nil)
+                }
+            }
+            if let error = store.error {
+                Section {
+                    PhoneNotice(title: "Could not refresh", message: error)
+                    Button("Try again", systemImage: "arrow.clockwise") { Task { await store.refresh() } }.disabled(store.loading)
+                }
+            }
+            Section {
+                Label("Your conversations stay on your gateway.", systemImage: "lock.shield")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }.listRowBackground(Color.clear)
+        }
+        .scrollContentBackground(.hidden)
+        .background(DispatchStyle.paper)
     }
     private func openNotification() async {
         guard let route = contact.notificationToOpen else { return }

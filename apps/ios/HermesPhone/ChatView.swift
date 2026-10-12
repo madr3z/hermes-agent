@@ -17,7 +17,14 @@ struct ChatView: View {
     @State private var showPhotos = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var importingPhotos = false
-    init(bot: Bot, store: PhoneStore, messageID: String? = nil) { self.store = store; self.messageID = messageID; _chat = State(initialValue: ChatStore(bot: bot)) }
+    init(bot: Bot, store: PhoneStore, messageID: String? = nil) {
+        self.store = store; self.messageID = messageID
+        if let retained = store.activeChats[bot.endpointID], retained.bot.id == bot.id {
+            _chat = State(initialValue: retained)
+        } else {
+            _chat = State(initialValue: ChatStore(bot: bot))
+        }
+    }
     var body: some View {
         ScrollViewReader { reader in
             ScrollView {
@@ -36,7 +43,7 @@ struct ChatView: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .background(Color(uiColor: .systemBackground))
+            .background(DispatchStyle.paper)
             .onChange(of: chat.messages.last(where: { $0.role == "assistant" })?.text) { _, _ in if messageID == nil || locatedNotification { reader.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: chat.messages.count) { _, _ in
                 if !locatedNotification, let messageID, chat.messages.contains(where: { $0.id == messageID }) {
@@ -46,6 +53,7 @@ struct ChatView: View {
             .onChange(of: chat.activity.phase) { _, _ in reader.scrollTo("bottom", anchor: .bottom) }
             .safeAreaInset(edge: .bottom) { composer }
             .task {
+                store.activeChats[chat.bot.endpointID] = chat
                 await chat.open(store: store)
                 if let messageID, chat.messages.contains(where: { $0.id == messageID }) {
                     await Task.yield()
@@ -57,6 +65,7 @@ struct ChatView: View {
         .onDisappear { chatVisible = false; raiseToCall.hideChat(chat) }
         .onChange(of: obscuresChat) { _, _ in updateRaiseTarget() }
         .navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(DispatchStyle.paper, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {

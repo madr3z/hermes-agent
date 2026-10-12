@@ -6,7 +6,7 @@ import SwiftUI
 /// Insert in the Bot Chat transcript. Closing the view stops observation, not server authorization.
 struct LoginHandoffCards: View {
     let chat: ChatStore
-    @State private var login = ChatLoginController()
+    private var login: ChatLoginController { chat.login }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(login.requests.filter(\.needsAction)) { request in
