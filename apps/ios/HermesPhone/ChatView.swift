@@ -9,6 +9,8 @@ struct ChatView: View {
     @State private var locatedNotification = false
     @State private var chat: ChatStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(RaiseToCallController.self) private var raiseToCall
+    @State private var chatVisible = false
     @FocusState private var composerFocused: Bool
     @State private var showSavedChats = false
     @State private var showFiles = false
@@ -51,6 +53,9 @@ struct ChatView: View {
                 }
             }
         }
+        .onAppear { chatVisible = true; updateRaiseTarget() }
+        .onDisappear { chatVisible = false; raiseToCall.hideChat(chat) }
+        .onChange(of: obscuresChat) { _, _ in updateRaiseTarget() }
         .navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -109,6 +114,13 @@ struct ChatView: View {
             }
         }
         .task(id: photos) { await importPhotos() }
+    }
+    private var obscuresChat: Bool {
+        showSavedChats || showFiles || showPhotos || chat.commands.output != nil || chat.commands.route != nil
+    }
+    private func updateRaiseTarget() {
+        if chatVisible && !obscuresChat { raiseToCall.showChat(chat) }
+        else { raiseToCall.hideChat(chat) }
     }
     private var composer: some View {
         VStack(spacing: 8) {

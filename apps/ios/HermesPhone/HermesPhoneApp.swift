@@ -8,9 +8,9 @@ import HermesGateway
 }
 
 private enum RosterSheet: Identifiable {
-    case gateway(GatewayEndpoint?), create, delete(VMDeletionTarget), mobile(GatewayEndpoint)
+    case gateway(GatewayEndpoint?), create, delete(VMDeletionTarget), mobile(GatewayEndpoint), calls
     var id: String {
-        switch self { case .gateway(let endpoint): return "gateway-" + (endpoint?.id.uuidString ?? "new"); case .mobile(let endpoint): return "mobile-" + endpoint.id.uuidString; case .create: return "create"; case .delete(let target): return "delete-\(target.id)" }
+        switch self { case .gateway(let endpoint): return "gateway-" + (endpoint?.id.uuidString ?? "new"); case .mobile(let endpoint): return "mobile-" + endpoint.id.uuidString; case .calls: return "calls"; case .create: return "create"; case .delete(let target): return "delete-\(target.id)" }
     }
 }
 
@@ -23,6 +23,7 @@ struct RosterView: View {
     @Bindable var store: PhoneStore
     @State private var sheet: RosterSheet?
     @State private var path: [ChatDestination] = []
+    @State private var raiseToCall = RaiseToCallController()
     @Bindable private var contact = MobileContact.shared
     @Bindable private var calls = CallPresentation.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -124,6 +125,7 @@ struct RosterView: View {
                     Menu {
                         Button("Create Bot", systemImage: "plus.circle") { sheet = .create }.disabled(store.endpoints.isEmpty)
                         Button("Add Gateway", systemImage: "network") { sheet = .gateway(nil) }
+                        Button("Call settings", systemImage: "phone.badge.waveform") { sheet = .calls }
                     } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Add bot or gateway")
                 }
@@ -135,10 +137,11 @@ struct RosterView: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in
+                raiseToCall.configure(store: store, foreground: phase == .active)
                 if phase == .background { calls.outgoing?.voice.stop() }
             }
             .refreshable { await store.refresh() }
-            .task { await store.refresh() }
+            .task { raiseToCall.configure(store: store, foreground: scenePhase == .active); await store.refresh() }
             .task(id: contact.notificationToOpen?.id) { await openNotification() }
             .sheet(item: $sheet) { selected in
                 switch selected {
@@ -146,9 +149,14 @@ struct RosterView: View {
                 case .create: CreateBotView(store: store)
                 case .delete(let target): VMDeletionView(target: target, store: store)
                 case .mobile(let endpoint): MobileContactView(endpoint: endpoint, store: store)
+                case .calls: CallPreferencesView(controller: raiseToCall, store: store)
                 }
             }
         }
+        .environment(raiseToCall)
+        .alert("Could not start call", isPresented: Binding(get: { raiseToCall.error != nil }, set: { if !$0 { raiseToCall.error = nil } })) {
+            Button("OK") { raiseToCall.error = nil }
+        } message: { Text(raiseToCall.error ?? "") }
     }
     private func openNotification() async {
         guard let route = contact.notificationToOpen else { return }
