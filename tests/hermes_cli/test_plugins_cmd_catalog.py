@@ -492,7 +492,8 @@ def test_repin_that_widens_the_plugin_requires_consent_on_every_surface(world, m
         pc.cmd_update("cat-plugin")
     assert _head(target) == world["sha1"]
     # Consent given → applied.
-    assert pc.dashboard_update_user_plugin("cat-plugin", accept_capabilities=True)["unchanged"] is False
+    assert pc.dashboard_update_user_plugin("cat-plugin", accept_capabilities=True,
+                                           reviewed_update=result["update_review"])["unchanged"] is False
     assert _head(target) == wide
 
 

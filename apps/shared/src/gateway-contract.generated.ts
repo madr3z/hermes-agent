@@ -4420,7 +4420,7 @@ export interface LegacyPluginRow {
   version: string
   enabled: boolean
 }
-/** ``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name`` (+ ``force``, ``enable``, ``ref``); ``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin that widened the plugin after the user confirmed the ``delta``); ``remove``: ``name`` (user installs only); ``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only). */
+/** ``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name`` (+ ``force``, ``enable``, ``ref``); ``update``: ``name`` (+ ``accept_capabilities`` and exact ``reviewed_update`` to apply a wider pin after deliberate review); ``remove``: ``name`` (user installs only); ``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only). */
 export interface PluginsManageParams {
   profile?: string | null
   action?: PluginsAction
@@ -4433,10 +4433,19 @@ export interface PluginsManageParams {
   force?: boolean | null
   ref?: string | null
   accept_capabilities?: boolean | null
+  reviewed_update?: PluginUpdateReview | null
   values?: Record<string, unknown> | null
 }
 export type PluginsAction = 'list' | 'toggle' | 'install' | 'update' | 'remove' | 'settings' | 'onboarding'
-/** ``list`` → ``plugins`` + counts; ``toggle`` → ``ok``/``unchanged``/``restart_required``/``name`` (the canonical key written)/``plugin``; ``install`` → ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s ok payload; ``toggle``/``install``/``update`` that loaded a plugin also carry ``gateway_reloaded`` (the running gateway picked it up and re-wired its handlers) and ``activation`` — the honest split of what is live now vs deferred, so ``restart_required`` is True only when no gateway answered; ``update`` → ``ok``/``unchanged``/``sha``, or ``ok=false`` + ``consent_required`` with the ``delta`` (``{surface: [added...]}``) / ``delta_lines`` a widened pin adds — nothing changed until the client retries with ``accept_capabilities``; ``remove`` → ``ok``/``name`` plus ``cleared_memory_provider`` when the removed plugin was the live ``memory.provider``. */
+/** Exact installed revision, catalog target and added access reviewed by the user. */
+export interface PluginUpdateReview {
+  installed_name: string
+  catalog_name: string
+  installed_sha: string
+  target_sha: string
+  delta: Record<string, string[]>
+}
+/** ``list`` → ``plugins`` + counts; ``toggle`` → ``ok``/``unchanged``/``restart_required``/``name`` (the canonical key written)/``plugin``; ``install`` → ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s ok payload; ``toggle``/``install``/``update`` that loaded a plugin also carry ``gateway_reloaded`` (the running gateway picked it up and re-wired its handlers) and ``activation`` — the honest split of what is live now vs deferred, so ``restart_required`` is True only when no gateway answered; ``update`` → ``ok``/``unchanged``/``sha``, or ``ok=false`` + ``consent_required`` with the ``delta`` (``{surface: [added...]}``) / ``delta_lines`` a widened pin adds — nothing changed until the client confirms with ``accept_capabilities`` and exact ``reviewed_update``; ``remove`` → ``ok``/``name`` plus ``cleared_memory_provider`` when the removed plugin was the live ``memory.provider``. */
 export interface PluginsManageResult {
   plugins?: AgentPluginRow[] | null
   user_count?: number | null
@@ -4458,6 +4467,7 @@ export interface PluginsManageResult {
   enabled?: boolean | null
   sha?: string | null
   consent_required?: boolean | null
+  update_review?: PluginUpdateReview | null
   delta?: Record<string, string[]> | null
   delta_lines?: string[] | null
   error?: string | null

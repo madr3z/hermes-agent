@@ -49,7 +49,11 @@ private struct AgentPluginPage: View {
                 Section("Update requires a new grant") {
                     Text("Reviewed commit: " + update.sha).font(.footnote.monospaced()).textSelection(.enabled)
                     ForEach(update.lines, id: \.self) { Text($0).font(.subheadline) }
-                    Text("The installed plugin was kept. Update the gateway to support commit-bound confirmation before applying this wider update from iPhone.").font(.footnote).foregroundStyle(.secondary)
+                    if update.binding != nil, let record = state.record {
+                        Button("Review and confirm added access…") { review = PluginActionSelection(action: .update, record: record, updateReview: update) }.disabled(!state.canAct)
+                    } else {
+                        Text("The installed plugin was kept. Update the gateway before confirming this added access from iPhone.").font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -92,11 +96,13 @@ private struct PluginActionSelection: Identifiable {
     let id = UUID()
     let action: AgentPluginAction
     let record: AgentPluginRecord
+    var updateReview: AgentPluginUpdateReview? = nil
     var explanation: String {
+        if updateReview != nil { return "Confirm only this exact catalog commit and the added access shown below. Updated code can run now with this bot's files and credentials. A changed revision or access list will be refused. This action is sent once." }
         switch action {
         case .enable: return "Enabling can run this plugin's code, hooks, commands, MCP servers, and skills now. It can access this bot's files and credentials. Some tools and prompt changes apply in new sessions."
         case .disable: return "Disable the saved plugin selection. Existing handlers can remain active until this bot's gateway restarts. This action does not restart it or rebuild the current chat."
-        case .update: return "The gateway resolves and installs the current catalog commit. Updated code can run now with this plugin's existing access to the bot's files and credentials. If it adds permissions or capabilities, the update is left unchanged. This iPhone does not grant a wider update through the current confirmation API."
+        case .update: return "The gateway resolves and installs the current catalog commit. Updated code can run now with this plugin's existing access to the bot's files and credentials. If it adds access, the update stays unchanged until you review its exact commit and added access and confirm again."
         case .remove: return "Remove this user-installed plugin and its selection from this bot. A selected memory provider may be cleared. Existing handlers can remain active until the gateway restarts. Mac desktop extensions and provider account grants are managed separately."
         }
     }
@@ -113,9 +119,15 @@ private struct PluginActionReview: View {
                 Section { BotIdentityLabel(name: botName, detail: selection.record.plugin.name) }
                 Section("Source and revision") { PluginProvenance(record: selection.record) }
                 Section { Text(selection.explanation) }
+                if let update = selection.updateReview {
+                    Section("Exact update and added access") {
+                        Text(update.sha).font(.footnote.monospaced()).textSelection(.enabled)
+                        ForEach(update.lines, id: \.self) { Text($0) }
+                    }
+                }
                 if let error = state.error { PhoneNotice(title: "Could not complete action", message: error) }
-                Button(selection.action.title, role: selection.action == .remove ? .destructive : nil) {
-                    Task { if await state.perform(selection.action, reviewed: selection.record) { dismiss() } }
+                Button(selection.updateReview == nil ? selection.action.title : "Confirm reviewed update", role: selection.action == .remove ? .destructive : nil) {
+                    Task { if await state.perform(selection.action, reviewed: selection.record, consent: selection.updateReview) { dismiss() } }
                 }.disabled(!state.canAct)
                 if state.working { ProgressView("Waiting for this bot's gateway…") }
             }

@@ -1804,6 +1804,14 @@ Install surfaces report exactly this split: `hermes plugins install/enable` prin
 gateway (`reload-plugins` control-socket verb), `plugins.manage install/toggle/update` returns `activation` +
 `gateway_reloaded` (`restart_required` is true only when no gateway answered).
 
+Catalog updates that add declared access return `consent_required` and `update_review` without
+installing the update. A native client must show the target SHA and added access, then send the exact
+`update_review` with `accept_capabilities: true` only after human confirmation. The review binds the
+installed plugin and revision, catalog entry, target SHA, and access delta. A bare acceptance flag,
+stale revision, or changed delta is refused. The backend checks the actual staged tree before PM
+publishes it. Clients must not retry an uncertain confirmation automatically. Python dependency
+admission and host capability grants retain their separate checks.
+
 :::tip
 This guide covers **general plugins** (tools, hooks, slash commands, CLI commands). The sections below sketch the authoring pattern for each specialized plugin type; each links to its full guide for field reference and examples.
 :::

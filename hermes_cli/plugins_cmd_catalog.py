@@ -519,8 +519,8 @@ class RepinConsentRequired(Exception):
     """The new pin widens the plugin's surface and no consent was given; nothing was changed on disk.
     ``delta`` is :func:`surface_delta`'s mapping — surfaces hand it to the user and retry with consent."""
 
-    def __init__(self, name: str, sha: str, delta: dict[str, list[str]]):
-        self.name, self.sha, self.delta = name, sha, delta
+    def __init__(self, name: str, sha: str, delta: dict[str, list[str]], review: dict | None = None):
+        self.name, self.sha, self.delta, self.review = name, sha, delta, review
         super().__init__(
             f"Updating '{name}' to {sha[:8]} adds {'; '.join(surface_delta_lines(delta))}. Confirm to continue.")
 
@@ -531,6 +531,7 @@ def repin_catalog_plugin(
     *,
     interactive: bool = False,
     consent_cb=None,
+    reviewed_update: dict | None = None,
 ) -> RepinResult:
     """Re-pin a catalog install to the current catalog SHA (never ``git pull``).
 
@@ -540,9 +541,9 @@ def repin_catalog_plugin(
     the stale directory.
 
     A pin that widens the plugin (new tools, hooks, Python deps, host capabilities or a Desktop half)
-    is a new grant. ``consent_cb(delta) -> bool`` decides before publication; absent or declined raises
-    :class:`RepinConsentRequired` with the installed tree untouched. The immutable catalog pin is
-    previewed separately because the PM update transaction owns and publishes its own staged clone.
+    is a new grant. A terminal ``consent_cb(delta)`` or exact ``reviewed_update`` decides before
+    publication; absent or declined consent leaves the installed tree untouched. The installed revision,
+    target pin and delta are checked again on the actual PM publication tree.
     """
     from hermes_cli.plugins_cmd import (
         PluginOperationError,
@@ -562,17 +563,39 @@ def repin_catalog_plugin(
             f"Plugin '{catalog_name}' is no longer in the catalog — it may have been removed. "
             "See `hermes plugins info` and the removed blocklist.")
     refuse_if_installed_removed(catalog_name, target)
+    if reviewed_update is not None and any(reviewed_update.get(key) != value for key, value in {
+            "installed_name": target.name, "catalog_name": catalog_name,
+            "installed_sha": sidecar.get("sha"), "target_sha": entry.sha}.items()):
+        raise PluginOperationError("The reviewed plugin or catalog revision changed. Refresh and review the update again.")
     if at_catalog_pin(sidecar, entry.sha):
         return RepinResult(entry.sha, False, target.name, [])
 
     local, modified = _local_changes(target)
     old_sha8 = str(sidecar.get("sha") or "old")[:8]
     installed_surface = plugin_surface(_read_manifest(target), target)
+    approved_review = reviewed_update
 
     def _consent_gate(manifest: dict, tree: Path) -> None:
-        delta = surface_delta(installed_surface, plugin_surface(manifest, tree))
-        if delta and not (consent_cb is not None and consent_cb(delta)):
-            raise RepinConsentRequired(catalog_name, entry.sha, delta)
+        nonlocal approved_review
+        current = catalog_install_record(target)
+        current_surface = plugin_surface(_read_manifest(target), target)
+        if current != sidecar or current_surface != installed_surface:
+            raise PluginOperationError("The installed plugin changed during review. Refresh and review the update again.")
+        delta = surface_delta(current_surface, plugin_surface(manifest, tree))
+        review = {"installed_name": target.name, "catalog_name": catalog_name,
+                  "installed_sha": sidecar.get("sha"), "target_sha": entry.sha, "delta": delta}
+        if approved_review is not None:
+            if approved_review != review:
+                raise PluginOperationError("The reviewed plugin access changed. Refresh and review the update again.")
+        elif delta and not (consent_cb is not None and consent_cb(delta)):
+            raise RepinConsentRequired(catalog_name, entry.sha, delta, review)
+        approved_review = review
+
+    def _carry_reviewed_files(staged: Path) -> list[str]:
+        carried = _carry_user_files(target, staged, local)
+        # Validate the actual publication tree, including carried files, before dependency preparation.
+        _consent_gate(_read_manifest_for_install(staged), staged)
+        return carried
 
     # The catalog pin is immutable. Preview it before PM begins publication so a widened surface can
     # be declined without touching the live tree or writing a backup; update_plugin clones the same pin
@@ -593,7 +616,7 @@ def repin_catalog_plugin(
         target,
         catalog_entry=entry,
         interactive=interactive,
-        carry_user_files=lambda staged: _carry_user_files(target, staged, local),
+        carry_user_files=_carry_reviewed_files,
     )
     matches = []
     for installed_name, row in _read_install_metadata().items():

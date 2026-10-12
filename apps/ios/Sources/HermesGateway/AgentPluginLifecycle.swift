@@ -41,6 +41,7 @@ public enum AgentPluginAction: String, Identifiable, Sendable {
 public struct AgentPluginUpdateReview: Identifiable, Sendable {
     public let sha: String
     public let lines: [String]
+    public let binding: JSON?
     public var id: String { sha }
 }
 
@@ -63,7 +64,7 @@ public enum AgentPluginOutcome: Sendable {
         return records
     }
 
-    public func perform(_ action: AgentPluginAction, reviewed: AgentPluginRecord) async throws -> AgentPluginOutcome {
+    public func perform(_ action: AgentPluginAction, reviewed: AgentPluginRecord, updateConsent: AgentPluginUpdateReview? = nil) async throws -> AgentPluginOutcome {
         guard let current = try await list().first(where: { $0.id == reviewed.id }),
               current.plugin.name == reviewed.plugin.name, current.plugin.source == reviewed.plugin.source,
               current.installedSHA == reviewed.installedSHA, current.pinnedSHA == reviewed.pinnedSHA else {
@@ -81,11 +82,28 @@ public enum AgentPluginOutcome: Sendable {
         case .update:
             guard current.canUpdate else { throw GatewayError.message("Only an available catalog update can be applied here. Custom sources update through the CLI.") }
             params["name"] = .string(current.plugin.name)
+            if let consent = updateConsent {
+                guard let binding = consent.binding,
+                      binding["installed_name"].string == current.plugin.name,
+                      binding["catalog_name"].string == current.catalogName,
+                      binding["installed_sha"].string == current.installedSHA,
+                      binding["target_sha"].string == consent.sha else {
+                    throw GatewayError.message("This update review no longer matches the installed plugin. Refresh and review again.")
+                }
+                params["accept_capabilities"] = .bool(true); params["reviewed_update"] = binding
+            }
         }
         let result = try await api.call("plugins.manage", params)
         if action == .update, result["consent_required"] == .bool(true) {
             guard let sha = result["sha"].string, !sha.isEmpty else { throw GatewayError.message("The gateway did not identify the update requiring consent.") }
-            return .requiresBoundConsent(AgentPluginUpdateReview(sha: sha, lines: result["delta_lines"].array.compactMap(\.string)))
+            guard updateConsent == nil else { throw GatewayError.message("The reviewed update changed and was not applied. Refresh and review again.") }
+            let candidate = result["update_review"]
+            let binding: JSON? = candidate["installed_name"].string == current.plugin.name &&
+                candidate["catalog_name"].string == current.catalogName &&
+                candidate["installed_sha"].string == current.installedSHA &&
+                candidate["target_sha"].string == sha && candidate["delta"] == result["delta"] &&
+                candidate["delta"] != .null ? candidate : nil
+            return .requiresBoundConsent(AgentPluginUpdateReview(sha: sha, lines: result["delta_lines"].array.compactMap(\.string), binding: binding))
         }
         guard result["ok"] == .bool(true) else { throw GatewayError.message(result["error"].string ?? "The gateway did not confirm this plugin action.") }
         if action == .enable || action == .disable {
@@ -94,7 +112,8 @@ public enum AgentPluginOutcome: Sendable {
             guard result["name"].string == current.plugin.name else { throw GatewayError.message("The gateway confirmed removal of a different plugin.") }
         }
         if action == .update {
-            guard result["sha"].string?.isEmpty == false, result["name"].string?.isEmpty == false else {
+            guard result["sha"].string?.isEmpty == false, result["name"].string?.isEmpty == false,
+                  updateConsent == nil || result["sha"].string == updateConsent?.sha else {
                 throw GatewayError.message("The gateway did not identify the installed update. Refresh before another action.")
             }
         }

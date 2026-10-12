@@ -272,11 +272,13 @@ def cmd_check_updates(args: Any | None = None) -> None:
     console.print("[dim]Check-only. Apply with: hermes plugins update <name>[/dim]")
 
 
-def dashboard_update_user_plugin(name: str, *, accept_capabilities: bool = False) -> dict[str, Any]:
+def dashboard_update_user_plugin(name: str, *, accept_capabilities: bool = False, reviewed_update: dict | None = None) -> dict[str, Any]:
     """``git pull`` inside ``~/.hermes/plugins/<name>``; catalog installs re-pin instead. A re-pin that
     widens the plugin returns ``{"ok": False, "consent_required": True, "delta": {...}}`` with nothing
-    changed — the surface shows the delta and retries with *accept_capabilities*."""
+    changed. Confirmation requires *accept_capabilities* plus the exact returned *reviewed_update*."""
     from hermes_cli import plugins_cmd_catalog as catalog
+    if accept_capabilities and not isinstance(reviewed_update, dict):
+        return {"ok": False, "error": "Confirm the exact reviewed plugin revision and access changes before updating."}
     target = _pc()._user_installed_plugin_dir(name)
     if target is None:
         return {"ok": False, "error": f"Plugin '{name}' was not found under {_pc()._plugins_dir()}."}
@@ -284,7 +286,7 @@ def dashboard_update_user_plugin(name: str, *, accept_capabilities: bool = False
     try:
         if sidecar:
             result = catalog.repin_catalog_plugin(
-                target, sidecar, consent_cb=(lambda _delta: True) if accept_capabilities else None)
+                target, sidecar, reviewed_update=reviewed_update if accept_capabilities else None)
             warnings = list(result.warnings)
             new_target = target.parent / result.installed_name
             deps = _pc()._python_dependency_summary(new_target, warnings) if result.changed else []
@@ -301,7 +303,7 @@ def dashboard_update_user_plugin(name: str, *, accept_capabilities: bool = False
             lambda: f"Plugin '{name}' is not a git checkout; cannot pull updates.")
     except catalog.RepinConsentRequired as exc:
         return {"ok": False, "consent_required": True, "error": str(exc), "name": exc.name, "sha": exc.sha,
-                "delta": exc.delta, "delta_lines": catalog.surface_delta_lines(exc.delta)}
+                "delta": exc.delta, "delta_lines": catalog.surface_delta_lines(exc.delta), "update_review": exc.review}
     except _pc().PluginOperationError as exc:
         return {"ok": False, "error": str(exc)}
     _post_pull_housekeeping(target, _pc()._console())

@@ -78,4 +78,47 @@ import XCTest
         current = row()
         do { _ = try await api.perform(.enable, reviewed: AgentPluginRecord(current)); XCTFail("Different plugin receipt") } catch { XCTAssertEqual(writes, 1) }
     }
+
+    func testBoundConfirmationSendsExactReviewOnlyAfterDeliberateCall() async throws {
+        let delta = JSON.object(["tools": .array([.string("shell_out")])])
+        let binding = JSON.object(["installed_name": .string("same-name"), "catalog_name": .string("catalog-entry"),
+                                   "installed_sha": .string("old"), "target_sha": .string("new-pin"), "delta": delta])
+        var writes: [[String: JSON]] = []
+        let api = AgentPluginLifecycleClient(api: BotConnectorsClient(profile: "writer") { _, params in
+            if params["action"] == .string("list") { return .object(["plugins": .array([self.row()])]) }
+            writes.append(params)
+            if params["accept_capabilities"] == .bool(true) {
+                return .object(["ok": .bool(true), "name": .string("same-name"), "sha": .string("new-pin")])
+            }
+            return .object(["ok": .bool(false), "consent_required": .bool(true), "sha": .string("new-pin"),
+                            "delta": delta, "update_review": binding, "delta_lines": .array([.string("Tools: shell_out")])])
+        })
+        let record = AgentPluginRecord(row())
+        guard case .requiresBoundConsent(let review) = try await api.perform(.update, reviewed: record) else { return XCTFail("Expected review") }
+        XCTAssertEqual(writes.count, 1); XCTAssertNil(writes[0]["accept_capabilities"])
+        XCTAssertEqual(review.binding, binding)
+        guard case .applied = try await api.perform(.update, reviewed: record, updateConsent: review) else { return XCTFail("Exact confirmation should apply") }
+        XCTAssertEqual(writes.count, 2); XCTAssertEqual(writes[1]["reviewed_update"], binding)
+        XCTAssertEqual(writes[1]["accept_capabilities"], .bool(true)); XCTAssertEqual(writes[1]["profile"], .string("writer"))
+    }
+
+    func testStaleReviewCannotGrantChangedInstalledRevision() async throws {
+        var current = row()
+        var writes = 0
+        let delta = JSON.object(["tools": .array([.string("shell_out")])])
+        let binding = JSON.object(["installed_name": .string("same-name"), "catalog_name": .string("catalog-entry"),
+                                   "installed_sha": .string("old"), "target_sha": .string("new-pin"), "delta": delta])
+        let api = AgentPluginLifecycleClient(api: BotConnectorsClient(profile: "writer") { _, params in
+            if params["action"] == .string("list") { return .object(["plugins": .array([current])]) }
+            writes += 1
+            return .object(["ok": .bool(false), "consent_required": .bool(true), "sha": .string("new-pin"),
+                            "delta": delta, "update_review": binding])
+        })
+        let record = AgentPluginRecord(current)
+        guard case .requiresBoundConsent(let review) = try await api.perform(.update, reviewed: record) else { return XCTFail("Expected review") }
+        current = row(sha: "changed")
+        do { _ = try await api.perform(.update, reviewed: record, updateConsent: review); XCTFail("Stale installed revision") } catch { }
+        XCTAssertEqual(writes, 1)
+    }
+
 }

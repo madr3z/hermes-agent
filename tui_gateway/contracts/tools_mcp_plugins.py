@@ -630,10 +630,20 @@ class PluginsAction(WireEnum):
     onboarding = "onboarding"
 
 
+class PluginUpdateReview(Params):
+    """Exact installed revision, catalog target and added access reviewed by the user."""
+
+    installed_name: str
+    catalog_name: str
+    installed_sha: str
+    target_sha: str
+    delta: dict[str, list[str]]
+
+
 class PluginsManageParams(ProfileParams):
     """``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``
-    (+ ``force``, ``enable``, ``ref``); ``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin
-    that widened the plugin after the user confirmed the ``delta``); ``remove``: ``name`` (user installs only);
+    (+ ``force``, ``enable``, ``ref``); ``update``: ``name`` (+ ``accept_capabilities`` and exact
+    ``reviewed_update`` to apply a wider pin after deliberate review); ``remove``: ``name`` (user installs only);
     ``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only)."""
 
     action: PluginsAction = PluginsAction.list
@@ -646,6 +656,7 @@ class PluginsManageParams(ProfileParams):
     force: bool | None = None
     ref: str | None = None
     accept_capabilities: bool | None = None
+    reviewed_update: PluginUpdateReview | None = None
     values: dict[str, JsonValue] | None = None
 
 
@@ -775,7 +786,7 @@ class PluginsManageResult(Result):
     running gateway picked it up and re-wired its handlers) and ``activation`` — the honest split of what is
     live now vs deferred, so ``restart_required`` is True only when no gateway answered; ``update`` → ``ok``/``unchanged``/``sha``, or ``ok=false`` + ``consent_required`` with the
     ``delta`` (``{surface: [added...]}``) / ``delta_lines`` a widened pin adds — nothing changed until the
-    client retries with ``accept_capabilities``; ``remove`` → ``ok``/``name`` plus
+    client confirms with ``accept_capabilities`` and exact ``reviewed_update``; ``remove`` → ``ok``/``name`` plus
     ``cleared_memory_provider`` when the removed plugin was the live ``memory.provider``."""
 
     plugins: list[AgentPluginRow] | None = None
@@ -800,6 +811,7 @@ class PluginsManageResult(Result):
     enabled: bool | None = None
     sha: str | None = None
     consent_required: bool | None = None
+    update_review: PluginUpdateReview | None = None
     delta: dict[str, list[str]] | None = None
     delta_lines: list[str] | None = None
     error: str | None = None

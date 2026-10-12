@@ -20,7 +20,7 @@ import HermesGateway
 
     func refresh() async {
         guard let api, !loading, !working else { return }
-        loading = true; error = nil
+        loading = true; error = nil; updateReview = nil
         defer { loading = false }
         do {
             let records = try await api.list()
@@ -30,20 +30,23 @@ import HermesGateway
         catch { self.error = error.localizedDescription; needsRefresh = true }
     }
 
-    func perform(_ action: AgentPluginAction, reviewed: AgentPluginRecord) async -> Bool {
+    func perform(_ action: AgentPluginAction, reviewed: AgentPluginRecord, consent: AgentPluginUpdateReview? = nil) async -> Bool {
         guard let api, canAct else { return false }
+        if let consent, consent.binding == nil || consent.binding != updateReview?.binding { return false }
         working = true; error = nil; notice = nil; updateReview = nil
         do {
-            let outcome = try await api.perform(action, reviewed: reviewed)
+            let outcome = try await api.perform(action, reviewed: reviewed, updateConsent: consent)
+            var pendingReview: AgentPluginUpdateReview?
             switch outcome {
             case .requiresBoundConsent(let review):
-                updateReview = review
-                notice = "This update was not applied. It adds permissions or capabilities. This gateway cannot bind confirmation to the reviewed commit, so this iPhone did not grant them."
+                pendingReview = review
+                notice = review.binding == nil ? "This update was not applied. Update the gateway before confirming this added access from iPhone." : "This update was not applied. Review the exact commit and added access before confirming it."
             case .applied(let result):
                 notice = Self.receipt(result, action: action)
             }
             working = false
             await refresh()
+            if let pendingReview, record?.installedSHA == reviewed.installedSHA { updateReview = pendingReview }
             return true
         } catch {
             working = false; needsRefresh = true
