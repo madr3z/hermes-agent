@@ -21,7 +21,9 @@ import HermesGateway
         let previous = scene.windows.first { $0.isKeyWindow }
         let window = UIWindow(windowScene: scene)
         let bot = Bot(endpointID: UUID(), row: .object(["name": .string("synthetic-focus-test")]))
-        let host = UIHostingController(rootView: ChatView(bot: bot, store: PhoneStore(preferences: preferences)))
+        let raiseToCall = RaiseToCallController(preferences: preferences)
+        raiseToCall.enabled = false
+        let host = UIHostingController(rootView: ChatView(bot: bot, store: PhoneStore(preferences: preferences)).environment(raiseToCall))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer {
             window.isHidden = true; window.rootViewController = nil; previous?.makeKey()
