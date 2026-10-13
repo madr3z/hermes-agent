@@ -6,9 +6,9 @@ struct BotToolsView: View {
     let store: PhoneStore
     var runtimeID: String? = nil
     var body: some View {
-        List {
-            Section { BotIdentityLabel(name: bot.name, detail: "Your bot, set up your way") }
-            Section("Work with your bot") {
+        DispatchList {
+            DispatchSection { BotIdentityLabel(name: bot.name, detail: "Your bot, set up your way") }
+            DispatchSection("Work with your bot") {
                 NavigationLink { BotToolsetsView(bot: bot, store: store, runtimeID: runtimeID) } label: {
                     PhoneFeatureRow(title: "Tools and toolsets", detail: "Enabled settings and current chat tools", systemImage: "wrench.and.screwdriver")
                 }
@@ -22,7 +22,7 @@ struct BotToolsView: View {
                     PhoneFeatureRow(title: "Skills", detail: "What this bot knows how to do", systemImage: "books.vertical")
                 }
             }
-            Section {
+            DispatchSection {
                 NavigationLink { BotModelView(bot: bot, store: store, runtimeID: runtimeID) } label: {
                     PhoneFeatureRow(title: "Model and usage", detail: "Current model, limits and readiness", systemImage: "cpu")
                 }
@@ -33,7 +33,7 @@ struct BotToolsView: View {
                 Text("Settings and accounts belong to \(bot.name). Your other bots keep their own setup.")
             }
         }
-        .navigationTitle("Bot settings")
+        .dispatchTitle("Bot settings")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

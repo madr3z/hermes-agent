@@ -3,11 +3,11 @@ import SwiftUI
 struct BotAvatar: View {
     @ScaledMetric(relativeTo: .title2) private var size = 44
     var body: some View {
-        Image(systemName: "sparkles")
-            .font(.title2.weight(.medium))
-            .foregroundStyle(.tint)
+        Image(systemName: "person")
+            .font(.title2.weight(.light))
+            .foregroundStyle(DispatchStyle.forest)
             .frame(width: size, height: size)
-            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+            .background(DispatchStyle.wash, in: Circle())
             .accessibilityHidden(true)
     }
 }
@@ -20,8 +20,8 @@ struct BotIdentityLabel: View {
         HStack(spacing: 14) {
             if !typeSize.isAccessibilitySize { BotAvatar() }
             VStack(alignment: .leading, spacing: 4) {
-                Text(name).font(.title3.weight(.semibold))
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                Text(name).font(DispatchStyle.serif(25, relativeTo: .title3))
+                Text(detail).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
             }
             Spacer(minLength: 0)
         }
@@ -39,13 +39,13 @@ struct PhoneFeatureRow: View {
         HStack(alignment: .top, spacing: 14) {
             if !typeSize.isAccessibilitySize {
                 Image(systemName: systemImage)
-                    .font(.body.weight(.medium)).foregroundStyle(.tint)
+                    .font(.body.weight(.medium)).foregroundStyle(DispatchStyle.forest)
                     .frame(width: 30, height: 30)
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.body.weight(.medium)).foregroundStyle(.primary)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                Text(title).font(.body.weight(.medium)).foregroundStyle(DispatchStyle.ink)
+                Text(detail).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
         }.padding(.vertical, 7)
@@ -58,11 +58,11 @@ struct PhoneNotice: View {
     var systemImage = "exclamationmark.triangle"
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: systemImage).foregroundStyle(.tint)
+            Image(systemName: systemImage).foregroundStyle(DispatchStyle.forest)
                 .font(.body).padding(.top, 2).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.subheadline.weight(.semibold))
-                Text(message).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(message).font(.subheadline).foregroundStyle(DispatchStyle.secondary).textSelection(.enabled)
             }
             Spacer(minLength: 0)
         }

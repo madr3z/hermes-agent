@@ -25,58 +25,58 @@ struct CreateBotView: View {
     private var mainEndpoints: [GatewayEndpoint] { store.endpoints.filter { !$0.baseURL.path.contains("/gateways/") } }
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            DispatchForm {
+                DispatchSection {
                     PhoneNotice(title: "A bot with its own machine", message: "Give your bot a purpose, then choose its VM resources and login.", systemImage: "sparkles")
                 }
-                Section("Controller") {
+                DispatchSection("Controller") {
                     Picker("Gateway", selection: $gatewayID) {
                         Text("Choose gateway").tag(UUID?.none)
                         ForEach(mainEndpoints) { Text($0.label).tag(Optional($0.id)) }
                     }.disabled(working || requestID != nil)
                 }
                 if capabilities["available"].bool {
-                    Section("Bot") {
+                    DispatchSection("Bot") {
                         TextField("Name", text: $name).autocorrectionDisabled().textInputAutocapitalization(.never)
                         TextField("Personality and purpose (optional)", text: $soul, axis: .vertical).lineLimit(3...6)
                     }.disabled(working || requestID != nil)
-                    Section("VM login") {
+                    DispatchSection("VM login") {
                         LabeledContent("Username", value: BotCreationSubmission.usernameError(name, capabilities: capabilities) == nil ? name : "Enter a valid bot name")
-                        Text("The bot name is also its Linux username. This login is separate from the controller login.").font(.footnote).foregroundStyle(.secondary)
+                        Text("The bot name is also its Linux username. This login is separate from the controller login.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                         SecureField("VM password", text: $password).textContentType(.newPassword).privacySensitive()
                         SecureField("Confirm VM password", text: $passwordConfirmation).textContentType(.newPassword).privacySensitive()
                         if requestID != nil {
-                            Text(submission.needsPassword ? "Request not found. Re-enter the original password to retry the same request." : "Check the saved request first. A found receipt recovers without a password.").font(.footnote).foregroundStyle(.secondary)
+                            Text(submission.needsPassword ? "Request not found. Re-enter the original password to retry the same request." : "Check the saved request first. A found receipt recovers without a password.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                         }
-                        if let validationError, requestID == nil || submission.needsPassword { Text(validationError).font(.footnote).foregroundStyle(.secondary) }
+                        if let validationError, requestID == nil || submission.needsPassword { Text(validationError).font(.footnote).foregroundStyle(DispatchStyle.secondary) }
                     }.disabled(working)
-                    Section("VM resources") {
+                    DispatchSection("VM resources") {
                         Stepper("CPU: \(cpu) cores", value: $cpu, in: resourceRange("cpu", fallback: 1...4))
                         Stepper("Memory: \(memory) MiB", value: $memory, in: resourceRange("memory_mib", fallback: 2048...8192), step: 512)
                         Stepper("Disk: \(disk) GiB", value: $disk, in: resourceRange("disk_gib", fallback: 20...100), step: 10)
                     }.disabled(working || requestID != nil)
-                    Section {
+                    DispatchSection {
                         Toggle("Copy main provider API keys", isOn: $copyCredentials)
-                        Text("Copies the main controller’s available provider API keys on the server. Model settings are separate. Codex requires sign-in on each bot. Keys never pass through this phone.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Copies the main controller’s available provider API keys on the server. Model settings are separate. Codex requires sign-in on each bot. Keys never pass through this phone.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                         if copyCredentials { Text(capabilities["credential_keys"].array.compactMap(\.string).joined(separator: ", ")).font(.caption) }
                     }.disabled(working || requestID != nil)
-                    Section {
+                    DispatchSection {
                         Button(requestID == nil ? "Create Bot" : submission.needsPassword && validationError == nil ? "Retry Same Request" : "Check Request") { Task { await submit() } }
                             .disabled(working || (requestID == nil && validationError != nil))
                         if requestID != nil { Text("This request keeps the same ID when retried, so it cannot create a second VM.").font(.footnote) }
                     }
                 } else {
-                    Section { PhoneNotice(title: gatewayID == nil ? "Choose a controller" : working ? "Checking availability…" : "Bot creation unavailable", message: "The controller must have the provisioning service enabled.", systemImage: "desktopcomputer") }
+                    DispatchSection { PhoneNotice(title: gatewayID == nil ? "Choose a controller" : working ? "Checking availability…" : "Bot creation unavailable", message: "The controller must have the provisioning service enabled.", systemImage: "desktopcomputer") }
                 }
                 if working { ProgressView("Checking controller…") }
-                if let error { Section { PhoneNotice(title: "Could not complete the request", message: error); Button("Refresh") { Task { await load() } }.disabled(working) } }
+                if let error { DispatchSection { PhoneNotice(title: "Could not complete the request", message: error); Button("Refresh") { Task { await load() } }.disabled(working) } }
                 if !requests.isEmpty {
-                    Section("Provisioning requests") {
+                    DispatchSection("Provisioning requests") {
                         ForEach(requests, id: \.self) { request in
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(request["name"].string ?? "Bot").font(.headline)
-                                Text(request["phase"].string ?? "Unknown").foregroundStyle(.secondary)
-                                if let message = request["error"]["message"].string { Text(message).foregroundStyle(.red) }
+                                Text(request["name"].string ?? "Bot").font(DispatchStyle.serif(23, relativeTo: .headline))
+                                Text(request["phase"].string ?? "Unknown").foregroundStyle(DispatchStyle.secondary)
+                                if let message = request["error"]["message"].string { Text(message).foregroundStyle(DispatchStyle.rust) }
                                 if capabilities["vm_delete"].bool, request["phase"].string != "deleted", let gatewayID,
                                    let id = request["request_id"].string, let target = VMDeletionTarget(mainID: gatewayID, requestID: id) {
                                     Button("Delete Bot and VM…", role: .destructive) { deleting = target }.disabled(working)
@@ -90,7 +90,7 @@ struct CreateBotView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Create Bot").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Create Bot").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .sheet(item: $deleting, onDismiss: { Task { await refreshRequests() } }) { target in VMDeletionView(target: target, store: store) }
             .onDisappear { password = ""; passwordConfirmation = "" }

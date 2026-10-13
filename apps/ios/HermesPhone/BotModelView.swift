@@ -22,50 +22,50 @@ private struct BotModelPage: View {
     @State private var search = ""
     @State private var selection: ModelSelection?
     var body: some View {
-        List {
-            Section { BotIdentityLabel(name: bot.name, detail: "Model and status") }
+        DispatchList {
+            DispatchSection { BotIdentityLabel(name: bot.name, detail: "Model and status") }
             if loading { ProgressView("Checking this bot…") }
             if let error {
-                Section {
+                DispatchSection {
                     PhoneNotice(title: "Could not load status", message: error)
                     Button("Try again") { Task { await load() } }.disabled(loading)
                 }
             }
             if let readiness {
-                Section("Gateway readiness") {
+                DispatchSection("Gateway readiness") {
                     Label(readiness["ok"].bool ? "Model route ready" : "Model route needs attention", systemImage: readiness["ok"].bool ? "checkmark.circle" : "exclamationmark.triangle")
-                    if let text = readiness["error"].string { Text(text).font(.subheadline).foregroundStyle(.secondary) }
-                    Text("Checks configuration and credentials. It does not send a model request.").font(.subheadline).foregroundStyle(.secondary)
+                    if let text = readiness["error"].string { Text(text).font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
+                    Text("Checks configuration and credentials. It does not send a model request.").font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                 }
             }
             if let inventory {
-                Section("Current model") {
+                DispatchSection("Current model") {
                     LabeledContent("Provider", value: inventory.currentProvider?["name"].string ?? inventory.provider)
                     Label {
-                        Text(inventory.model.isEmpty ? "No model selected" : inventory.model).font(.title3.weight(.semibold)).textSelection(.enabled)
-                    } icon: { Image(systemName: "cpu").foregroundStyle(.tint) }.padding(.vertical, 6)
-                    if let warning = inventory.currentProvider?["warning"].string { Text(warning).font(.subheadline).foregroundStyle(.secondary) }
+                        Text(inventory.model.isEmpty ? "No model selected" : inventory.model).font(DispatchStyle.serif(25, relativeTo: .title3)).textSelection(.enabled)
+                    } icon: { Image(systemName: "cpu").foregroundStyle(DispatchStyle.forest) }.padding(.vertical, 6)
+                    if let warning = inventory.currentProvider?["warning"].string { Text(warning).font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
                 }
                 if let usage = inventory.currentProvider?["usage"], usage != .null { BotUsageSection(usage: usage) }
-                Section {
+                DispatchSection {
                     ForEach(inventory.availableModels.filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { model in
                         Button {
                             if let api { selection = ModelSelection(model: model, provider: inventory.provider, api: api) }
                         } label: {
                             HStack(alignment: .top) {
-                                Text(model).foregroundStyle(.primary)
+                                Text(model).foregroundStyle(DispatchStyle.ink)
                                 Spacer()
-                                if model == inventory.model { Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityLabel("Current model") }
+                                if model == inventory.model { Image(systemName: "checkmark").foregroundStyle(DispatchStyle.forest).accessibilityLabel("Current model") }
                             }
                         }.disabled(runtimeID == nil || api == nil)
                     }
                 } header: { Text("Models on this provider") } footer: {
                     Text(runtimeID == nil ? "Open Bot Chat before changing its model." : "A selection applies to this Bot Chat. The provider stays the same.")
                 }
-                if inventory.availableModels.isEmpty { Text("No selectable models are available from this provider.").foregroundStyle(.secondary) }
+                if inventory.availableModels.isEmpty { Text("No selectable models are available from this provider.").foregroundStyle(DispatchStyle.secondary) }
             }
         }
-        .navigationTitle("Model and usage").navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle("Model and usage").navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a model")
         .task(id: runtimeID) { await load() }
         .refreshable { await load() }
@@ -118,11 +118,11 @@ private struct BotModelSelectionView: View {
     @State private var uncertain = false
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Use for \(botName)’s Bot Chat") {
-                    Text(selection.model).font(.headline).textSelection(.enabled)
+            DispatchForm {
+                DispatchSection("Use for \(botName)’s Bot Chat") {
+                    Text(selection.model).font(DispatchStyle.serif(23, relativeTo: .headline)).textSelection(.enabled)
                     LabeledContent("Provider", value: selection.provider)
-                    Text("The selected model can have different usage costs. The gateway checks its model selection rules before applying this change.").font(.subheadline).foregroundStyle(.secondary)
+                    Text("The selected model can have different usage costs. The gateway checks its model selection rules before applying this change.").font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                 }
                 if let warning { PhoneNotice(title: "Confirm model change", message: warning) }
                 if let error { PhoneNotice(title: "Could not change model", message: error) }
@@ -133,7 +133,7 @@ private struct BotModelSelectionView: View {
                         .disabled(working || uncertain)
                 }
             }
-            .navigationTitle("Select model").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Select model").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.disabled(working) } }
             .interactiveDismissDisabled(working)
         }
@@ -159,17 +159,17 @@ private struct BotModelSelectionView: View {
 private struct BotUsageSection: View {
     let usage: JSON
     var body: some View {
-        Section("Provider usage") {
+        DispatchSection("Provider usage") {
             if !usage["accounts"].array.isEmpty {
                 ForEach(Array(usage["accounts"].array.enumerated()), id: \.offset) { index, account in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text((account["label"].string ?? "").isEmpty ? "Account \(index + 1)" : account["label"].string!).font(.headline)
-                        Text(account["state"].string ?? "unknown").font(.subheadline).foregroundStyle(.secondary)
+                        Text((account["label"].string ?? "").isEmpty ? "Account \(index + 1)" : account["label"].string!).font(DispatchStyle.serif(23, relativeTo: .headline))
+                        Text(account["state"].string ?? "unknown").font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                         usageWindows(account["windows"].array)
                     }.padding(.vertical, 4)
                 }
             } else if !usage["windows"].array.isEmpty { usageWindows(usage["windows"].array) }
-            else { Text("Live usage is not available for this provider.").foregroundStyle(.secondary) }
+            else { Text("Live usage is not available for this provider.").foregroundStyle(DispatchStyle.secondary) }
         }
     }
     @ViewBuilder private func usageWindows(_ windows: [JSON]) -> some View {
@@ -178,7 +178,7 @@ private struct BotUsageSection: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\(window["label"].string ?? "Usage"): \(used, specifier: "%.0f")% used").font(.subheadline)
                     ProgressView(value: min(100, max(0, used)), total: 100).accessibilityHidden(true)
-                    if let resets = window["resets_at"].string { Text("Resets: \(resets)").font(.subheadline).foregroundStyle(.secondary) }
+                    if let resets = window["resets_at"].string { Text("Resets: \(resets)").font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
                 }
             }
         }

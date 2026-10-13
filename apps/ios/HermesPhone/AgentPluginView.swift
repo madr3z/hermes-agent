@@ -21,43 +21,43 @@ private struct AgentPluginPage: View {
         _state = State(initialValue: AgentPluginStore(id: pluginID))
     }
     var body: some View {
-        List {
-            Section { BotIdentityLabel(name: bot.name, detail: "Agent plugin on this bot") } footer: {
+        DispatchList {
+            DispatchSection { BotIdentityLabel(name: bot.name, detail: "Agent plugin on this bot") } footer: {
                 Text("These controls manage this bot's agent plugin. Mac desktop extensions are managed in the Mac app.")
             }
-            if state.loading || state.working { Section { ProgressView(state.working ? "Applying plugin action…" : "Reading plugin…") } }
-            if let error = connectionError ?? state.error { Section { PhoneNotice(title: "Plugin action unavailable", message: error) } }
-            if let notice = state.notice { Section { PhoneNotice(title: "Plugin result", message: notice, systemImage: "info.circle") } }
+            if state.loading || state.working { DispatchSection { ProgressView(state.working ? "Applying plugin action…" : "Reading plugin…") } }
+            if let error = connectionError ?? state.error { DispatchSection { PhoneNotice(title: "Plugin action unavailable", message: error) } }
+            if let notice = state.notice { DispatchSection { PhoneNotice(title: "Plugin result", message: notice, systemImage: "info.circle") } }
             if let record = state.record {
-                Section(record.plugin.name) {
+                DispatchSection(record.plugin.name) {
                     if !record.plugin.description.isEmpty { Text(record.plugin.description) }
                     LabeledContent("Agent status", value: record.plugin.status)
                     PluginProvenance(record: record)
-                    if record.hasDesktopHalf { Text("This package also has a Mac desktop extension. It is not loaded or controlled by this iPhone.").font(.footnote).foregroundStyle(.secondary) }
+                    if record.hasDesktopHalf { Text("This package also has a Mac desktop extension. It is not loaded or controlled by this iPhone.").font(.footnote).foregroundStyle(DispatchStyle.secondary) }
                 }
-                Section("Manage agent plugin") {
+                DispatchSection("Manage agent plugin") {
                     if record.canToggle {
                         Button(record.enabled ? "Disable…" : "Enable…") { review = PluginActionSelection(action: record.enabled ? .disable : .enable, record: record) }
-                    } else { Text("This gateway did not report a supported activation state and canonical key.").foregroundStyle(.secondary) }
+                    } else { Text("This gateway did not report a supported activation state and canonical key.").foregroundStyle(DispatchStyle.secondary) }
                     if record.canUpdate { Button("Update to current catalog pin…") { review = PluginActionSelection(action: .update, record: record) } }
-                    else if record.canRemove, record.catalogName == nil { Text("Custom-source updates use the Hermes CLI on this bot. Catalog updates use a pinned commit.").font(.footnote).foregroundStyle(.secondary) }
+                    else if record.canRemove, record.catalogName == nil { Text("Custom-source updates use the Hermes CLI on this bot. Catalog updates use a pinned commit.").font(.footnote).foregroundStyle(DispatchStyle.secondary) }
                     if record.canRemove { Button("Remove…", role: .destructive) { review = PluginActionSelection(action: .remove, record: record) } }
-                    else { Text("Bundled and entry-point plugins cannot be removed here.").font(.footnote).foregroundStyle(.secondary) }
+                    else { Text("Bundled and entry-point plugins cannot be removed here.").font(.footnote).foregroundStyle(DispatchStyle.secondary) }
                 }.disabled(!state.canAct)
-            } else if state.removed { Section { Text("This plugin is no longer installed on this bot.").foregroundStyle(.secondary) } }
+            } else if state.removed { DispatchSection { Text("This plugin is no longer installed on this bot.").foregroundStyle(DispatchStyle.secondary) } }
             if let update = state.updateReview {
-                Section("Update requires a new grant") {
+                DispatchSection("Update requires a new grant") {
                     Text("Reviewed commit: " + update.sha).font(.footnote.monospaced()).textSelection(.enabled)
                     ForEach(update.lines, id: \.self) { Text($0).font(.subheadline) }
                     if update.binding != nil, let record = state.record {
                         Button("Review and confirm added access…") { review = PluginActionSelection(action: .update, record: record, updateReview: update) }.disabled(!state.canAct)
                     } else {
-                        Text("The installed plugin was kept. Update the gateway before confirming this added access from iPhone.").font(.footnote).foregroundStyle(.secondary)
+                        Text("The installed plugin was kept. Update the gateway before confirming this added access from iPhone.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                     }
                 }
             }
         }
-        .navigationTitle(state.record?.plugin.name ?? "Agent plugin")
+        .dispatchTitle(state.record?.plugin.name ?? "Agent plugin")
         .navigationBarTitleDisplayMode(.inline)
         .task { await connect() }
         .refreshable { await refresh() }
@@ -115,12 +115,12 @@ private struct PluginActionReview: View {
     let state: AgentPluginStore
     var body: some View {
         NavigationStack {
-            Form {
-                Section { BotIdentityLabel(name: botName, detail: selection.record.plugin.name) }
-                Section("Source and revision") { PluginProvenance(record: selection.record) }
-                Section { Text(selection.explanation) }
+            DispatchForm {
+                DispatchSection { BotIdentityLabel(name: botName, detail: selection.record.plugin.name) }
+                DispatchSection("Source and revision") { PluginProvenance(record: selection.record) }
+                DispatchSection { Text(selection.explanation) }
                 if let update = selection.updateReview {
-                    Section("Exact update and added access") {
+                    DispatchSection("Exact update and added access") {
                         Text(update.sha).font(.footnote.monospaced()).textSelection(.enabled)
                         ForEach(update.lines, id: \.self) { Text($0) }
                     }
@@ -131,7 +131,7 @@ private struct PluginActionReview: View {
                 }.disabled(!state.canAct)
                 if state.working { ProgressView("Waiting for this bot's gateway…") }
             }
-            .navigationTitle(selection.action.title).navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle(selection.action.title).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(state.working) } }
         }.interactiveDismissDisabled(state.working)
     }

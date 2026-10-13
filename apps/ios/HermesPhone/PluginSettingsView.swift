@@ -22,21 +22,21 @@ struct PluginSettingsView: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
-                Section { BotIdentityLabel(name: connectors.bot.name, detail: plugin.name + " settings") } footer: { Text("Settings stay on this bot’s gateway. Saved secret values are never read back to this iPhone.") }
+            DispatchForm {
+                DispatchSection { BotIdentityLabel(name: connectors.bot.name, detail: plugin.name + " settings") } footer: { Text("Settings stay on this bot’s gateway. Saved secret values are never read back to this iPhone.") }
                 ForEach(plugin.settings, id: \.self) { field in
-                    Section(field["label"].string ?? field["key"].string ?? "Setting") {
+                    DispatchSection(field["label"].string ?? field["key"].string ?? "Setting") {
                         editor(field)
-                        if let description = field["description"].string, !description.isEmpty { Text(description).font(.footnote).foregroundStyle(.secondary) }
+                        if let description = field["description"].string, !description.isEmpty { Text(description).font(.footnote).foregroundStyle(DispatchStyle.secondary) }
                     }
                 }
                 if let error { PhoneNotice(title: "Check these settings", message: error) }
                 if let error = connectors.error { PhoneNotice(title: "Could not save", message: error) }
-                Button("Save settings", action: save).buttonStyle(.borderedProminent).frame(maxWidth: .infinity).listRowBackground(Color.clear).disabled(connectors.working)
+                Button("Save settings", action: save).buttonStyle(DispatchPrimaryButtonStyle()).frame(maxWidth: .infinity).listRowBackground(Color.clear).disabled(connectors.working)
                 if connectors.working { ProgressView("Saving settings…") }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(plugin.name).navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle(plugin.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connectors.working) } }
         }.interactiveDismissDisabled(connectors.working).onDisappear { secrets.removeAll() }
     }

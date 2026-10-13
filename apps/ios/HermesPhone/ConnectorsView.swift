@@ -19,14 +19,14 @@ private struct BotConnectorsView: View {
         _connectors = State(initialValue: ConnectorsStore(bot: bot))
     }
     var body: some View {
-        List {
-            Section {
+        DispatchList {
+            DispatchSection {
                 BotIdentityLabel(name: bot.name, detail: "Connections for this bot")
             } footer: {
                 Text("Credentials stay on this bot’s gateway. New tools apply in a new session.")
             }
             if connectors.loading || connectors.working || connectors.error != nil || connectors.notice != nil {
-                Section {
+                DispatchSection {
                     if connectors.loading { ProgressView("Loading connections…") }
                     if connectors.working { ProgressView("Saving on gateway…") }
                     if let error = connectors.error { PhoneNotice(title: "Could not complete the request", message: error) }
@@ -34,7 +34,7 @@ private struct BotConnectorsView: View {
                 }
             }
             mcpSection
-            Section {
+            DispatchSection {
                 Button("Add iCloud account", systemImage: "icloud") { sheet = .icloud }
                 Menu("Add another account", systemImage: "person.crop.circle.badge.plus") {
                     Button("HTTPS / OAuth / bearer") { sheet = .mcp }
@@ -49,7 +49,7 @@ private struct BotConnectorsView: View {
             pluginSection
             hostedSection
         }
-        .navigationTitle("Connectors")
+        .dispatchTitle("Connectors")
         .navigationBarTitleDisplayMode(.inline)
         .task { await connectors.load(store: store) }
         .refreshable { await connectors.load(store: store) }
@@ -77,42 +77,42 @@ private struct BotConnectorsView: View {
         } message: { Text("This disconnects this account and removes its local OAuth grant and unshared account credentials. Other accounts are kept. It does not revoke access at the provider.") }
     }
     private var mcpSection: some View {
-        Section("Connected accounts") {
+        DispatchSection("Connected accounts") {
             ForEach(connectors.servers) { server in
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
                         if !typeSize.isAccessibilitySize {
                             Image(systemName: server.provider.contains("icloud") ? "icloud" : "puzzlepiece.extension")
-                                .font(.title3).foregroundStyle(.tint)
+                                .font(.title3).foregroundStyle(DispatchStyle.forest)
                                 .frame(width: 40, height: 40)
-                                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                                .background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 12))
                                 .accessibilityHidden(true)
                         }
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(server.label).font(.headline)
+                            Text(server.label).font(DispatchStyle.serif(23, relativeTo: .headline))
                             if let identity = server.verifiedIdentity {
-                                Text(identity).font(.subheadline).foregroundStyle(.secondary)
+                                Text(identity).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                                     .accessibilityLabel("Verified account: " + identity)
                             } else if !server.requestedIdentity.isEmpty {
-                                Text(server.requestedIdentity).font(.subheadline).foregroundStyle(.secondary)
-                                Text("Account not yet verified").font(.caption).foregroundStyle(.secondary)
-                            } else { Text(server.provider).font(.subheadline).foregroundStyle(.secondary) }
+                                Text(server.requestedIdentity).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
+                                Text("Account not yet verified").font(.caption).foregroundStyle(DispatchStyle.secondary)
+                            } else { Text(server.provider).font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
                         }
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Label(!server.enabled ? "Disabled" : server.auth == "oauth" && !server.authorized ? "Sign-in required" : server.status.capitalized,
                           systemImage: !server.enabled ? "pause.circle" : server.auth == "oauth" && !server.authorized ? "person.crop.circle.badge.exclamationmark" : "link")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                     if server.auth == "oauth" {
                         Button(server.authorized ? "Reconnect account" : "Sign in", systemImage: "person.crop.circle") { sheet = .oauth(server) }
-                            .font(.subheadline).buttonStyle(.bordered).controlSize(.large)
+                            .font(.subheadline).buttonStyle(DispatchSecondaryButtonStyle()).controlSize(.large)
                     }
                     DisclosureGroup("Connection details") {
                         VStack(alignment: .leading, spacing: 8) {
                             LabeledContent("Provider", value: server.provider)
                             LabeledContent("Transport", value: server.transport)
                             Text("Account ID: " + server.id).font(.caption.monospaced()).textSelection(.enabled)
-                            Text(server.target).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            Text(server.target).font(.caption).foregroundStyle(DispatchStyle.secondary).textSelection(.enabled)
                             if server.auth == "oauth", server.authorized { Text("OAuth authorization saved").font(.caption) }
                             if let plugin = server.plugin { Text("Managed by plugin \(plugin)").font(.footnote) }
                             else {
@@ -122,7 +122,7 @@ private struct BotConnectorsView: View {
                                 }
                             }
                         }.padding(.top, 8)
-                    }.font(.subheadline).tint(.secondary).frame(minHeight: 44)
+                    }.font(.subheadline).tint(DispatchStyle.secondary).frame(minHeight: 44)
                 }.padding(.vertical, 10)
             }
             sectionError("MCP servers")
@@ -138,14 +138,14 @@ private struct BotConnectorsView: View {
         Button("Remove…", role: .destructive) { removal = server }.frame(minHeight: 44).buttonStyle(.borderless)
     }
     private var pluginSection: some View {
-        Section("Plugins") {
+        DispatchSection("Plugins") {
             ForEach(connectors.plugins) { plugin in
                 VStack(alignment: .leading, spacing: 6) {
                     NavigationLink {
                         AgentPluginView(pluginID: plugin.id, bot: bot, store: store)
                             .onDisappear { Task { await connectors.load(store: store) } }
-                    } label: { Text(plugin.name).font(.headline) }
-                    Text(plugin.status).font(.caption).foregroundStyle(.secondary)
+                    } label: { Text(plugin.name).font(DispatchStyle.serif(23, relativeTo: .headline)) }
+                    Text(plugin.status).font(.caption).foregroundStyle(DispatchStyle.secondary)
                     if !plugin.settings.isEmpty { Button("Settings") { sheet = .pluginSettings(plugin) }.font(.caption) }
                 }
             }
@@ -154,23 +154,23 @@ private struct BotConnectorsView: View {
             Button("Install from Git URL…") { sheet = .customPlugin }.disabled(connectors.api == nil || connectors.working || connectors.loading)
             sectionError("Plugin catalog")
             Text("The Hermes catalog is the supported marketplace. Custom Git sources require a pinned commit and your confirmation.")
-                .font(.footnote).foregroundStyle(.secondary)
+                .font(.footnote).foregroundStyle(DispatchStyle.secondary)
         }
     }
     private var hostedSection: some View {
-        Section("Hosted accounts") {
+        DispatchSection("Hosted accounts") {
             ForEach(connectors.accounts) { account in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(account.connector).font(.headline)
+                    Text(account.connector).font(DispatchStyle.serif(23, relativeTo: .headline))
                     Text(account.label)
-                    if let alias = account.alias { Text(alias).font(.caption).foregroundStyle(.secondary) }
-                    Text("\(account.status)\(account.active ? " · Provider's active account" : "")").font(.caption).foregroundStyle(.secondary)
+                    if let alias = account.alias { Text(alias).font(.caption).foregroundStyle(DispatchStyle.secondary) }
+                    Text("\(account.status)\(account.active ? " · Provider's active account" : "")").font(.caption).foregroundStyle(DispatchStyle.secondary)
                 }
             }
             sectionError("Hosted accounts")
-            if connectors.accounts.isEmpty, connectors.sectionErrors["Hosted accounts"] == nil, !connectors.loading { Text("No hosted accounts connected.").foregroundStyle(.secondary) }
+            if connectors.accounts.isEmpty, connectors.sectionErrors["Hosted accounts"] == nil, !connectors.loading { Text("No hosted accounts connected.").foregroundStyle(DispatchStyle.secondary) }
             Text("Account inventory is read-only here. Independent selection of several accounts for the same hosted connector is not supported by the current Hermes integration. Manage hosted sign-in on your Mac.")
-                .font(.footnote).foregroundStyle(.secondary)
+                .font(.footnote).foregroundStyle(DispatchStyle.secondary)
         }
     }
     @ViewBuilder private func sectionError(_ key: String) -> some View {

@@ -10,9 +10,9 @@ struct AddMCPView: View {
     @State private var confirming = false
     var body: some View {
         NavigationStack {
-            Form {
-                Section { BotIdentityLabel(name: connectors.bot.name, detail: "MCP server") }
-                Section("Server details") {
+            DispatchForm {
+                DispatchSection { BotIdentityLabel(name: connectors.bot.name, detail: "MCP server") }
+                DispatchSection("Server details") {
                     TextField("Account label, e.g. Work mail", text: $draft.name).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("mcpAccountName")
                     TextField("Provider, e.g. custom-mcp", text: $draft.provider).textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Expected account identity (optional)", text: $draft.requestedIdentity).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -27,7 +27,7 @@ struct AddMCPView: View {
                         if !draft.oauth { SecureField("Bearer token (optional)", text: $draft.bearer).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive() }
                     }
                 }
-                Section { Text("Each account gets its own ID and credentials. Labels can repeat. Requested identity is not verified identity. Credentials stay on the selected bot's gateway. For OAuth servers, save first, then choose Sign in. Some providers require sign-in on your Mac.").font(.footnote) }
+                DispatchSection { Text("Each account gets its own ID and credentials. Labels can repeat. Requested identity is not verified identity. Credentials stay on the selected bot's gateway. For OAuth servers, save first, then choose Sign in. Some providers require sign-in on your Mac.").font(.footnote) }
                 if let error { PhoneNotice(title: "Check these details", message: error) }
                 if let error = connectors.error { PhoneNotice(title: "Could not save", message: error) }
                 Button {
@@ -36,10 +36,10 @@ struct AddMCPView: View {
                         error = nil; confirming = true
                     } catch { self.error = error.localizedDescription }
                 } label: { Label("Review server", systemImage: "checkmark.circle") }
-                .buttonStyle(.borderedProminent).frame(maxWidth: .infinity).listRowBackground(Color.clear).disabled(connectors.working)
+                .buttonStyle(DispatchPrimaryButtonStyle()).frame(maxWidth: .infinity).listRowBackground(Color.clear).disabled(connectors.working)
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Add MCP server").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Add MCP server").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connectors.working) } }
             .confirmationDialog("Save \(draft.name) on \(connectors.bot.name)?", isPresented: $confirming, titleVisibility: .visible) {
                 Button("Save server") {
@@ -64,8 +64,8 @@ struct MCPCredentialView: View {
     @State private var value = ""
     var body: some View {
         NavigationStack {
-            Form {
-                Section(server.label) {
+            DispatchForm {
+                DispatchSection(server.label) {
                     SecureField("Bearer token", text: $value).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
                     Text("Save a new credential on \(connectors.bot.name). The current credential is never sent to this phone.").font(.footnote)
                 }
@@ -78,7 +78,7 @@ struct MCPCredentialView: View {
                 }.disabled(value.isEmpty || connectors.working)
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Server credential").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Server credential").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connectors.working) } }
         }.interactiveDismissDisabled(connectors.working).onDisappear { value = "" }
     }
@@ -94,8 +94,8 @@ struct CustomPluginView: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Custom plugin") {
+            DispatchForm {
+                DispatchSection("Custom plugin") {
                     TextField("https://github.com/owner/repository", text: $repo).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     TextField("Full commit SHA (40 hex characters)", text: $sha).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Text("A custom source is not part of the reviewed Hermes catalog. This installs code on \(connectors.bot.name).").font(.footnote)
@@ -107,7 +107,7 @@ struct CustomPluginView: View {
                 }.disabled(connectors.working)
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Install plugin").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Install plugin").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .sheet(item: $review) { PluginInstallReviewView(review: $0, connectors: connectors, store: store) }
         }
@@ -122,21 +122,21 @@ struct PluginCatalogView: View {
     @State private var review: PluginInstallReview?
     var body: some View {
         NavigationStack {
-            List {
-                Section { Text("Plugins run on \(connectors.bot.name)'s gateway. Check the supported platforms before installing.").font(.footnote).foregroundStyle(.secondary) }
+            DispatchList {
+                DispatchSection { Text("Plugins run on \(connectors.bot.name)'s gateway. Check the supported platforms before installing.").font(.footnote).foregroundStyle(DispatchStyle.secondary) }
                 ForEach(connectors.catalog.filter { query.isEmpty || ($0.title + " " + $0.description).localizedCaseInsensitiveContains(query) }) { plugin in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(plugin.title).font(.headline)
-                        Text(plugin.description).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                        Text(plugin.title).font(DispatchStyle.serif(23, relativeTo: .headline))
+                        Text(plugin.description).font(.caption).foregroundStyle(DispatchStyle.secondary).lineLimit(4)
                         Text("\(plugin.tier) · \(plugin.platforms.isEmpty ? "All platforms" : plugin.platforms.joined(separator: ", "))").font(.caption)
-                        if plugin.installed { Text("Installed").font(.caption).foregroundStyle(.secondary) }
+                        if plugin.installed { Text("Installed").font(.caption).foregroundStyle(DispatchStyle.secondary) }
                         else { Button("Review installation") { review = PluginInstallReview(catalog: plugin) }.font(.caption).disabled(connectors.working) }
                     }.padding(.vertical, 4)
                 }
             }
             .searchable(text: $query)
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Hermes catalog").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Hermes catalog").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .sheet(item: $review) { PluginInstallReviewView(review: $0, connectors: connectors, store: store) }
         }
@@ -150,14 +150,14 @@ struct PluginInstallReviewView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
-            Form {
-                Section(review.title) {
+            DispatchForm {
+                DispatchSection(review.title) {
                     Text(review.description)
                     LabeledContent("Bot", value: connectors.bot.name)
                     Text(review.repo).font(.caption).textSelection(.enabled)
                     Text("Commit: " + review.sha).font(.caption.monospaced()).textSelection(.enabled)
                 }
-                Section {
+                DispatchSection {
                     Text("Installing allows this plugin to run on the bot's VM. Review the source and its capabilities before you continue. Existing Hermes scan and compatibility checks still apply.").font(.footnote)
                     if let error = connectors.error { PhoneNotice(title: "Could not save", message: error) }
                     if connectors.working { ProgressView("Installing…") }
@@ -167,7 +167,7 @@ struct PluginInstallReviewView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Review installation").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Review installation").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(connectors.working) } }
         }.interactiveDismissDisabled(connectors.working)
     }

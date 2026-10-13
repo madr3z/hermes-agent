@@ -13,11 +13,11 @@ struct BotSkillsView: View {
         model.skills.filter { search.isEmpty || ($0.name + " " + $0.category + " " + $0.description).localizedCaseInsensitiveContains(search) }
     }
     var body: some View {
-        List {
-            Section {
+        DispatchList {
+            DispatchSection {
                 BotIdentityLabel(name: bot.name, detail: "Installed skills")
                 Text("Use Commands in Bot Chat to choose an installed skill, add arguments, then send. Saved skill settings apply to new sessions; the current chat keeps its loaded instructions.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                 if let api {
                     NavigationLink("Browse skill hub") { BotSkillHubView(bot: bot, api: api, model: model) }
                     NavigationLink("Inspect memory") { BotMemoryView(bot: bot, store: store) }
@@ -25,19 +25,19 @@ struct BotSkillsView: View {
             }
             if model.loading { ProgressView("Loading skills…") }
             if let error = model.error { PhoneNotice(title: "Skills unavailable", message: error) }
-            if let notice = model.notice { Text(notice).font(.footnote).foregroundStyle(.secondary) }
+            if let notice = model.notice { Text(notice).font(.footnote).foregroundStyle(DispatchStyle.secondary) }
             if !model.loading && model.error == nil && model.skills.isEmpty {
-                ContentUnavailableView("No installed skills", systemImage: "books.vertical")
-            } else if !model.skills.isEmpty && visible.isEmpty { ContentUnavailableView.search(text: search) }
+                DispatchEmptyState("No installed skills", systemImage: "books.vertical")
+            } else if !model.skills.isEmpty && visible.isEmpty { DispatchEmptyState.search(text: search) }
             ForEach(visible) { skill in
-                Section {
+                DispatchSection {
                     if let api {
                         NavigationLink { BotSkillContentView(bot: bot, skill: skill, api: api) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(skill.name).font(.headline)
+                                Text(skill.name).font(DispatchStyle.serif(23, relativeTo: .headline))
                                 if !skill.description.isEmpty { Text(skill.description).font(.subheadline) }
                                 Text("\(skill.category) · \(skill.provenance) · \(skill.enabled ? "Enabled" : "Disabled")")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.caption).foregroundStyle(DispatchStyle.secondary)
                             }
                         }
                     }
@@ -46,7 +46,7 @@ struct BotSkillsView: View {
                 }
             }
         }
-        .navigationTitle("Skills").navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle("Skills").navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a skill or category")
         .task(id: bot.id) { await connect() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.refresh() } } }
@@ -82,14 +82,14 @@ struct BotSkillContentView: View {
     @State private var content: String?
     @State private var error: String?
     var body: some View {
-        List {
+        DispatchList {
             BotIdentityLabel(name: bot.name, detail: skill.name)
-            Text("Installed instructions · \(skill.provenance)").font(.footnote).foregroundStyle(.secondary)
+            Text("Installed instructions · \(skill.provenance)").font(.footnote).foregroundStyle(DispatchStyle.secondary)
             if let error { PhoneNotice(title: "Instructions unavailable", message: error) }
             if let content { Text(content).font(.system(.body, design: .monospaced)).textSelection(.enabled) }
             else if error == nil { ProgressView("Loading instructions…") }
         }
-        .navigationTitle(skill.name).navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle(skill.name).navigationBarTitleDisplayMode(.inline)
         .task { await load() }.refreshable { await load() }
     }
     private func load() async {

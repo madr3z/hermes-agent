@@ -33,7 +33,7 @@ struct ChatView: View {
                     if chat.loading && chat.messages.isEmpty {
                         ProgressView("Opening conversation…").frame(maxWidth: .infinity).padding(.vertical, 40)
                     } else if chat.messages.isEmpty {
-                        ContentUnavailableView("Talk to \(chat.bot.name)", systemImage: "bubble.left.and.bubble.right", description: Text("Send a message, attach a file or start a voice call. Your conversation stays on this bot’s gateway."))
+                        DispatchEmptyState("Talk to \(chat.bot.name)", systemImage: "bubble.left.and.bubble.right", description: Text("Send a message, attach a file or start a voice call. Your conversation stays on this bot’s gateway."))
                     }
                     ForEach(chat.messages) { message in ChatMessageView(message: message, client: chat.client, profile: chat.bot.profile, storedSessionID: chat.storedSessionID, botName: chat.bot.name).id(message.id) }
                     LoginHandoffCards(chat: chat)
@@ -65,14 +65,15 @@ struct ChatView: View {
         .onAppear { chatVisible = true; updateRaiseTarget() }
         .onDisappear { chatVisible = false; raiseToCall.hideChat(chat) }
         .onChange(of: obscuresChat) { _, _ in updateRaiseTarget() }
+        .dispatchPage()
         .navigationTitle(chat.bot.name).navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(DispatchStyle.paper, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {
-                    Text(chat.bot.name).font(.headline)
+                    Text(chat.bot.name).font(DispatchStyle.serif(23, relativeTo: .headline))
                     Text(store.endpoints.first(where: { $0.id == chat.bot.endpointID })?.label ?? "Bot Chat")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.caption).foregroundStyle(DispatchStyle.secondary).lineLimit(1)
                 }.accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -110,7 +111,7 @@ struct ChatView: View {
                     case .agents: SubagentsView(chat: chat)
                     case .model: BotModelView(bot: chat.bot, store: store, runtimeID: chat.runtimeID)
                     case .browser: VMControlView(bot: chat.bot, store: store, chat: chat)
-                    case .profile: Text("Return to the bot list to choose a bot. Each bot keeps its own conversation and settings.").padding(20)
+                    case .profile: Text("Return to the bot list to choose a bot. Each bot keeps its own conversation and settings.").padding(24).dispatchTitle("Bots")
                     }
                 }.toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { chat.commands.route = nil } } }
             }
@@ -143,9 +144,9 @@ struct ChatView: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(completion.display).font(.subheadline.weight(.medium))
-                                    if !completion.detail.isEmpty { Text(completion.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                                }.padding(10).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                            }.tint(.primary).disabled(chat.sending)
+                                    if !completion.detail.isEmpty { Text(completion.detail).font(.caption).foregroundStyle(DispatchStyle.secondary).lineLimit(1) }
+                                }.padding(10).background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 12))
+                            }.tint(DispatchStyle.forest).disabled(chat.sending)
                         }
                     }
                 }.accessibilityLabel("Command suggestions")
@@ -161,7 +162,7 @@ struct ChatView: View {
             if !chat.connected || chat.busy {
                 HStack {
                     Label(chat.status, systemImage: chat.connected ? "checkmark.circle" : "network")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        .font(.caption).foregroundStyle(DispatchStyle.secondary).lineLimit(2)
                         .accessibilityLabel("Connection status: \(chat.status)")
                     Spacer()
                     if chat.busy {
@@ -182,7 +183,7 @@ struct ChatView: View {
                                     Image(systemName: "xmark.circle.fill").frame(minWidth: 44, minHeight: 44)
                                 }.accessibilityLabel("Remove \(upload.name)")
                             }.font(.subheadline).padding(.leading, 12)
-                                .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12))
+                                .background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 12))
                         }
                     }
                 }.disabled(chat.sending)
@@ -193,13 +194,13 @@ struct ChatView: View {
                     Button("Files", systemImage: "doc") { composerFocused = false; showFiles = true }
                     Button("Saved chats", systemImage: "clock") { composerFocused = false; showSavedChats = true }
                     Button("Commands", systemImage: "command") { composerFocused = false; chat.commands.route = .help }
-                } label: { Image(systemName: "plus").font(.title3).frame(width: 44, height: 44) }
+                } label: { Image(systemName: "paperclip").font(.title3).frame(width: 44, height: 44) }
                 .accessibilityLabel("Attach photos or files").disabled(chat.sending || importingPhotos)
                 ChatComposer(text: $chat.draft, focused: Binding(get: { composerFocused }, set: { composerFocused = $0 }), placeholder: "Message \(chat.bot.name)") { providers in
                     Task { await importPasted(providers) }
                 }
                 .overlay(alignment: .topLeading) {
-                    if chat.draft.isEmpty { Text("Message \(chat.bot.name)").foregroundStyle(.tertiary).allowsHitTesting(false) }
+                    if chat.draft.isEmpty { Text("Message \(chat.bot.name)").foregroundStyle(DispatchStyle.secondary).allowsHitTesting(false) }
                 }
                 .padding(.vertical, 12)
                 Button { Task { await chat.send() } } label: {
@@ -209,9 +210,9 @@ struct ChatView: View {
                 .accessibilityLabel(chat.busy ? "Queue message" : "Send message")
             }
             .padding(.horizontal, 6)
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28))
-            .overlay { RoundedRectangle(cornerRadius: 28).strokeBorder(Color.primary.opacity(0.07)) }
-        }.padding(.horizontal, 16).padding(.vertical, 10).background(.bar)
+            .background(DispatchStyle.paper, in: RoundedRectangle(cornerRadius: 28))
+            .overlay { RoundedRectangle(cornerRadius: 28).strokeBorder(DispatchStyle.rule) }
+        }.padding(.horizontal, 16).padding(.vertical, 10).background(DispatchStyle.paper)
     }
     private func importPasted(_ providers: [NSItemProvider]) async {
         guard !importingPhotos, !chat.sending else { return }

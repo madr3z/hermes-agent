@@ -11,24 +11,24 @@ struct ChatActivityView: View {
             HStack(alignment: .top, spacing: 10) {
                 if activity.isAnimating {
                     if reduceMotion {
-                        Image(systemName: "ellipsis.bubble").foregroundStyle(.tint).accessibilityHidden(true)
+                        Image(systemName: "ellipsis.bubble").foregroundStyle(DispatchStyle.forest).accessibilityHidden(true)
                     } else {
                         ProgressView().controlSize(.small).accessibilityHidden(true)
                     }
                 } else {
-                    Image(systemName: "person.crop.circle.badge.questionmark").foregroundStyle(.tint).accessibilityHidden(true)
+                    Image(systemName: "person.crop.circle.badge.questionmark").foregroundStyle(DispatchStyle.forest).accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(activity.title).font(.subheadline.weight(.medium))
                         .accessibilityLabel("\(botName): \(activity.title)")
                     if let detail = activity.detail {
-                        Text(detail).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(detail).font(.subheadline).foregroundStyle(DispatchStyle.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
             }
             .padding(14)
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 14))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("chatActivity")
         }

@@ -17,22 +17,22 @@ struct ChatMessageView: View {
             } label: {
                 HStack(spacing: 8) {
                     if message.toolRunning { ProgressView().controlSize(.mini) }
-                    else { Image(systemName: "checkmark.circle").foregroundStyle(.secondary) }
+                    else { Image(systemName: "checkmark.circle").foregroundStyle(DispatchStyle.secondary) }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(name.replacingOccurrences(of: "_", with: " ").capitalized).font(.subheadline.weight(.medium))
-                        Text(message.toolRunning ? "Working…" : "View result").font(.caption).foregroundStyle(.secondary)
+                        Text(message.toolRunning ? "Working…" : "View result").font(.caption).foregroundStyle(DispatchStyle.secondary)
                     }
                 }
-            }.padding(12).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+            }.padding(12).background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 16))
         } else {
             HStack(alignment: .top) {
                 if message.role == "user" { Spacer(minLength: 36) }
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 6) {
-                        if message.role != "user" { Image(systemName: "sparkles").foregroundStyle(.tint).accessibilityHidden(true) }
-                        Text(message.role == "user" ? "You" : botName).foregroundStyle(.secondary)
+                        if message.role != "user" { Image(systemName: "sparkles").foregroundStyle(DispatchStyle.forest).accessibilityHidden(true) }
+                        Text(message.role == "user" ? "You" : botName).foregroundStyle(DispatchStyle.secondary)
                     }.font(.caption.weight(.semibold))
-                    if message.voice { Label("GPT Live", systemImage: "waveform").font(.caption).foregroundStyle(.secondary) }
+                    if message.voice { Label("GPT Live", systemImage: "waveform").font(.caption).foregroundStyle(DispatchStyle.secondary) }
                     let content = ChatContent.parse(message.text)
                     ForEach(content.blocks) { block in
                         if block.kind == .code { ChatCodeBlock(block: block) }
@@ -42,7 +42,7 @@ struct ChatMessageView: View {
                         ChatFileCard(attachment: attachment, client: client, profile: profile, storedSessionID: storedSessionID)
                     }
                 }.padding(message.role == "user" ? 16 : 0)
-                    .background(message.role == "user" ? Color.accentColor.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 20))
+                    .background(message.role == "user" ? DispatchStyle.wash : Color.clear, in: RoundedRectangle(cornerRadius: 20))
                 if message.role != "user" { Spacer(minLength: 12) }
             }
         }
@@ -61,11 +61,11 @@ private struct ChatMarkdown: View {
                 let body = isHeading ? String(line.dropFirst(heading + 1)) : quote || list ? String(line.dropFirst(2)) : line
                 HStack(alignment: .top, spacing: 8) {
                     if list { Text("•") }
-                    if quote { RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.4)).frame(width: 3) }
+                    if quote { RoundedRectangle(cornerRadius: 2).fill(DispatchStyle.forest.opacity(0.4)).frame(width: 3) }
                     Text((try? AttributedString(markdown: body, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(body))
-                        .font(isHeading ? (heading <= 2 ? .title3.weight(.semibold) : .headline) : .body)
+                        .font(isHeading ? DispatchStyle.serif(heading <= 2 ? 25 : 22, relativeTo: .headline) : .body)
                         .lineSpacing(4)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(DispatchStyle.ink)
                         .textSelection(.enabled)
                         .accessibilityAddTraits(isHeading ? .isHeader : [])
                 }.fixedSize(horizontal: false, vertical: true)
@@ -86,13 +86,13 @@ private struct ChatCodeBlock: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(block.language.isEmpty ? "Code" : block.language, systemImage: "chevron.left.forwardslash.chevron.right")
-                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    .font(.caption.weight(.medium)).foregroundStyle(DispatchStyle.secondary)
                 Spacer()
                 Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") { UIPasteboard.general.string = block.text; copied = true }.font(.subheadline).frame(minHeight: 44)
                     .accessibilityLabel(copied ? "Code copied" : "Copy code")
             }
             ScrollView(.horizontal) { Text(block.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: true, vertical: false) }
-        }.padding(14).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        }.padding(14).background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 16))
         .onChange(of: block.text) { _, _ in copied = false }
     }
 }

@@ -42,11 +42,11 @@ struct LoginHandoffCard: View {
             HStack(alignment: .top, spacing: 12) {
                 if !typeSize.isAccessibilitySize {
                     Image(systemName: request.status == "authorized" ? "checkmark.shield" : "person.badge.key")
-                        .font(.title2).foregroundStyle(.tint).accessibilityHidden(true)
+                        .font(.title2).foregroundStyle(DispatchStyle.forest).accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(request.status == "authorized" ? "Account connected" : "Sign in to continue").font(.headline)
-                    Text(request.name + " · " + botName).font(.subheadline).foregroundStyle(.secondary)
+                    Text(request.status == "authorized" ? "Account connected" : "Sign in to continue").font(DispatchStyle.serif(23, relativeTo: .headline))
+                    Text(request.name + " · " + botName).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                 }
             }
             Text(request.detail).font(.body).fixedSize(horizontal: false, vertical: true)
@@ -56,21 +56,21 @@ struct LoginHandoffCard: View {
             if !request.userCode.isEmpty {
                 Text(request.userCode).font(.title2.monospaced().weight(.semibold))
                     .textSelection(.enabled).accessibilityLabel("Device code \(request.userCode)")
-                Text("Enter this code only for the sign-in you requested.").font(.footnote).foregroundStyle(.secondary)
+                Text("Enter this code only for the sign-in you requested.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
             }
             DisclosureGroup("Permissions and account") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(request.scopes.isEmpty ? "Review the permissions on the provider’s consent screen." : request.scopes.joined(separator: ", "))
                     if !request.accountReference.isEmpty { Text("Account: \(request.accountReference)").textSelection(.enabled) }
                     Text("Authorization stays on this bot. Use Computer for other website logins.")
-                }.font(.footnote).foregroundStyle(.secondary).padding(.top, 6)
+                }.font(.footnote).foregroundStyle(DispatchStyle.secondary).padding(.top, 6)
             }.font(.subheadline).frame(minHeight: 44)
             if request.status == "authorized" {
                 if request.continued {
                     Label(request.continuationStatus == "unconfirmed" ? "Check this chat before sending another message." : "Task continuation submitted", systemImage: request.continuationStatus == "unconfirmed" ? "exclamationmark.circle" : "checkmark.circle").font(.subheadline)
                 } else {
                     Button("Confirm account and continue", action: continueTask)
-                        .buttonStyle(.borderedProminent).controlSize(.large).disabled(working)
+                        .buttonStyle(DispatchPrimaryButtonStyle()).controlSize(.large).disabled(working)
                 }
             } else {
                 ViewThatFits(in: .horizontal) {
@@ -80,12 +80,12 @@ struct LoginHandoffCard: View {
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
-        .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(Color.accentColor.opacity(0.15)) }
+        .background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 20))
+        .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(DispatchStyle.rule) }
     }
     @ViewBuilder private var actions: some View {
         Button(request.canRetry ? "Retry sign-in" : "Sign in", action: signIn)
-            .buttonStyle(.borderedProminent).controlSize(.large).disabled(working)
-        Button("Cancel", role: .cancel, action: cancel).buttonStyle(.bordered).controlSize(.large)
+            .buttonStyle(DispatchPrimaryButtonStyle()).controlSize(.large).disabled(working)
+        Button("Cancel", role: .cancel, action: cancel).buttonStyle(DispatchSecondaryButtonStyle()).controlSize(.large)
     }
 }

@@ -26,18 +26,18 @@ private struct ChatRequestCard: View {
         VStack(alignment: .leading, spacing: 14) {
             switch item.kind {
             case .approval(_, let command, let description, let choices):
-                Label("\(botName) needs approval", systemImage: "hand.raised").font(.headline)
+                Label("\(botName) needs approval", systemImage: "hand.raised").font(DispatchStyle.serif(23, relativeTo: .headline))
                 if !description.isEmpty { Text(description) }
                 if !command.isEmpty { Text(command).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
-                Text("Choose only if you authorize this action on this bot.").font(.caption).foregroundStyle(.secondary)
+                Text("Choose only if you authorize this action on this bot.").font(.caption).foregroundStyle(DispatchStyle.secondary)
                 ForEach(choices, id: \.self) { choice in
                     Button(ChatHumanRequest.choiceLabel(choice), role: choice == "deny" ? .destructive : nil) {
                         if choice == "deny" { Task { await store.answer(item, choice: choice) } }
                         else { confirmChoice = choice }
-                    }.buttonStyle(.bordered).frame(minHeight: 44)
+                    }.buttonStyle(DispatchSecondaryButtonStyle()).frame(minHeight: 44)
                 }
             case .clarify(let questions, let answers):
-                Label("\(botName) has a question", systemImage: "questionmark.bubble").font(.headline)
+                Label("\(botName) has a question", systemImage: "questionmark.bubble").font(DispatchStyle.serif(23, relativeTo: .headline))
                 ForEach(questions) { question in
                     ChatClarifyAnswerView(question: question, accepted: answers[question.id]) { answer in
                         Task { await store.lock(item, questionID: question.id, answer: answer) }
@@ -46,9 +46,9 @@ private struct ChatRequestCard: View {
                 Button("Cancel remaining questions", role: .destructive) { confirmCancel = true }.frame(minHeight: 44)
             }
             if store.working.contains(item.id) { ProgressView("Submitting your response…") }
-            if store.uncertain.contains(item.id) { Text("Response outcome is unconfirmed. Reconnect to restore the current request.").font(.caption).foregroundStyle(.secondary) }
+            if store.uncertain.contains(item.id) { Text("Response outcome is unconfirmed. Reconnect to restore the current request.").font(.caption).foregroundStyle(DispatchStyle.secondary) }
         }
-        .padding(16).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+        .padding(16).background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 18))
         .disabled(!store.connected || store.working.contains(item.id) || store.uncertain.contains(item.id))
         .task { await store.shown(item) }
         .confirmationDialog(confirmChoice.map(ChatHumanRequest.choiceLabel) ?? "Approve action", isPresented: Binding(get: { confirmChoice != nil }, set: { if !$0 { confirmChoice = nil } }), titleVisibility: .visible) {
@@ -74,7 +74,7 @@ private struct ChatClarifyAnswerView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(question.text).font(.subheadline.weight(.semibold))
             if let accepted {
-                Label(accepted == .null ? "Skipped" : accepted.string.map(question.displayAnswer) ?? "Answered", systemImage: "checkmark.circle").font(.subheadline).foregroundStyle(.secondary)
+                Label(accepted == .null ? "Skipped" : accepted.string.map(question.displayAnswer) ?? "Answered", systemImage: "checkmark.circle").font(.subheadline).foregroundStyle(DispatchStyle.secondary)
             } else {
                 ForEach(Array(question.choices.enumerated()), id: \.offset) { _, choice in
                     Button {
@@ -82,7 +82,7 @@ private struct ChatClarifyAnswerView: View {
                             if picks.contains(choice) { picks.remove(choice) } else { picks.insert(choice) }
                         } else { picks = [choice] }
                     } label: { Label(choice, systemImage: picks.contains(choice) ? "checkmark.circle.fill" : "circle").frame(maxWidth: .infinity, alignment: .leading) }
-                        .frame(minHeight: 44).buttonStyle(.bordered)
+                        .frame(minHeight: 44).buttonStyle(DispatchSecondaryButtonStyle())
                 }
                 TextField(question.choices.isEmpty ? "Your answer" : "Or write your answer", text: $text, axis: .vertical)
                     .textFieldStyle(.roundedBorder).lineLimit(1...5)

@@ -10,27 +10,27 @@ struct VMDeletionView: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Managed bot") {
+            DispatchForm {
+                DispatchSection("Managed bot") {
                     BotIdentityLabel(name: deletion.name, detail: deletion.phase.capitalized)
                 }
-                Section("Permanent deletion") {
+                DispatchSection("Permanent deletion") {
                     PhoneNotice(title: "Delete the bot and its machine", message: "This stops the bot and permanently removes its VM, workspace and files. Existing backups are retained.", systemImage: "trash")
                     if deletion.supported {
                         Button(deletion.receipt["phase"].string == "failed" ? "Try deletion again…" : "Delete Bot and VM…", role: .destructive) { confirming = true }.disabled(!deletion.canConfirm)
                         if deletion.missingReceipt {
                             Button("Retry same deletion") { Task { await deletion.retrySameOperation() } }.disabled(deletion.working)
                         }
-                    } else { Text("Deletion requires a managed VM and a controller that supports VM deletion.").foregroundStyle(.secondary) }
+                    } else { Text("Deletion requires a managed VM and a controller that supports VM deletion.").foregroundStyle(DispatchStyle.secondary) }
                     Button("Refresh status") { Task { await deletion.refresh() } }.disabled(deletion.working)
                     if deletion.deleted { Button("Finish local cleanup") { finish() } }
                     if deletion.working { ProgressView() }
                     if ["queued", "deleting"].contains(deletion.receipt["phase"].string ?? "") { Text("Deletion continues on the controller if you close this screen.").font(.footnote) }
-                    if let message = deletion.receipt["error"]["message"].string { Text(message).foregroundStyle(.red) }
+                    if let message = deletion.receipt["error"]["message"].string { Text(message).foregroundStyle(DispatchStyle.rust) }
                     if let message = deletion.error ?? error { PhoneNotice(title: "Deletion needs attention", message: message) }
                 }
             }
-            .navigationTitle("Delete managed bot").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Delete managed bot").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .alert("Delete \(deletion.name) and its VM?", isPresented: $confirming) {
                 Button("Delete Bot and VM", role: .destructive) { Task { await deletion.confirm() } }

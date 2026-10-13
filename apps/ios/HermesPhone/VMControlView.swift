@@ -24,29 +24,29 @@ struct VMControlView: View {
             } label: {
                 Label("\(control.bot.name) · \(power.phase.capitalized)", systemImage: "desktopcomputer")
                     .font(.subheadline.weight(.medium)).frame(minHeight: 44)
-            }.padding(.horizontal).background(Color(uiColor: .secondarySystemBackground))
+            }.padding(.horizontal).background(DispatchStyle.wash)
             Picker("Remote view", selection: $control.mode) {
                 ForEach(RemoteControl.Mode.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8)
             remoteStatus
             if control.controlling {
                 Text("Sign in in this bot’s browser. The bot’s screen and browser tools stay paused while you control it.")
-                    .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
+                    .font(.footnote).foregroundStyle(DispatchStyle.secondary).padding(.horizontal)
             }
             RemoteSurface(control: control)
                 .overlay {
                     if !control.connected {
                         VStack(spacing: 14) {
                             Image(systemName: control.mode == .display ? "desktopcomputer" : "terminal")
-                                .font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
+                                .font(.largeTitle).foregroundStyle(DispatchStyle.secondary).accessibilityHidden(true)
                             Text(control.working ? "Connecting to your computer…" : "Your bot’s computer")
-                                .font(.headline)
+                                .font(DispatchStyle.serif(23, relativeTo: .headline))
                             Text(control.working ? "Opening a secure remote view." : control.mode == .display && control.status["installed"].bool && !control.desktopRunning ? "Choose Start desktop to open the screen. Your bot keeps working when you leave." : "Reconnect to view the screen. Your bot keeps working when you leave.")
-                                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                                .font(.subheadline).foregroundStyle(DispatchStyle.secondary).multilineTextAlignment(.center)
                             if control.working { ProgressView() }
                         }
                         .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(uiColor: .secondarySystemBackground))
+                        .background(DispatchStyle.wash)
                         .allowsHitTesting(false)
                     }
                 }
@@ -56,8 +56,8 @@ struct VMControlView: View {
                 Button("Screen gestures and keyboard", systemImage: "hand.pinch") { showHelp = true }.font(.subheadline).frame(minHeight: 44)
             }
         }
-        .background(Color(uiColor: .systemBackground))
-        .navigationTitle("Computer").navigationBarTitleDisplayMode(.inline)
+        .background(DispatchStyle.paper)
+        .dispatchTitle("Computer").navigationBarTitleDisplayMode(.inline)
         .task {
             async let vmStatus: () = power.load(bot: control.bot, store: store)
             async let remote: () = control.open(store: store)
@@ -84,26 +84,26 @@ struct VMControlView: View {
         } message: { Text("Stop and restart interrupt work in the guest. The same VM and disk are retained.") }
         .sheet(isPresented: $showHelp) {
             NavigationStack {
-                List {
-                    Section("View the screen") {
+                DispatchList {
+                    DispatchSection("View the screen") {
                         Label("Pinch to zoom. Choose Fit to see the whole screen, or 1:1 for detail.", systemImage: "hand.pinch")
                         Label("Turn on Pan to move around a zoomed screen. You can also rotate your iPhone.", systemImage: "hand.draw")
                     }
-                    Section("Control the desktop") {
+                    DispatchSection("Control the desktop") {
                         Label("Choose Take control before using the desktop. Hand back returns control to the bot.", systemImage: "cursorarrow")
                         Text("Tap to click. Drag to move. Tap with two fingers for right click; drag with two fingers to scroll.")
                         Text("Use Keyboard for text, Ctrl and navigation keys for shortcuts, or Paste to send text you review first.")
                     }
-                    Section { Text("Closing this screen disconnects the viewer. The bot and its machine keep running.").foregroundStyle(.secondary) }
+                    DispatchSection { Text("Closing this screen disconnects the viewer. The bot and its machine keep running.").foregroundStyle(DispatchStyle.secondary) }
                 }
-                .navigationTitle("Screen controls").navigationBarTitleDisplayMode(.inline)
+                .dispatchTitle("Screen controls").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showHelp = false } } }
             }
         }
         .sheet(isPresented: $showPaste) {
             NavigationStack {
-                Form { TextField("Paste text", text: $pasted, axis: .vertical).lineLimit(4...12) }
-                .navigationTitle("Paste to \(control.mode.rawValue)")
+                DispatchForm { TextField("Paste text", text: $pasted, axis: .vertical).lineLimit(4...12) }
+                .dispatchTitle("Paste to \(control.mode.rawValue)")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showPaste = false } }
                     ToolbarItem(placement: .confirmationAction) { Button("Paste") { let text = pasted; pasted = ""; showPaste = false; Task { await control.paste(text) } }.disabled(pasted.isEmpty) }
@@ -129,20 +129,20 @@ struct VMControlView: View {
                         if power.operationPhase == "unconfirmed" { Button("Retry same action") { Task { await power.retry() } }.font(.caption).disabled(power.working) }
                         if power.mayBeginNewAction { Button("New action") { power.beginNewAction() }.font(.caption) }
                     }
-                    if let message = power.receipt["error"]["message"].string { Text(message).font(.caption).foregroundStyle(.red) }
+                    if let message = power.receipt["error"]["message"].string { Text(message).font(.caption).foregroundStyle(DispatchStyle.rust) }
                 }
                 let resources = power.vm["resources"]
                 if let cpu = resources["cpu"].number, let memory = resources["memory_mib"].number, let disk = resources["disk_gib"].number {
-                    Text("\(Int(cpu)) CPU · \(Int(memory)) MiB · \(Int(disk)) GiB disk").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Int(cpu)) CPU · \(Int(memory)) MiB · \(Int(disk)) GiB disk").font(.caption).foregroundStyle(DispatchStyle.secondary)
                 }
-            } else { Text("VM power controls require a provisioned VM and a controller that supports them.").font(.caption).foregroundStyle(.secondary) }
-            if let error = power.error { Text(error).font(.caption).foregroundStyle(.red) }
+            } else { Text("VM power controls require a provisioned VM and a controller that supports them.").font(.caption).foregroundStyle(DispatchStyle.secondary) }
+            if let error = power.error { Text(error).font(.caption).foregroundStyle(DispatchStyle.rust) }
         }.padding(.vertical, 8)
     }
     @ViewBuilder private var powerActions: some View {
         ForEach(VMPowerAction.allCases) { action in
             Button(action.rawValue.capitalized, role: action == .start ? nil : .destructive) { confirming = action }
-                .buttonStyle(.bordered).controlSize(.large).disabled(!power.allowed(action))
+                .buttonStyle(DispatchSecondaryButtonStyle()).controlSize(.large).disabled(!power.allowed(action))
         }
         if power.working { ProgressView() }
     }
@@ -150,7 +150,7 @@ struct VMControlView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Label(control.connection, systemImage: control.connected ? "checkmark.circle" : "network")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(DispatchStyle.secondary)
                 Spacer(minLength: 8)
                 Button("Reconnect", systemImage: "arrow.clockwise") { Task { await control.reconnect(store: store) } }
                     .font(.subheadline).frame(minHeight: 44).disabled(control.working)
@@ -158,7 +158,7 @@ struct VMControlView: View {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) { remoteActions }
                 VStack(alignment: .leading, spacing: 8) { remoteActions }
-            }.font(.subheadline).buttonStyle(.bordered).controlSize(.large)
+            }.font(.subheadline).buttonStyle(DispatchSecondaryButtonStyle()).controlSize(.large)
         }.padding(.horizontal).padding(.bottom, 8)
     }
     @ViewBuilder private var remoteActions: some View {

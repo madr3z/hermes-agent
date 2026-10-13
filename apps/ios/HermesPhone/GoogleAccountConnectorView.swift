@@ -17,23 +17,23 @@ struct GoogleAccountConnectorView: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            Form {
-                Section { BotIdentityLabel(name: connectors.bot.name, detail: "Optional self-hosted Gmail setup") }
-                Section("Account") {
+            DispatchForm {
+                DispatchSection { BotIdentityLabel(name: connectors.bot.name, detail: "Optional self-hosted Gmail setup") }
+                DispatchSection("Account") {
                     TextField("Account label", text: $label)
                     TextField("Expected Google email", text: $email).keyboardType(.emailAddress)
-                    Text("Google's returned email must match this address. Each account has its own credentials and sign-in.").font(.footnote).foregroundStyle(.secondary)
+                    Text("Google's returned email must match this address. Each account has its own credentials and sign-in.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                 }
-                Section("Advanced: existing Google Web client") {
+                DispatchSection("Advanced: existing Google Web client") {
                     TextField("Approved private HTTPS controller origin", text: $origin).keyboardType(.URL)
                     TextField("Client ID", text: $clientID)
                     SecureField("Client secret", text: $clientSecret).privacySensitive()
-                    Text("This optional connector requires an existing Google Web client. It is not a one-click Google sign-in. Register the exact /api/connector-callbacks/google redirect first. The pinned Workspace MCP connector must be installed on this bot. A tailnet HTTPS name alone does not prove Google domain approval.").font(.footnote).foregroundStyle(.secondary)
+                    Text("This optional connector requires an existing Google Web client. It is not a one-click Google sign-in. Register the exact /api/connector-callbacks/google redirect first. The pinned Workspace MCP connector must be installed on this bot. A tailnet HTTPS name alone does not prove Google domain approval.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                 }
                 .disabled(prepared || preparing || connectors.working)
                 if let error { PhoneNotice(title: "Google setup needs attention", message: error) }
                 if prepared {
-                    Section {
+                    DispatchSection {
                         Text("Prepared for \(email). Read-only Gmail access. Credentials save on \(connectors.bot.name); this phone keeps them only during setup. After saving, open Bot Chat and choose Sign in to an account.").font(.footnote)
                         StdioSetupActions(setup: setup, connectors: connectors, store: store, plan: {
                             guard let plan else { throw GatewayError.message("Prepare this account first.") }
@@ -47,7 +47,7 @@ struct GoogleAccountConnectorView: View {
             }
             .textInputAutocapitalization(.never).autocorrectionDisabled()
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Advanced Google setup").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Advanced Google setup").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(setup.saved ? "Done" : "Close") { dismiss() }.disabled(preparing || connectors.working) } }
         }
         .interactiveDismissDisabled(preparing || connectors.working)

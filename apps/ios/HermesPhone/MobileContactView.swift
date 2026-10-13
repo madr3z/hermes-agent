@@ -14,31 +14,31 @@ struct MobileContactView: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text(status).foregroundStyle(.secondary)
+            DispatchForm {
+                DispatchSection {
+                    Text(status).foregroundStyle(DispatchStyle.secondary)
                     Toggle("Incoming calls", isOn: $calls)
                     Toggle("Bot notifications", isOn: $notifications)
                 }.disabled(!MobileContact.buildEnabled || saving)
-                Section("Bots allowed to contact this phone") {
+                DispatchSection("Bots allowed to contact this phone") {
                     ForEach(rows, id: \.self) { row in
                         if let id = row["request_id"].string.flatMap(UUID.init(uuidString:)) {
                             Toggle(row["name"].string ?? "Bot", isOn: Binding(get: { bots.contains(id) }, set: { if $0 { bots.insert(id) } else { bots.remove(id) } }))
                         }
                     }
-                    if rows.isEmpty { Text("No ready VM bots on this controller.").foregroundStyle(.secondary) }
+                    if rows.isEmpty { Text("No ready VM bots on this controller.").foregroundStyle(DispatchStyle.secondary) }
                 }.disabled(saving)
-                Section {
+                DispatchSection {
                     Text("Calls ring through CallKit, including when this phone is locked. Enabling calls saves a separate controller credential on this device. iOS can read it after the first unlock until the phone restarts. Turning calls off removes this copy. Your microphone and GPT Live session start only after you answer.").font(.footnote)
                     Text("Push messages contain IDs and generic Hermes text. Private bot details load from your authenticated controller. Delivery requires network access to your private gateway and Apple push service.").font(.footnote)
                 }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
+                if let error { DispatchSection { Text(error).foregroundStyle(DispatchStyle.rust) } }
                 Button(saving ? "Saving…" : "Save") { save() }.disabled(saving || !MobileContact.buildEnabled)
                 if MobileContact.shared.settings[endpoint.id] != nil {
                     Button("Disable calls and notifications", role: .destructive) { disable() }.disabled(saving)
                 }
             }
-            .navigationTitle("Calls and notifications")
+            .dispatchTitle("Calls and notifications")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .task {
                 if let saved = MobileContact.shared.settings[endpoint.id] { calls = saved.calls; notifications = saved.notifications; bots = saved.bots }
@@ -88,7 +88,7 @@ struct MobileCallBanner: View {
             ForEach(contact.deferredCalls) { call in
                 HStack {
                     VStack(alignment: .leading) {
-                        Text(call.name + " will ring again").font(.headline)
+                        Text(call.name + " will ring again").font(DispatchStyle.serif(23, relativeTo: .headline))
                         Text(call.scheduledAt, format: .dateTime.month().day().hour().minute()).font(.caption)
                     }
                     Spacer()
@@ -97,15 +97,15 @@ struct MobileCallBanner: View {
                 }.disabled(contact.postponing)
             }
             if let error = contact.error {
-                HStack { Text(error).font(.caption).foregroundStyle(.red); Spacer(); Button("Dismiss") { contact.error = nil } }
+                HStack { Text(error).font(.caption).foregroundStyle(DispatchStyle.rust); Spacer(); Button("Dismiss") { contact.error = nil } }
             }
         }
         .padding(contact.callInvitation != nil || !contact.deferredCalls.isEmpty || contact.error != nil ? 12 : 0)
-        .background(.regularMaterial)
+        .background(DispatchStyle.wash)
         .task { await contact.refreshDeferredCalls() }
         .sheet(isPresented: $contact.chooseCallTime) {
             NavigationStack {
-                Form {
+                DispatchForm {
                     DatePicker("Ring again at", selection: $selectedTime, in: Date().addingTimeInterval(90)...Date().addingTimeInterval(7 * 86400))
                     Text("The agent will call this phone once at this time. The call will ring for up to one minute. It requires network access and an available bot.").font(.footnote)
                     Button("Ask agent to ring again") {
@@ -115,9 +115,9 @@ struct MobileCallBanner: View {
                             if contact.error == nil { contact.chooseCallTime = false }
                         }
                     }.disabled(contact.postponing)
-                    if let error = contact.error { Text(error).foregroundStyle(.red) }
+                    if let error = contact.error { Text(error).foregroundStyle(DispatchStyle.rust) }
                 }
-                .navigationTitle("Ring again")
+                .dispatchTitle("Ring again")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { contact.chooseCallTime = false; contact.postponeTarget = nil } } }
             }
         }

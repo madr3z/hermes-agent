@@ -10,31 +10,31 @@ struct ICloudConnectorView: View {
     @State private var setup = StdioSecretSetup()
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            DispatchForm {
+                DispatchSection {
                     BotIdentityLabel(name: connectors.bot.name, detail: "iCloud account")
                 }
                 Group {
-                    Section("iCloud account") {
+                    DispatchSection("iCloud account") {
                         TextField("Unique account name", text: $draft.name)
                         TextField("Apple Account email", text: $draft.email).keyboardType(.emailAddress).textContentType(.username)
                         SecureField("App-specific password", text: $draft.password).privacySensitive()
                         Toggle("Use a different iCloud Mail address", isOn: $separateMail)
                             .onChange(of: separateMail) { _, value in if !value { draft.mailAddress = "" } }
                         if separateMail { TextField("iCloud Mail address", text: $draft.mailAddress).keyboardType(.emailAddress) }
-                        Text("Create an app-specific password for this account. Hermes saves it in a new secret slot on this bot. It does not save the password on this iPhone.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Create an app-specific password for this account. Hermes saves it in a new secret slot on this bot. It does not save the password on this iPhone.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                     }
-                    Section("Permissions") {
+                    DispatchSection("Permissions") {
                         Text("Calendar and Mail reads are enabled. Contacts are disabled.").font(.footnote)
                         Toggle("Read-only access", isOn: $draft.readOnly)
                             .onChange(of: draft.readOnly) { _, value in if value { draft.mailWrite = false; draft.mailSend = false } }
                         if !draft.readOnly {
                             Text("Calendar tools can create, change and delete events.").font(.footnote)
                             Toggle("Allow Mail changes", isOn: $draft.mailWrite)
-                            Text("Mail changes can mark, move or trash messages.").font(.footnote).foregroundStyle(.secondary)
+                            Text("Mail changes can mark, move or trash messages.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                         }
                         Toggle("Allow sending mail", isOn: $draft.mailSend).disabled(draft.readOnly)
-                        if draft.readOnly { Text("Read-only disables all changes, including sending mail.").font(.footnote).foregroundStyle(.secondary) }
+                        if draft.readOnly { Text("Read-only disables all changes, including sending mail.").font(.footnote).foregroundStyle(DispatchStyle.secondary) }
                         if draft.mailSend {
                             Text("Mail sending requires this separate permission.").font(.footnote)
                             Toggle("Allow all recipients", isOn: $draft.allowAllRecipients)
@@ -45,7 +45,7 @@ struct ICloudConnectorView: View {
                 }
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .disabled(setup.installer != nil || setup.saved || connectors.working)
-                Section {
+                DispatchSection {
                     DisclosureGroup("Connector installation details") {
                     Text("Install or update the connector on this bot's VM, then test the connection. Saving an account does not install the runtime.").font(.footnote)
                     Link("ThomasCrouzet/icloud-mcp · MIT", destination: ICloudAccountDraft.source)
@@ -60,7 +60,7 @@ struct ICloudConnectorView: View {
                 }, clearSecrets: { draft.password = "" })
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Add iCloud account").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Add iCloud account").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(setup.saved ? "Done" : "Close") { dismiss() }.disabled(connectors.working) } }
         }.interactiveDismissDisabled(connectors.working).onDisappear { draft.password = "" }
     }

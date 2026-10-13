@@ -11,17 +11,17 @@ struct RoutineOperationsView: View {
     @State private var reviewingOutcome = false
     @State private var connectionError: String?
     var body: some View {
-        Form {
-            Section { BotIdentityLabel(name: bot.name, detail: "Task controls and history") }
+        DispatchForm {
+            DispatchSection { BotIdentityLabel(name: bot.name, detail: "Task controls and history") }
             if let details = operations.details {
-                Section(details.displayName) {
+                DispatchSection(details.displayName) {
                     Text(details.schedule).textSelection(.enabled)
                     LabeledContent("State", value: details.enabled ? details.state.capitalized : "Paused")
                     LabeledContent("Execution", value: details.noAgent ? "Script only" : "Agent task")
                     LabeledContent("Results", value: details.delivery == "bot-chat" ? "Bot Chat" : details.delivery)
                     Text(details.prompt.isEmpty ? "No agent instructions. This task may use a script or skill." : details.prompt).textSelection(.enabled)
                 }
-                Section {
+                DispatchSection {
                     Button("Edit task…", systemImage: "pencil") { editing = true }.disabled(!operations.canChange)
                     Button("Run now…", systemImage: "play") { runReview = details }.disabled(!operations.canRun)
                 }
@@ -33,13 +33,13 @@ struct RoutineOperationsView: View {
             }
             if let notice = operations.notice { PhoneNotice(title: "Task status", message: notice, systemImage: "info.circle") }
             if operations.uncertainRun {
-                Section("Unconfirmed run request") {
+                DispatchSection("Unconfirmed run request") {
                     Text("The earlier request may have started. Refresh reads actual history; it does not cancel or retry that request.")
                     Button("I reviewed the recorded outcome…") { reviewingOutcome = true }.disabled(!operations.canReviewOutcome)
                 }
             }
-            Section("Recorded runs") {
-                Text("Latest \(operations.historyLimit) records. Agent runs have saved transcripts. Script runs provide an output preview or execution metadata.").font(.caption).foregroundStyle(.secondary)
+            DispatchSection("Recorded runs") {
+                Text("Latest \(operations.historyLimit) records. Agent runs have saved transcripts. Script runs provide an output preview or execution metadata.").font(.caption).foregroundStyle(DispatchStyle.secondary)
                 ForEach(operations.runs) { run in
                     NavigationLink { RoutineRunView(run: run, operations: operations, bot: bot) } label: {
                         VStack(alignment: .leading, spacing: 5) {
@@ -49,14 +49,14 @@ struct RoutineOperationsView: View {
                         }
                     }
                 }
-                if operations.historyRead && operations.runs.isEmpty { Text("No recorded runs in this window.").foregroundStyle(.secondary) }
+                if operations.historyRead && operations.runs.isEmpty { Text("No recorded runs in this window.").foregroundStyle(DispatchStyle.secondary) }
                 if operations.historyRead && operations.historyLimit == 20 && operations.runs.count >= 20 {
                     Button("Show latest 100 runs") { Task { await operations.refresh(limit: 100) } }.disabled(operations.loading || operations.working)
                 }
                 Button("Refresh task and history", systemImage: "arrow.clockwise") { Task { await refresh() } }.disabled(operations.loading || operations.working)
             }
         }
-        .navigationTitle("Task details").navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle("Task details").navigationBarTitleDisplayMode(.inline)
         .task { await connect() }
         .refreshable { await refresh() }
         .sheet(isPresented: $editing) {
@@ -100,22 +100,22 @@ private struct RoutineEditView: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
-                Section { BotIdentityLabel(name: botName, detail: "Edit \(original.displayName)") }
-                Section("Instructions") {
+            DispatchForm {
+                DispatchSection { BotIdentityLabel(name: botName, detail: "Edit \(original.displayName)") }
+                DispatchSection("Instructions") {
                     TextField("Task name", text: $draft.name)
                     TextField("Saved agent instructions", text: $draft.instruction, axis: .vertical).lineLimit(4...12)
-                    if original.noAgent { Text("This is a script-only task. Its script stays unchanged; agent instructions are not executed in this mode.").font(.caption).foregroundStyle(.secondary) }
+                    if original.noAgent { Text("This is a script-only task. Its script stays unchanged; agent instructions are not executed in this mode.").font(.caption).foregroundStyle(DispatchStyle.secondary) }
                 }
-                Section("Schedule") {
+                DispatchSection("Schedule") {
                     Text("Current: \(original.schedule)")
                     Toggle("Replace schedule", isOn: $draft.changeSchedule)
                     if draft.changeSchedule {
                         TextField("For example: every 2h", text: $draft.schedule).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Text("The gateway validates interval, cron and absolute-date expressions. A new schedule recalculates its next run and can change the repeat count.").font(.caption).foregroundStyle(.secondary)
+                        Text("The gateway validates interval, cron and absolute-date expressions. A new schedule recalculates its next run and can change the repeat count.").font(.caption).foregroundStyle(DispatchStyle.secondary)
                     }
                 }
-                Section { Text("Delivery, model, provider, script, skills and other settings are preserved. Only the fields you change are saved.").font(.caption).foregroundStyle(.secondary) }
+                DispatchSection { Text("Delivery, model, provider, script, skills and other settings are preserved. Only the fields you change are saved.").font(.caption).foregroundStyle(DispatchStyle.secondary) }
                 if let error = validationError ?? operations.error { PhoneNotice(title: "Edit not saved", message: error) }
                 if operations.working { ProgressView("Saving task…") }
                 Button("Review changes") {
@@ -136,7 +136,7 @@ private struct RoutineEditView: View {
                 }
             }
             .disabled(operations.working)
-            .navigationTitle("Edit task").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Edit task").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(operations.working) } }
             .confirmationDialog("Save these changes on \(botName)?", isPresented: $review, titleVisibility: .visible) {
                 Button("Save task changes") { Task { if await operations.update(draft, original: original) { dismiss() } } }
@@ -160,22 +160,22 @@ private struct RoutineRunView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                Text(run.title).font(.headline).textSelection(.enabled)
-                if let date = run.startedAt { Text(date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) }
+                Text(run.title).font(DispatchStyle.serif(23, relativeTo: .headline)).textSelection(.enabled)
+                if let date = run.startedAt { Text(date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(DispatchStyle.secondary) }
                 if run.scriptOutput {
                     Text(run.preview.isEmpty ? "No output preview was retained for this execution." : run.preview).textSelection(.enabled)
-                    Text("This is an output preview or execution record. The API does not provide the full script output here.").font(.caption).foregroundStyle(.secondary)
+                    Text("This is an output preview or execution record. The API does not provide the full script output here.").font(.caption).foregroundStyle(DispatchStyle.secondary)
                 } else {
                     if hasEarlier { Button("Load earlier messages") { Task { await load() } }.disabled(loading) }
                     if loading { ProgressView("Loading recorded transcript…") }
                     ForEach(messages) { message in
                         ChatMessageView(message: message, client: nil, profile: bot.profile, storedSessionID: run.id, botName: bot.name)
                     }
-                    if !loading && messages.isEmpty && error == nil { Text("No visible transcript messages were retained.").foregroundStyle(.secondary) }
+                    if !loading && messages.isEmpty && error == nil { Text("No visible transcript messages were retained.").foregroundStyle(DispatchStyle.secondary) }
                 }
                 if let error { PhoneNotice(title: "Run transcript unavailable", message: error) }
             }.padding(20)
-        }.navigationTitle("Recorded run").navigationBarTitleDisplayMode(.inline)
+        }.dispatchTitle("Recorded run").navigationBarTitleDisplayMode(.inline)
             .task(id: run.id) { if !run.scriptOutput { await load() } }
     }
     private func load() async {

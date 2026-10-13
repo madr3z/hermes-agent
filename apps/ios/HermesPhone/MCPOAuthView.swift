@@ -11,12 +11,12 @@ struct MCPOAuthView: View {
     @State private var signIn = MCPOAuthController()
     var body: some View {
         NavigationStack {
-            Form {
-                Section(server.label) {
+            DispatchForm {
+                DispatchSection(server.label) {
                     Text("Authorize this named server on \(connectors.bot.name). Tokens stay on the bot's gateway.")
-                    Text("Choose the intended provider account. This signs in only the selected account ID.").font(.footnote).foregroundStyle(.secondary)
+                    Text("Choose the intended provider account. This signs in only the selected account ID.").font(.footnote).foregroundStyle(DispatchStyle.secondary)
                     if signIn.working { ProgressView(signIn.message) }
-                    if let error = signIn.error { Text(error).foregroundStyle(.red) }
+                    if let error = signIn.error { Text(error).foregroundStyle(DispatchStyle.rust) }
                     if signIn.approved { Label("Authorization saved on gateway", systemImage: "checkmark.circle") }
                     Button(signIn.approved ? "Check sign-in" : "Sign in") {
                         guard let api = connectors.api else { return }
@@ -26,9 +26,9 @@ struct MCPOAuthView: View {
                         }
                     }.disabled(signIn.working || connectors.api == nil)
                 }
-                Section { Text("Some providers require their registered Mac callback. If iPhone sign-in is unavailable, finish sign-in on your Mac.").font(.footnote).foregroundStyle(.secondary) }
+                DispatchSection { Text("Some providers require their registered Mac callback. If iPhone sign-in is unavailable, finish sign-in on your Mac.").font(.footnote).foregroundStyle(DispatchStyle.secondary) }
             }
-            .navigationTitle("MCP sign-in").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("MCP sign-in").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(signIn.approved ? "Done" : "Cancel") { dismiss() } } }
         }.onDisappear { signIn.cancel() }
     }

@@ -9,29 +9,29 @@ struct BotMemoryView: View {
     @State private var search = ""
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
-        List {
-            Section {
+        DispatchList {
+            DispatchSection {
                 BotIdentityLabel(name: bot.name, detail: "Memory inspection")
                 Text("Read the built-in memory and user-profile notes saved for this bot. External memory services are not included. This view does not reload the current chat.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(.subheadline).foregroundStyle(DispatchStyle.secondary)
             }
             if model.loading { ProgressView("Loading memory…") }
             if let error = model.error { PhoneNotice(title: "Memory unavailable", message: error) }
             if !model.loading && model.error == nil && model.cards.isEmpty {
-                ContentUnavailableView("No built-in memory", systemImage: "brain")
+                DispatchEmptyState("No built-in memory", systemImage: "brain")
             }
             ForEach(model.cards.filter { search.isEmpty || $0.label.localizedCaseInsensitiveContains(search) }) { card in
                 if let api {
                     NavigationLink { BotMemoryDetail(bot: bot, card: card, api: api) } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(card.label)
-                            Text(card.source == "profile" ? "User profile" : "Memory").font(.caption).foregroundStyle(.secondary)
+                            Text(card.source == "profile" ? "User profile" : "Memory").font(.caption).foregroundStyle(DispatchStyle.secondary)
                         }
                     }
                 }
             }
         }
-        .navigationTitle("Memory").navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle("Memory").navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a memory")
         .task(id: bot.id) { await connect() }.refreshable { await model.refresh() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.refresh() } } }
@@ -56,13 +56,13 @@ struct BotMemoryDetail: View {
     @State private var content: String?
     @State private var error: String?
     var body: some View {
-        List {
+        DispatchList {
             BotIdentityLabel(name: bot.name, detail: card.source == "profile" ? "User profile" : "Memory")
             if let error { PhoneNotice(title: "Memory unavailable", message: error) }
             if let content { Text(content).textSelection(.enabled) }
             else if error == nil { ProgressView("Loading memory…") }
         }
-        .navigationTitle("Memory card").navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle("Memory card").navigationBarTitleDisplayMode(.inline)
         .task { await load() }.refreshable { await load() }
     }
     private func load() async {

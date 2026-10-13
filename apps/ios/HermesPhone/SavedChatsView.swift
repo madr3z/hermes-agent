@@ -7,10 +7,10 @@ struct SavedChatsView: View {
     var body: some View {
         @Bindable var history = chat.savedChats
         NavigationStack {
-            List {
-                Section {
+            DispatchList {
+                DispatchSection {
                     Text("Saved chats on \(chat.bot.name)’s gateway and profile. Viewing history keeps your Bot Chat unchanged.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(DispatchStyle.secondary)
                 }
                 if let error = history.error { PhoneNotice(title: "History unavailable", message: error) }
                 ForEach(history.rows) { row in
@@ -18,21 +18,21 @@ struct SavedChatsView: View {
                         SavedChatTranscriptView(chat: chat, row: row)
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(row.title).font(.headline)
-                            if !row.preview.isEmpty { Text(row.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
+                            Text(row.title).font(DispatchStyle.serif(23, relativeTo: .headline))
+                            if !row.preview.isEmpty { Text(row.preview).font(.subheadline).foregroundStyle(DispatchStyle.secondary).lineLimit(2) }
                             HStack {
                                 Text(row.source.isEmpty ? "Chat" : row.source)
                                 if let date = row.startedAt { Text(date, style: .date) }
                                 Text("\(row.messageCount) messages")
-                            }.font(.caption).foregroundStyle(.secondary)
+                            }.font(.caption).foregroundStyle(DispatchStyle.secondary)
                         }.padding(.vertical, 4)
                     }
                 }
                 if history.loading { ProgressView("Loading saved chats…") }
-                else if history.rows.isEmpty && history.error == nil { Text(history.query.isEmpty ? "No saved chats." : "No matching saved chats.").foregroundStyle(.secondary) }
+                else if history.rows.isEmpty && history.error == nil { Text(history.query.isEmpty ? "No saved chats." : "No matching saved chats.").foregroundStyle(DispatchStyle.secondary) }
                 if history.hasMore { Button("Load more chats") { Task { await history.load(more: true) } } }
             }
-            .navigationTitle("Saved chats")
+            .dispatchTitle("Saved chats")
             .searchable(text: $history.query, prompt: "Search saved messages")
             .refreshable { await history.load() }
             .task(id: history.query + history.bindingID.uuidString) {
@@ -52,7 +52,7 @@ private struct SavedChatTranscriptView: View {
         let history = chat.savedChats
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
-                Text("Read-only saved chat · \(chat.bot.profile)").font(.caption).foregroundStyle(.secondary)
+                Text("Read-only saved chat · \(chat.bot.profile)").font(.caption).foregroundStyle(DispatchStyle.secondary)
                 if let error = history.error { PhoneNotice(title: "Transcript unavailable", message: error) }
                 if history.hasEarlier {
                     Button("Load earlier messages") { Task { await history.loadMessages() } }
@@ -62,10 +62,10 @@ private struct SavedChatTranscriptView: View {
                 ForEach(history.selected?.id == row.id ? history.messages : []) { message in
                     ChatMessageView(message: message, client: chat.client, profile: chat.bot.profile, storedSessionID: row.id, botName: chat.bot.name)
                 }
-                if !history.transcriptLoading && history.messages.isEmpty && history.error == nil { Text("No visible messages in this saved chat.").foregroundStyle(.secondary) }
+                if !history.transcriptLoading && history.messages.isEmpty && history.error == nil { Text("No visible messages in this saved chat.").foregroundStyle(DispatchStyle.secondary) }
             }.padding(20)
         }
-        .navigationTitle(row.title).navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle(row.title).navigationBarTitleDisplayMode(.inline)
         .task(id: row.id + history.bindingID.uuidString) { await history.open(row) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

@@ -25,12 +25,12 @@ private struct BotToolsetsPage: View {
     }
 
     var body: some View {
-        List {
-            Section { BotIdentityLabel(name: bot.name, detail: "Tools for this bot") } footer: {
+        DispatchList {
+            DispatchSection { BotIdentityLabel(name: bot.name, detail: "Tools for this bot") } footer: {
                 Text("Enabled settings apply to new sessions. The current chat can keep its existing tools. Enabling a toolset can start its existing setup on this bot.")
             }
             if toolsets.loading || toolsets.working || toolsets.error != nil || connectionError != nil || toolsets.notice != nil {
-                Section {
+                DispatchSection {
                     if toolsets.loading { ProgressView("Loading toolsets…") }
                     if toolsets.working { ProgressView("Saving on gateway…") }
                     if let error = connectionError ?? toolsets.error {
@@ -40,18 +40,18 @@ private struct BotToolsetsPage: View {
                 }
             }
             if let error = toolsets.snapshot?.currentError {
-                Section("Current chat") { PhoneNotice(title: "Current tools unavailable", message: error) }
+                DispatchSection("Current chat") { PhoneNotice(title: "Current tools unavailable", message: error) }
             } else if runtimeID == nil {
-                Section("Current chat") { Text("Open Bot Chat to check which tools are available to it.").foregroundStyle(.secondary) }
+                DispatchSection("Current chat") { Text("Open Bot Chat to check which tools are available to it.").foregroundStyle(DispatchStyle.secondary) }
             }
             if toolsets.snapshot?.toolsets.isEmpty == true {
-                ContentUnavailableView("No toolsets reported", systemImage: "wrench.and.screwdriver")
+                DispatchEmptyState("No toolsets reported", systemImage: "wrench.and.screwdriver")
             }
             ForEach(filtered) { row in
                 BotToolsetRow(row: row, currentTools: toolsets.snapshot?.currentTools, state: toolsets)
             }
         }
-        .navigationTitle("Tools and toolsets")
+        .dispatchTitle("Tools and toolsets")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Find a tool or toolset")
         .task { await connect() }
@@ -83,18 +83,18 @@ private struct BotToolsetRow: View {
     let currentTools: Set<String>?
     let state: BotToolsetsStore
     var body: some View {
-        Section {
+        DispatchSection {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(row.label).font(.headline)
+                    Text(row.label).font(DispatchStyle.serif(23, relativeTo: .headline))
                     Spacer()
-                    Text(row.enabled ? "Enabled" : "Disabled").font(.subheadline).foregroundStyle(.secondary)
+                    Text(row.enabled ? "Enabled" : "Disabled").font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                 }
-                if !row.description.isEmpty { Text(row.description).font(.subheadline).foregroundStyle(.secondary) }
-                if row.configured == false { Label("Setup required", systemImage: "exclamationmark.triangle").font(.subheadline).foregroundStyle(.secondary) }
+                if !row.description.isEmpty { Text(row.description).font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
+                if row.configured == false { Label("Setup required", systemImage: "exclamationmark.triangle").font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
                 if let currentTools, !row.tools.isEmpty {
                     Text("Current chat: \(currentTools.intersection(row.tools).count) of \(row.tools.count) tools available")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                 }
             }
             if !row.tools.isEmpty {

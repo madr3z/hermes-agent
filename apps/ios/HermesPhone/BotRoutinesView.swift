@@ -16,48 +16,48 @@ struct BotRoutinesView: View {
         routines.jobs.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.prompt.localizedCaseInsensitiveContains(search) }
     }
     var body: some View {
-        List {
-            Section {
+        DispatchList {
+            DispatchSection {
                 BotIdentityLabel(name: bot.name, detail: "Scheduled tasks")
             } footer: { Text("Tasks run on this bot’s gateway. You can close the app.") }
             if routines.loading { ProgressView("Loading scheduled tasks…") }
             if routines.working { ProgressView("Saving on gateway…") }
             if let error = routines.error {
-                Section {
+                DispatchSection {
                     PhoneNotice(title: "Could not complete the request", message: error)
                     Button("Refresh") { Task { await routines.load(store: store) } }.disabled(routines.loading || routines.working)
                 }
             }
             if let notice = routines.notice { PhoneNotice(title: "Task update", message: notice, systemImage: "info.circle") }
             if !routines.loading && routines.error == nil && routines.jobs.isEmpty {
-                ContentUnavailableView("No scheduled tasks", systemImage: "calendar.badge.clock", description: Text("Add instructions for this bot to run later."))
+                DispatchEmptyState("No scheduled tasks", systemImage: "calendar.badge.clock", description: Text("Add instructions for this bot to run later."))
             } else if !routines.jobs.isEmpty && visible.isEmpty {
-                ContentUnavailableView.search(text: search)
+                DispatchEmptyState.search(text: search)
             }
-            Section {
+            DispatchSection {
                 ForEach(visible) { job in
                     NavigationLink {
                         BotRoutineDetail(job: job, routines: routines, store: store)
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(job.displayName(profile: bot.profile)).font(.headline)
-                            Text(job.schedule).font(.subheadline).foregroundStyle(.secondary)
-                            if !job.prompt.isEmpty { Text(job.prompt).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
+                            Text(job.displayName(profile: bot.profile)).font(DispatchStyle.serif(23, relativeTo: .headline))
+                            Text(job.schedule).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
+                            if !job.prompt.isEmpty { Text(job.prompt).font(.subheadline).foregroundStyle(DispatchStyle.secondary).lineLimit(2) }
                             Label(job.enabled ? job.state.capitalized : "Paused", systemImage: job.enabled ? "clock" : "pause.circle")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                            if let next = job.nextRun, job.enabled { Text("Next: \(routineDate(next))").font(.subheadline).foregroundStyle(.secondary) }
+                                .font(.subheadline).foregroundStyle(DispatchStyle.secondary)
+                            if let next = job.nextRun, job.enabled { Text("Next: \(routineDate(next))").font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
                         }.padding(.vertical, 9)
                     }
                     .swipeActions {
                         Button("Delete", role: .destructive) { removal = job }
                         Button(job.enabled ? "Pause" : "Resume") {
                             Task { _ = await routines.mutate(store: store) { try await $0.setEnabled(id: job.id, enabled: !job.enabled) } }
-                        }.tint(.orange)
+                        }.tint(DispatchStyle.rust)
                     }
                 }
             }.disabled(routines.loading || routines.working || routines.api == nil)
         }
-        .navigationTitle("Scheduled tasks").navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle("Scheduled tasks").navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a task")
         .task { await routines.load(store: store) }
         .refreshable { await routines.load(store: store) }
@@ -85,24 +85,24 @@ private struct BotRoutineDetail: View {
     @Environment(\.dismiss) private var dismiss
     private var current: BotRoutine? { routines.jobs.first { $0.id == job.id } }
     var body: some View {
-        Form {
+        DispatchForm {
             if let current {
-                Section("Schedule") {
+                DispatchSection("Schedule") {
                     Text(current.schedule).textSelection(.enabled)
                     LabeledContent("State", value: current.enabled ? current.state.capitalized : "Paused")
                     if let next = current.nextRun { LabeledContent("Next run", value: routineDate(next)) }
                     LabeledContent("Results", value: current.delivery == "bot-chat" ? "Bot Chat" : current.delivery)
                 }
-                Section("Instructions preview") { Text(current.prompt.isEmpty ? "No preview available" : current.prompt).textSelection(.enabled) }
-                Section {
+                DispatchSection("Instructions preview") { Text(current.prompt.isEmpty ? "No preview available" : current.prompt).textSelection(.enabled) }
+                DispatchSection {
                     NavigationLink { RoutineOperationsView(bot: routines.bot, jobID: job.id, store: store) } label: { Label("Edit, run and history", systemImage: "clock.arrow.circlepath") }
                 }
-                Section("Last run") {
+                DispatchSection("Last run") {
                     if let date = current.lastRun { Text(routineDate(date)) }
                     Text(current.lastStatus ?? "No result recorded")
                     if let error = current.lastError { PhoneNotice(title: "Last run issue", message: error) }
                 }
-                Section {
+                DispatchSection {
                     Button(current.enabled ? "Pause task" : "Resume task") {
                         Task { _ = await routines.mutate(store: store) { try await $0.setEnabled(id: job.id, enabled: !current.enabled) } }
                     }
@@ -116,7 +116,7 @@ private struct BotRoutineDetail: View {
             }
             if let notice = routines.notice { PhoneNotice(title: "Task update", message: notice, systemImage: "info.circle") }
         }
-        .navigationTitle(job.displayName(profile: routines.bot.profile)).navigationBarTitleDisplayMode(.inline)
+        .dispatchTitle(job.displayName(profile: routines.bot.profile)).navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Delete this scheduled task?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
             Button("Delete scheduled task", role: .destructive) {
                 Task { if await routines.mutate(store: store, body: { try await $0.remove(id: job.id) }) { dismiss() } }
@@ -134,25 +134,25 @@ private struct NewBotRoutineView: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            Form {
-                Section { BotIdentityLabel(name: routines.bot.name, detail: "New scheduled task") }
-                Section("Instructions") {
+            DispatchForm {
+                DispatchSection { BotIdentityLabel(name: routines.bot.name, detail: "New scheduled task") }
+                DispatchSection("Instructions") {
                     TextField("Task name", text: $draft.name)
                     TextField("What should this bot do?", text: $draft.instruction, axis: .vertical).lineLimit(4...10)
                 }
-                Section("When") {
+                DispatchSection("When") {
                     Picker("Repeat", selection: $draft.frequency) {
                         ForEach(RoutineFrequency.allCases) { Text($0.rawValue).tag($0) }
                     }
                     if draft.frequency == .once {
                         DatePicker("Run at", selection: $draft.date, in: Date()...)
-                        Text("Time zone: \(TimeZone.current.identifier)").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Time zone: \(TimeZone.current.identifier)").font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                     } else {
                         Text("The interval starts when the gateway creates the task. Results appear in Bot Chat.")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                            .font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                     }
                 }
-                Section { Text("This bot will run these instructions automatically. Review any account access or actions in your instructions before adding the task.").font(.subheadline).foregroundStyle(.secondary) }
+                DispatchSection { Text("This bot will run these instructions automatically. Review any account access or actions in your instructions before adding the task.").font(.subheadline).foregroundStyle(DispatchStyle.secondary) }
                 if let error { PhoneNotice(title: "Check this task", message: error) }
                 if let error = routines.error { PhoneNotice(title: "Could not create task", message: error) }
                 if routines.working { ProgressView("Creating task…") }
@@ -162,7 +162,7 @@ private struct NewBotRoutineView: View {
                 }.disabled(routines.working || routines.api == nil)
             }
             .disabled(routines.working)
-            .navigationTitle("New task").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("New task").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(routines.working) } }
             .confirmationDialog("Add \(review?.name ?? "task") for \(routines.bot.name)?", isPresented: Binding(get: { review != nil }, set: { if !$0 { review = nil } }), titleVisibility: .visible) {
                 if let selected = review {

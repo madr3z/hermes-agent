@@ -34,7 +34,7 @@ struct DispatchChatsView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 if bots.isEmpty {
-                    ContentUnavailableView(search.isEmpty ? "Your conversations" : "No matching chats",
+                    DispatchEmptyState(search.isEmpty ? "Your conversations" : "No matching chats",
                                            systemImage: "bubble.left.and.bubble.right",
                                            description: Text(search.isEmpty ? "Connect a bot from Today or Bots to start a conversation." : "Try a bot name or a word from a recent message."))
                 }
@@ -60,27 +60,27 @@ struct DispatchSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
-            List {
-                Section("Connections") {
+            DispatchList {
+                DispatchSection("Connections") {
                     ForEach(store.endpoints.filter { !$0.baseURL.path.contains("/gateways/") }) { endpoint in
                         Button { edit(endpoint) } label: { Label(endpoint.label, systemImage: "network") }
                         Button { mobile(endpoint) } label: { Label("Calls and notifications · \(endpoint.label)", systemImage: "bell") }
                     }
                     Button(action: add) { Label("Connect a gateway", systemImage: "plus") }
                 }
-                Section("Calls") {
+                DispatchSection("Calls") {
                     Button(action: callSettings) { Label("Call settings", systemImage: "phone.badge.waveform") }
                         .accessibilityIdentifier("dispatchCallSettings")
                 }
-                Section("Bots") {
+                DispatchSection("Bots") {
                     Button(action: create) { Label("Create Bot", systemImage: "person.badge.plus") }
                         .disabled(store.endpoints.isEmpty)
                     Text("Open a bot’s conversation for accounts, skills, scheduled tasks and computer controls.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(DispatchStyle.secondary)
                 }
             }
             .scrollContentBackground(.hidden).background(DispatchStyle.paper)
-            .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }.tint(DispatchStyle.forest)
     }

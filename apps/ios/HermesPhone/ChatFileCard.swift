@@ -22,14 +22,14 @@ struct ChatFileCard: View {
             }
             HStack(alignment: .top) {
                 Image(systemName: attachment.isImage ? "photo" : "doc.text")
-                    .font(.title3).foregroundStyle(.tint)
+                    .font(.title3).foregroundStyle(DispatchStyle.forest)
                     .frame(width: 36, height: 36)
-                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 10))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(attachment.name).font(.subheadline.weight(.semibold)).lineLimit(2)
                     Text(downloading ? "Downloading…" : localURL == nil ? "File from your bot" : "Ready to preview")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(DispatchStyle.secondary)
                 }
                 Spacer(minLength: 0)
                 if downloading { ProgressView().controlSize(.small) }
@@ -42,9 +42,9 @@ struct ChatFileCard: View {
                 } else {
                     Button(error == nil ? "Download" : "Retry download", systemImage: "arrow.down.circle") { requestID += 1 }.disabled(downloading || client == nil || storedSessionID == nil)
                 }
-            }.font(.subheadline).buttonStyle(.bordered).controlSize(.large)
-            if let error { Text(error).font(.caption).foregroundStyle(.red) }
-        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+            }.font(.subheadline).buttonStyle(DispatchSecondaryButtonStyle()).controlSize(.large)
+            if let error { Text(error).font(.caption).foregroundStyle(DispatchStyle.rust) }
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 16))
             .quickLookPreview($previewURL)
             .task(id: ownerKey + ":\(requestID)") {
                 removeLocalFile()

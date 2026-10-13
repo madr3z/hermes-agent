@@ -12,13 +12,13 @@ struct CallPreferencesView: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            DispatchForm {
+                DispatchSection {
                     Toggle("Raise to call", isOn: $controller.enabled).accessibilityIdentifier("raiseToCallEnabled")
                 } footer: {
                     Text("With Hermes open, lower your iPhone, then raise it to your ear to call. The visible agent chat takes priority. Other pages use your default agent.")
                 }
-                Section("Default agent") {
+                DispatchSection("Default agent") {
                     Picker("Agent", selection: $controller.defaultTarget) {
                         Text("None").tag(nil as RaiseCallTarget?)
                         ForEach(targets) { target in
@@ -31,10 +31,10 @@ struct CallPreferencesView: View {
                     }.accessibilityIdentifier("defaultCallAgent")
                 }
                 if controller.sensorUnavailable {
-                    Section { Text("Raise to call is unavailable on this device. You can still use the Call button in an agent chat.").foregroundStyle(.secondary) }
+                    DispatchSection { Text("Raise to call is unavailable on this device. You can still use the Call button in an agent chat.").foregroundStyle(DispatchStyle.secondary) }
                 }
             }
-            .navigationTitle("Call settings").navigationBarTitleDisplayMode(.inline)
+            .dispatchTitle("Call settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
