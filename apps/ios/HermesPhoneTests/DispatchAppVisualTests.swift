@@ -27,10 +27,13 @@ import HermesGateway
         try await capture(NavigationStack { ConnectorsView(bot: bot, store: store) }, name: "accounts")
         try await capture(NavigationStack { BotRoutinesView(bot: bot, store: store) }, name: "scheduled-tasks")
         let chat = store.chat(for: bot)
-        chat.messages = [ChatMessage(id: "a", role: "assistant", text: "## A clearer afternoon\nYour appointment is now on Thursday.\n- There is time to prepare.\n- Your notes are ready."),
-                         ChatMessage(id: "u", role: "user", text: "Thank you. Keep the afternoon free.")]
+        chat.messages = [ChatMessage(id: "a", role: "assistant", text: "## A clearer afternoon\nYour appointment is now on Thursday.\n- There is time to prepare.\n- Your notes are ready.")]
         chat.draft = "And remind me the day before."
-        try await capture(NavigationStack { ChatView(bot: bot, store: store).environment(calls) }, name: "chat")
+        try await capture(NavigationStack { ChatView(bot: bot, store: store).environment(calls) }, name: "chat") {
+            // Deliver the final synthetic turn after layout, as a real chat snapshot does.
+            chat.error = nil; chat.connected = true; chat.status = "Connected"
+            chat.messages.append(ChatMessage(id: "u", role: "user", text: "Thank you. Keep the afternoon free."))
+        }
         try await capture(SavedChatsView(chat: chat), name: "saved-chats")
     }
 
@@ -49,7 +52,7 @@ import HermesGateway
     }
 
     private func capture<V: View>(_ content: V, name: String, scheme: ColorScheme = .light,
-                                  size: DynamicTypeSize = .large) async throws {
+                                  size: DynamicTypeSize = .large, settled: (() -> Void)? = nil) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first { $0.isKeyWindow }
         let host = UIHostingController(rootView: content.environment(\.colorScheme, scheme).environment(\.dynamicTypeSize, size))
@@ -60,6 +63,7 @@ import HermesGateway
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKey() }
         try await Task.sleep(for: .milliseconds(300))
+        if let settled { settled(); try await Task.sleep(for: .milliseconds(300)) }
         host.view.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat(); format.scale = 2
         var drawn = false
