@@ -25,11 +25,19 @@ struct CallScreen: View {
     }
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                header.padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 20)
-                DispatchStyle.rule.frame(height: 1).padding(.horizontal, 24)
-                transcript
-                controls.padding(.horizontal, 24).padding(.vertical, typeSize.isAccessibilitySize ? 8 : 20)
+            GeometryReader { geometry in
+                let compact = geometry.size.height < 500
+                let wide = compact && geometry.size.width > geometry.size.height
+                let scrollsDetails = compact || typeSize.isAccessibilitySize
+                VStack(spacing: 0) {
+                    if !scrollsDetails {
+                        header(compact: false, wide: false).padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 20)
+                        DispatchStyle.rule.frame(height: 1).padding(.horizontal, 24)
+                    }
+                    transcript(includesDetails: scrollsDetails, compact: compact, wide: wide)
+                    controls(compact: compact, wide: wide).padding(.horizontal, 24)
+                        .padding(.vertical, compact || typeSize.isAccessibilitySize ? 8 : 20)
+                }
             }
             .foregroundStyle(DispatchStyle.ink)
             .background(DispatchStyle.paper)
@@ -57,29 +65,27 @@ struct CallScreen: View {
         }
         .tint(DispatchStyle.forest)
     }
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func header(compact: Bool, wide: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 6 : 12) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 10) {
-                    if !typeSize.isAccessibilitySize {
+                    if !typeSize.isAccessibilitySize && !compact {
                         Text("HERMES · VOICE").font(.caption2).tracking(2.5).foregroundStyle(DispatchStyle.secondary)
                     }
-                    Text(name).font(typeSize.isAccessibilitySize ? .headline : DispatchStyle.serif(38))
+                    Text(name).font(typeSize.isAccessibilitySize ? .headline : DispatchStyle.serif(compact ? 28 : 38))
+                        .lineLimit(wide ? 1 : nil)
                         .accessibilityAddTraits(.isHeader)
                 }
                 Spacer(minLength: 0)
-                if !typeSize.isAccessibilitySize {
+                if wide {
+                    callStatus
+                } else if !typeSize.isAccessibilitySize && !compact {
                     Image(systemName: "waveform")
                         .font(.system(size: 26, weight: .light)).foregroundStyle(DispatchStyle.forest)
                         .frame(width: 56, height: 56).background(DispatchStyle.wash, in: Circle()).accessibilityHidden(true)
                 }
             }
-            HStack(spacing: 7) {
-                Circle().fill(ringing ? DispatchStyle.rust : voice.active ? DispatchStyle.forest : DispatchStyle.secondary)
-                    .frame(width: 7, height: 7).accessibilityHidden(true)
-                Text(status).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
-                if let startedAt = voice.startedAt, voice.active { Text(startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(DispatchStyle.secondary) }
-            }.accessibilityElement(children: .combine)
+            if !wide { callStatus }
             if let reason, !reason.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     if !typeSize.isAccessibilitySize {
@@ -100,62 +106,99 @@ struct CallScreen: View {
             }
         }
     }
-    private var transcript: some View {
+    private var callStatus: some View {
+        HStack(spacing: 7) {
+            Circle().fill(ringing ? DispatchStyle.rust : voice.active ? DispatchStyle.forest : DispatchStyle.secondary)
+                .frame(width: 7, height: 7).accessibilityHidden(true)
+            Text(status).font(.subheadline).foregroundStyle(DispatchStyle.secondary)
+            if let startedAt = voice.startedAt, voice.active { Text(startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(DispatchStyle.secondary) }
+        }.accessibilityElement(children: .combine)
+    }
+    private func transcript(includesDetails: Bool, compact: Bool, wide: Bool) -> some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Live transcript").font(DispatchStyle.serif(24, relativeTo: .title3)).accessibilityAddTraits(.isHeader)
-                Spacer()
-                if !followsTranscript {
-                    Button { followsTranscript = true } label: {
-                        Text("Latest").font(.subheadline).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-                    }
-                }
-            }.padding(.horizontal, 24).padding(.top, 16)
+            if !includesDetails {
+                transcriptHeading(showsLatest: true)
+            } else if !followsTranscript {
+                latestButton.frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 24)
+            }
             ScrollViewReader { reader in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        if voice.turns.isEmpty {
-                            VStack(spacing: 10) {
-                                if !typeSize.isAccessibilitySize { Image(systemName: ringing ? "phone.arrow.down.left" : "text.bubble").font(.title2) }
-                                Text(ringing ? "Answer to hear why \(name) is calling." : "Your conversation will appear here.")
-                                if !typeSize.isAccessibilitySize { Text("Speak naturally. You can interrupt at any time.").font(.footnote) }
-                            }.foregroundStyle(DispatchStyle.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.vertical, 36)
+                    VStack(alignment: .leading, spacing: 0) {
+                        if includesDetails {
+                            header(compact: compact, wide: wide).padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 20)
+                            DispatchStyle.rule.frame(height: 1).padding(.horizontal, 24)
+                            transcriptHeading(showsLatest: false)
                         }
-                        ForEach(voice.turns) { turn in
-                            VStack(alignment: turn.speaker == "user" ? .trailing : .leading, spacing: 6) {
-                                Text(turn.speaker == "user" ? "You" : name).font(.caption.weight(.semibold)).foregroundStyle(DispatchStyle.forest)
-                                Text(turn.text).font(.body).lineSpacing(4).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: turn.speaker == "user" ? .trailing : .leading).padding(16)
-                            .background(turn.speaker == "user" ? DispatchStyle.paper : DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 16))
-                            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(DispatchStyle.rule, lineWidth: turn.speaker == "user" ? 1 : 0) }
-                            .accessibilityElement(children: .combine)
-                        }
+                        transcriptTurns
+                        if includesDetails { transcriptFooter }
                         Color.clear.frame(height: 1).id("latest")
-                    }.padding(.horizontal, 24).padding(.vertical, 16)
+                    }
                 }
+                .scrollIndicators(.visible).scrollIndicatorsFlash(onAppear: includesDetails)
+                .accessibilityLabel(includesDetails ? "Call details and live transcript" : "Live transcript")
                 .simultaneousGesture(DragGesture().onChanged { _ in followsTranscript = false })
                 .onChange(of: voice.turns) { _, _ in if followsTranscript { reader.scrollTo("latest", anchor: .bottom) } }
                 .onChange(of: followsTranscript) { _, follow in if follow { reader.scrollTo("latest", anchor: .bottom) } }
             }
+            if !includesDetails { transcriptFooter }
+        }.frame(maxHeight: .infinity)
+    }
+    private func transcriptHeading(showsLatest: Bool) -> some View {
+        HStack {
+            Text("Live transcript").font(DispatchStyle.serif(24, relativeTo: .title3)).accessibilityAddTraits(.isHeader)
+            Spacer()
+            if showsLatest && !followsTranscript { latestButton }
+        }.padding(.horizontal, 24).padding(.top, 16)
+    }
+    private var latestButton: some View {
+        Button { followsTranscript = true } label: {
+            Text("Latest").font(.subheadline).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+        }
+    }
+    private var transcriptTurns: some View {
+        LazyVStack(alignment: .leading, spacing: 18) {
+            if voice.turns.isEmpty {
+                VStack(spacing: 10) {
+                    if !typeSize.isAccessibilitySize { Image(systemName: ringing ? "phone.arrow.down.left" : "text.bubble").font(.title2) }
+                    Text(ringing ? "Answer to hear why \(name) is calling." : "Your conversation will appear here.")
+                    if !typeSize.isAccessibilitySize { Text("Speak naturally. You can interrupt at any time.").font(.footnote) }
+                }.foregroundStyle(DispatchStyle.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.vertical, 36)
+            }
+            ForEach(voice.turns) { turn in
+                VStack(alignment: turn.speaker == "user" ? .trailing : .leading, spacing: 6) {
+                    Text(turn.speaker == "user" ? "You" : name).font(.caption.weight(.semibold)).foregroundStyle(DispatchStyle.forest)
+                        .lineLimit(2)
+                    Text(turn.text).font(.body).lineSpacing(4).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: turn.speaker == "user" ? .trailing : .leading).padding(16)
+                .background(turn.speaker == "user" ? DispatchStyle.paper : DispatchStyle.wash, in: RoundedRectangle(cornerRadius: 16))
+                .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(DispatchStyle.rule, lineWidth: turn.speaker == "user" ? 1 : 0) }
+                .accessibilityElement(children: .combine)
+            }
+        }.padding(.horizontal, 24).padding(.vertical, 16)
+    }
+    private var transcriptFooter: some View {
+        VStack(spacing: 0) {
             if let error = voice.error { Text(error).font(.callout).foregroundStyle(DispatchStyle.rust).padding(.horizontal, 24).padding(.bottom, 8) }
             Text(voice.turns.isEmpty ? "Transcripts stay in Bot Chat" : voice.hasPendingTranscript ? "Transcript waiting to sync" : "Transcript saved to Bot Chat")
                 .font(.caption).foregroundStyle(DispatchStyle.secondary).padding(.horizontal, 24).padding(.bottom, 12)
-        }.frame(maxHeight: .infinity)
+        }
     }
-    @ViewBuilder private var controls: some View {
+    @ViewBuilder private func controls(compact: Bool, wide: Bool) -> some View {
+        let layout = controlLayout(compact: compact, wide: wide)
+        let contentLayout = controlContentLayout(compact: compact)
         if ringing {
-            controlLayout {
-                callControl("Decline", icon: "phone.down.fill", fill: DispatchStyle.rust, foreground: DispatchStyle.paper, action: onEnd)
-                if let onLater { callControl("Ring later", icon: "clock", action: onLater) }
-                if let onAnswer { callControl("Answer", icon: "phone.fill", fill: DispatchStyle.button, foreground: .white, action: onAnswer) }
+            layout {
+                callControl("Decline", icon: "phone.down.fill", fill: DispatchStyle.rust, foreground: DispatchStyle.paper, compact: compact, action: onEnd)
+                if let onLater { callControl("Ring later", icon: "clock", compact: compact, action: onLater) }
+                if let onAnswer { callControl("Answer", icon: "phone.fill", fill: DispatchStyle.button, foreground: .white, compact: compact, action: onAnswer) }
             }.frame(maxWidth: .infinity)
         } else if voice.active || voice.connecting || preparing {
-            controlLayout {
+            layout {
                 callControl(voice.muted ? "Unmute" : "Mute", icon: voice.muted ? "mic.slash.fill" : "mic.fill",
                             fill: voice.muted ? DispatchStyle.forest : DispatchStyle.wash,
-                            foreground: voice.muted ? DispatchStyle.paper : DispatchStyle.ink) { voice.toggleMute() }.disabled(!voice.active)
-                controlContentLayout {
+                            foreground: voice.muted ? DispatchStyle.paper : DispatchStyle.ink, compact: compact) { voice.toggleMute() }.disabled(!voice.active)
+                contentLayout {
                     Menu {
                         Button("iPhone", systemImage: "iphone") { voice.selectAudioRoute(.receiver) }
                         Button("Speaker", systemImage: "speaker.wave.2.fill") { voice.selectAudioRoute(.speaker) }
@@ -164,14 +207,14 @@ struct CallScreen: View {
                         }
                     } label: {
                         Image(systemName: voice.audioOutput == "Speaker" ? "speaker.wave.2.fill" : voice.audioOutput == "iPhone" ? "iphone" : "headphones")
-                            .font(.system(size: 22)).foregroundStyle(DispatchStyle.ink)
-                            .frame(width: 56, height: 56).background(DispatchStyle.wash, in: Circle())
+                            .font(.system(size: compact ? 20 : 22)).foregroundStyle(DispatchStyle.ink)
+                            .frame(width: compact ? 44 : 56, height: compact ? 44 : 56).background(DispatchStyle.wash, in: Circle())
                     }.accessibilityLabel("Choose audio output").accessibilityValue(voice.audioOutput)
                         .accessibilityIdentifier("callAudioOutput")
                     Text(voice.audioOutput).font(typeSize.isAccessibilitySize ? .body : .caption).lineLimit(1)
                         .foregroundStyle(DispatchStyle.ink)
                 }.frame(maxWidth: .infinity)
-                callControl("End call", icon: "phone.down.fill", fill: DispatchStyle.rust, foreground: DispatchStyle.paper, action: onEnd)
+                callControl("End call", icon: "phone.down.fill", fill: DispatchStyle.rust, foreground: DispatchStyle.paper, compact: compact, action: onEnd)
             }
         } else if let onStart {
             DispatchAction(title: "Start call", action: onStart).accessibilityIdentifier("callStart")
@@ -183,18 +226,19 @@ struct CallScreen: View {
             }.buttonStyle(.plain).accessibilityIdentifier("callDismiss")
         }
     }
-    private var controlLayout: AnyLayout {
-        typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 24))
+    private func controlLayout(compact: Bool, wide: Bool) -> AnyLayout {
+        typeSize.isAccessibilitySize && !wide ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: compact ? 8 : 24))
     }
-    private var controlContentLayout: AnyLayout {
-        typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(spacing: 16)) : AnyLayout(VStackLayout(spacing: 8))
+    private func controlContentLayout(compact: Bool) -> AnyLayout {
+        compact || typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(spacing: compact ? 8 : 16)) : AnyLayout(VStackLayout(spacing: 8))
     }
     private func callControl(_ title: String, icon: String, fill: Color = DispatchStyle.wash,
-                             foreground: Color = DispatchStyle.ink, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            controlContentLayout {
-                Image(systemName: icon).font(.system(size: 22)).foregroundStyle(foreground)
-                    .frame(width: 56, height: 56).background(fill, in: Circle())
+                             foreground: Color = DispatchStyle.ink, compact: Bool, action: @escaping () -> Void) -> some View {
+        let layout = controlContentLayout(compact: compact)
+        return Button(action: action) {
+            layout {
+                Image(systemName: icon).font(.system(size: compact ? 20 : 22)).foregroundStyle(foreground)
+                    .frame(width: compact ? 44 : 56, height: compact ? 44 : 56).background(fill, in: Circle())
                 Text(title).font(typeSize.isAccessibilitySize ? .body : .caption).foregroundStyle(DispatchStyle.ink)
             }.frame(maxWidth: .infinity)
         }.buttonStyle(.plain).accessibilityLabel(title)

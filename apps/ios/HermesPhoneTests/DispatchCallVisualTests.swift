@@ -44,6 +44,44 @@ import HermesGateway
         try await capture(content, name: "minimized", scheme: .light)
     }
 
+    func testCaptureCompactHeightTimerAndLongAgentName() async throws {
+        try XCTSkipIf(VoiceCall.isCallInProgress, "Synthetic timer fixture requires no current call")
+        let fixtures: [(String, CGSize, DynamicTypeSize, String)] = [
+            ("compact-timer", CGSize(width: 390, height: 568), .large, "Assistant"),
+            ("landscape-timer", CGSize(width: 844, height: 390), .large, "Assistant"),
+            ("compact-accessible", CGSize(width: 390, height: 568), .accessibility3, "Assistant"),
+            ("landscape-accessible", CGSize(width: 844, height: 390), .accessibility3, "Assistant"),
+            ("long-name-accessible", CGSize(width: 390, height: 844), .accessibility3,
+             "Assistant for international operations and customer support")
+        ]
+        for (name, size, typeSize, agent) in fixtures {
+            let voice = VoiceCall()
+            defer { voice.stop(); RaiseProximityMonitoring.setReceiverNeeded(false) }
+            // A local event starts the timer; no transport or audio session is opened.
+            await voice.receive(.object(["type": .string("session.started")]))
+            RaiseProximityMonitoring.setReceiverNeeded(false)
+            XCTAssertNotNil(voice.startedAt)
+            await voice.receive(.object([
+                "type": .string("session.output_transcript.delta"), "event_id": .string("compact-fixture"),
+                "delta": .string("Your appointment moved to Thursday. Would the afternoon work?"),
+                "start_ms": .number(0), "end_ms": .number(1000)
+            ]))
+            let content = CallScreen(
+                voice: voice, name: agent,
+                reason: "Your appointment moved to Thursday. Let’s find a time that works for you and confirm the next step before updating your calendar.",
+                onEnd: {}, onClose: {})
+                .environment(\.colorScheme, .light).environment(\.dynamicTypeSize, typeSize)
+            try await capture(content, name: name, scheme: .light, size: size) {
+                await voice.receive(.object([
+                    "type": .string("session.input_transcript.delta"), "event_id": .string("compact-follow"),
+                    "delta": .string("Yes, after two would be good."),
+                    "start_ms": .number(1200), "end_ms": .number(2200)
+                ]))
+                XCTAssertEqual(voice.turns.last?.speaker, "user")
+            }
+        }
+    }
+
     private func fixtureVoice(_ state: State) async -> VoiceCall {
         let voice = VoiceCall()
         if [.active, .muted, .reconnecting, .ended].contains(state) {
@@ -65,12 +103,13 @@ import HermesGateway
         return voice
     }
 
-    private func capture<V: View>(_ content: V, name: String, scheme: ColorScheme) async throws {
+    private func capture<V: View>(_ content: V, name: String, scheme: ColorScheme,
+                                  size: CGSize = CGSize(width: 390, height: 844), afterLayout: (() async -> Void)? = nil) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first { $0.isKeyWindow }
         let host = UIHostingController(rootView: content)
         let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.frame = CGRect(origin: .zero, size: size)
         window.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
         window.rootViewController = host
         window.makeKeyAndVisible()
@@ -78,6 +117,13 @@ import HermesGateway
         let laidOut = expectation(description: "Call fixture laid out")
         DispatchQueue.main.async { host.view.layoutIfNeeded(); laidOut.fulfill() }
         await fulfillment(of: [laidOut], timeout: 5)
+        try await Task.sleep(for: .milliseconds(250))
+        host.view.layoutIfNeeded()
+        if let afterLayout {
+            await afterLayout()
+            try await Task.sleep(for: .milliseconds(150))
+            host.view.layoutIfNeeded()
+        }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         var drawn = false
@@ -85,7 +131,7 @@ import HermesGateway
             drawn = host.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         XCTAssertTrue(drawn, "Capture must include the live SwiftUI scroll hierarchy")
-        XCTAssertEqual(image.size, CGSize(width: 390, height: 844))
+        XCTAssertEqual(image.size, size)
         let attachment = XCTAttachment(image: image)
         attachment.name = "dispatch-call-" + name
         attachment.lifetime = .keepAlways
