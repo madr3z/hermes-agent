@@ -93,11 +93,23 @@ See `app-native-result.json`, `app-native.xcresult`, `chat-settled-native.xcresu
 `signature-proof.json`, `phone-install.json`, `phone-launch.json`, and
 `installation-receipt.json`. Initial captures remain separately retained.
 
-The canonical project checkout was not changed by this session. The coordinator
-can consume the authored 631864f83c and 875d0a31fb commits from this branch; no
-backend or signing change is needed. Source checks and protected-feature tests
-that were already green were not repeated. Human acceptance of connected flows
-and the separate open Photos incident remain outside this installation proof.
+On 13 October 2026, the user requested integration and session archive after
+handover. The clean canonical checkout at
+`/Users/madrez/developments/Projects/hermes-agent` on `codex/hermes-custom` was
+fast-forwarded from `29222637e820a91626adb93e411d26934e47b2b3` to
+`e11a2d622548e9d49cbd5da953efa8faf0d1665f`, preserving the authored production,
+fixture and installation-record commits. This handover update is documentation
+only. The installed binary still corresponds to `875d0a31fb`; no rebuild,
+reinstallation, backend operation or remote push was required or performed for
+integration. Tests that were already green were not repeated.
+
+This file is the repository handover. A direct message to the Project Manager
+thread was not sent: automatic approval review rejected that action because the
+user had not explicitly authorized messaging that thread. The signed app,
+screenshots, logs and receipts remain in the evidence directory above. Human
+acceptance of connected flows and the separate open Photos incident remain
+outside this installation proof. No further work on this design session is
+required; preserve the evidence and existing rollback app.
 
 ## New shared components and fixtures
 
