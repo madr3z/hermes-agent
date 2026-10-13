@@ -1,8 +1,9 @@
 # Whole-app Dispatch implementation — 13 October 2026
 
-Status: source implementation complete; native build and visual review blocked
-by the existing 2 GiB free-capacity floor. Do not call the new screenshots or
-runtime checks passed. No native job has been launched for this change.
+Status: installed in place on MadPhone on 13 October 2026; normal launch succeeded.
+The earlier capacity block is resolved. Signed binary source is
+`875d0a31fbe0fb2ef0ef8f9e3747b9c719169e27`: production styling commit
+`631864f83c8456a568178086edff11bc166804dc` plus a test-only capture correction.
 
 Base: 29222637e820a91626adb93e411d26934e47b2b3 (installed combined call release).
 Branch: codex/hermes-dispatch-whole-app.
@@ -50,10 +51,21 @@ The previously reported Photos selection crash is separate and not claimed fixed
 
 - git diff --check: passed during source review.
 - Repository checks: all 11 passed; log retained as `source-checks.log`.
-- Compilation, new visual fixtures and tap-through: NOT RUN.
-- Free capacity started at 3,744,000 KiB, then fell to 1,193,640 KiB and below
-  1 GiB before any native job was attempted. No deletion, simulator reset,
-  install, build, test or shared-cache mutation was used to bypass the floor.
+- Simulator compilation and focused native run: 2 tests passed, zero failures.
+- All 13 captured screens were inspected; light/dark/Accessibility 3 form layouts
+  and shared styling passed visual review. The synthetic chat fixture was corrected
+  to deliver its final turn after layout; the changed test then passed again
+  (1 test, zero failures), and its settled chat capture was inspected.
+- Signed iPhone build passed. Strict codesign, original profile UUID, team, bundle
+  ID, push-enabled setting, and exact entitlement equality with installed 292
+  were verified before installation.
+- In-place installation succeeded, database sequence 6472. One normal launch
+  succeeded with terminateExistingInstances=false (process 13827).
+- Capacity had previously blocked validation below 1 GiB. It recovered before
+  this installation request: native validation started at 53.24 GiB and reached
+  a minimum of 44.86 GiB; the signed build minimum was 41.22 GiB. The 2 GiB guard
+  stayed enabled. No cleanup, service reset, simulator erase, or new device was
+  used. Only the existing task-owned Dispatch build cache was used.
 
 DispatchAppVisualTests contains two focused capture tests and thirteen actual
 page captures at 390 x 844 points / 2x: gateway light/dark/accessibility3, Settings,
@@ -62,19 +74,30 @@ scheduled tasks, chat and saved chats. Stores use isolated defaults and no
 endpoints, so client lookup stops before credentials/network access. Callbacks
 are inert and raise-to-call is disabled in test-only preferences. Captures are
 kept as xcresult attachments and print DISPATCH_APP_RENDER paths. These fixtures
-are uncompiled and unexecuted; they do not prove connected account/VM operations.
+were compiled and executed; they do not prove connected account/VM operations.
+The settled chat is a synthetic connected-state presentation, not a gateway test.
 
-## Next integration gate
+## Installation and integration record
 
-Recheck capacity and exclusive simulator/build ownership. With sufficient
-headroom, compile and run only DispatchAppVisualTests on the existing app target
-and FA701042-454F-4E7E-A97F-21068AB4F7D4 simulator using the task-owned Dispatch
-cache if suitable. Do not use the pending Photos keyboard cache. Inspect every
-new capture, including form section grouping, row colors, long titles, disabled
-buttons and accessibility scrolling. Add focused interaction checks if a render
-or current behavior shows a problem. Do not repeat prior green release suites.
-Root retains combined release/install ownership. The installed release remains
-292 until a separately validated in-place install.
+User explicitly requested installation in this design session. The validated app
+was installed here without uninstalling or resetting the existing app. Original
+profile `4b79f5e9-2a54-4d87-a591-0623483f1904`, team `2JHBG6HA8N`, application ID
+`com.hermes.iphone`, APNs entitlement and Keychain access prefix are unchanged.
+The retained 292 rollback app is untouched. No live model/call, real connector,
+VM operation, Photos selection, or private content inspection was used.
+
+Evidence and retained signed app:
+`/Users/madrez/.codex/visualizations/2026/10/12/01a1319c-07eb-7411-bccb-695f5e3a1502/whole-app-review/`.
+See `app-native-result.json`, `app-native.xcresult`, `chat-settled-native.xcresult`,
+`visual-review.json`, `dispatch-app-*.png`, `signed-native-result.json`,
+`signature-proof.json`, `phone-install.json`, `phone-launch.json`, and
+`installation-receipt.json`. Initial captures remain separately retained.
+
+The canonical project checkout was not changed by this session. The coordinator
+can consume the authored 631864f83c and 875d0a31fb commits from this branch; no
+backend or signing change is needed. Source checks and protected-feature tests
+that were already green were not repeated. Human acceptance of connected flows
+and the separate open Photos incident remain outside this installation proof.
 
 ## New shared components and fixtures
 
