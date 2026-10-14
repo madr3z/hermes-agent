@@ -53,8 +53,17 @@ public struct GatewayEndpoint: Codable, Identifiable, Equatable, Sendable {
         guard let path = gateway["base_url"].string,
               path.hasPrefix("/api/plugins/bot-provisioning/v1/gateways/"),
               !path.contains(".."),
-              let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
-              url.host == baseURL.host, url.port == baseURL.port else {
+              !path.contains("//"),
+              !path.contains("?"),
+              !path.contains("#"),
+              !path.contains("\\") else {
+            throw GatewayError.message("Provisioner returned an invalid gateway route.")
+        }
+        // `url(path:)` keeps a controller mounted under a path prefix.
+        // `URL(string:relativeTo:)` would replace that prefix because the
+        // provisioner route is path-absolute.
+        let url = self.url(path: String(path.dropFirst()))
+        guard url.host == baseURL.host, url.port == baseURL.port else {
             throw GatewayError.message("Provisioner returned an invalid gateway route.")
         }
         return try GatewayEndpoint(label: gateway["label"].string ?? row["name"].string ?? "Bot", baseURL: url)

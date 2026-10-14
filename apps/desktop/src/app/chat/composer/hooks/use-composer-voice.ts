@@ -14,6 +14,7 @@ import {
 } from '@/lib/spoken-reply'
 import { CONVERSATION_LEASE, READ_ALOUD_LEASE, syncTtsLease } from '@/lib/tts-lease'
 import { fetchVoiceLiveStatus, toLiveHistory } from '@/lib/voice-live'
+import { isVisibleModelMessage } from '@/lib/voice-live-transcript'
 import { clearWakeIndicator, syncWakeIndicatorWithVoice } from '@/lib/wake-indicator'
 import { $voiceConversationStartRequest, takeVoiceConversationStart } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
@@ -22,7 +23,7 @@ import { $gateway } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
 import { $voiceLiveStatus, refreshVoiceLiveStatus, selectedVoiceChatMode } from '@/store/voice-live'
 import { $autoSpeakReplies, $voiceStopPhrase, setAutoSpeakReplies } from '@/store/voice-prefs'
-import { createVoiceTranscriptWriter, recoverVoiceTranscripts } from '@/store/voice-transcript-writer'
+import { createVoiceTranscriptWriter, watchVoiceTranscriptRecovery } from '@/store/voice-transcript-writer'
 import { resumeWakeAfterVoice } from '@/store/wake-word'
 
 import { pinFloatingComposerCapture } from '../floating-target'
@@ -85,9 +86,7 @@ export function useComposerVoice({
   const $pendingVoiceReplyId = useMemo(
     () =>
       computed($messages, messages => {
-        const last = messages.findLast(
-          message => message.role === 'assistant' && !message.hidden && !message.voiceTranscript
-        )
+        const last = messages.findLast(message => message.role === 'assistant' && isVisibleModelMessage(message))
 
         // Runs on every streamed flush: test the parts in place instead of
         // joining the whole reply into a string just to check it is non-blank.
@@ -134,8 +133,8 @@ export function useComposerVoice({
 
   /** Auto-speak selector: the latest unspoken reply only — a backlog collapses to the newest. */
   const pendingResponse = () => {
-    const messages = $messages.get().filter(message => !message.voiceTranscript)
-    const last = messages.findLast(m => m.role === 'assistant' && !m.hidden && !m.voiceTranscript)
+    const messages = $messages.get().filter(isVisibleModelMessage)
+    const last = messages.findLast(m => m.role === 'assistant')
     const spoken = resolveSpokenReply(sessionId, messages)
 
     if (!last || last.id === spoken?.id) {
@@ -162,14 +161,14 @@ export function useComposerVoice({
    * bubble happens to be last. See `collectUnspokenTurnSpeech`.
    */
   const pendingTurnResponse = () => {
-    const messages = $messages.get().filter(message => !message.voiceTranscript)
+    const messages = $messages.get().filter(isVisibleModelMessage)
 
     return collectUnspokenTurnSpeech(messages, resolveSpokenReply(sessionId, messages)?.id ?? null)
   }
 
   const consumePendingResponse = () => {
-    const messages = $messages.get().filter(message => !message.voiceTranscript)
-    const last = messages.findLast(m => m.role === 'assistant' && !m.hidden && !m.voiceTranscript)
+    const messages = $messages.get().filter(isVisibleModelMessage)
+    const last = messages.findLast(m => m.role === 'assistant')
 
     if (last) {
       markAssistantIdSpoken(sessionId, messages, last.id)
@@ -205,13 +204,13 @@ export function useComposerVoice({
     toLiveHistory(
       $messages
         .get()
-        .filter(m => !m.hidden && (m.role === 'user' || m.role === 'assistant'))
+        .filter(message => (message.role === 'user' || message.role === 'assistant') && isVisibleModelMessage(message))
         .map(m => ({ role: m.role as 'assistant' | 'user', text: chatMessageText(m) }))
     )
 
   /** The tool Hermes is running right now, for quiet progress in the voice. */
   const activeToolLabel = () => {
-    const last = $messages.get().findLast(m => m.role === 'assistant' && !m.hidden && !m.voiceTranscript)
+    const last = $messages.get().findLast(m => m.role === 'assistant' && isVisibleModelMessage(m))
     const running = last?.parts.findLast(part => part.type === 'tool-call' && part.result === undefined)
 
     return running && running.type === 'tool-call' ? running.toolName : null
@@ -283,18 +282,7 @@ export function useComposerVoice({
       return
     }
 
-    const recover = () =>
-      recoverVoiceTranscripts(sessionId, error => notifyError(error, t.notifications.voice.liveError))
-
-    recover()
-    window.addEventListener('online', recover)
-    // A gateway restart need not trigger the browser's online event.
-    const retry = window.setInterval(recover, 5000)
-
-    return () => {
-      window.clearInterval(retry)
-      window.removeEventListener('online', recover)
-    }
+    return watchVoiceTranscriptRecovery(sessionId, error => notifyError(error, t.notifications.voice.liveError))
   }, [sessionId, t.notifications.voice.liveError])
 
   const endLiveConversation = liveConversation.end

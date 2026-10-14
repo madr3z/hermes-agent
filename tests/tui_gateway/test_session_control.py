@@ -465,3 +465,12 @@ class TestUpdatePublication:
         assert "message.complete" in order and "session.control.update" in order
         assert order.index("message.complete") < order.index("session.control.update")
         assert emitted[order.index("session.control.update")][2]["control"]["goal"]["turns_used"] == 4
+
+
+def test_slash_control_aliases_resolve_from_the_registry(server):
+    assert server._direct_slash_target("hb") == "heartbeat"
+    assert server._direct_slash_target("heartbeat") == "heartbeat"
+    assert server._direct_slash_target("subgoal") == "subgoal"
+    assert server._direct_slash_target("proactive") == "loop"
+    assert server._direct_slash_target("loop") == "loop"
+    assert server._direct_slash_target("queue") == "queue"

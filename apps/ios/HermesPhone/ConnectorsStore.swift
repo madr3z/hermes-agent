@@ -43,28 +43,31 @@ import HermesGateway
         }
     }
     func mutate(store: PhoneStore, secret: String = "", body: (BotConnectorsClient) async throws -> JSON) async -> Bool {
-        guard let api, !working, !loading else { return false }
-        working = true; error = nil; notice = nil
-        do {
-            let result = try await body(api)
-            if result["ok"] == .bool(false) {
-                throw GatewayError.message(result["error"].string ?? "The gateway did not complete this action.")
-            }
-            let deferred = result["activation"]["deferred"]
-            notice = deferred == .null ? "Saved on \(bot.name). Refresh shows the server's current state." : "Saved on \(bot.name). Some changes apply in a new chat session."
-            let missing = result["missing_env"].array.compactMap(\.string)
-            if !missing.isEmpty { notice = "Installed. Add the required credentials: " + missing.joined(separator: ", ") }
-            let warnings = result["warnings"].array.compactMap(\.string)
-            if !warnings.isEmpty { notice = (notice ?? "Saved.") + "\n" + warnings.joined(separator: "\n") }
-            working = false
-            await load(store: store)
-            return true
-        } catch {
-            let message = error.localizedDescription
-            self.error = (secret.isEmpty ? message : message.replacingOccurrences(of: secret, with: "[redacted]")) + " Refresh before trying the action again."
-            working = false
-            return false
-        }
+        await ProfileMutation.run(
+            client: api,
+            loading: loading,
+            working: &working,
+            error: &error,
+            notice: &notice,
+            body: body,
+            accept: { result in
+                if result["ok"] == .bool(false) {
+                    throw GatewayError.message(result["error"].string ?? "The gateway did not complete this action.")
+                }
+                let deferred = result["activation"]["deferred"]
+                var text = deferred == .null ? "Saved on \(self.bot.name). Refresh shows the server's current state." : "Saved on \(self.bot.name). Some changes apply in a new chat session."
+                let missing = result["missing_env"].array.compactMap(\.string)
+                if !missing.isEmpty { text = "Installed. Add the required credentials: " + missing.joined(separator: ", ") }
+                let warnings = result["warnings"].array.compactMap(\.string)
+                if !warnings.isEmpty { text += "\n" + warnings.joined(separator: "\n") }
+                return text
+            },
+            fail: { error in
+                let message = error.localizedDescription
+                return (secret.isEmpty ? message : message.replacingOccurrences(of: secret, with: "[redacted]")) + " Refresh before trying the action again."
+            },
+            reload: { await self.load(store: store) }
+        )
     }
     private func capabilityMessage(_ error: Error) -> String {
         if case GatewayError.rpc(let code, _) = error {

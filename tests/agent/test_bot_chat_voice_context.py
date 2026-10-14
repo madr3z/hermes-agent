@@ -165,6 +165,18 @@ def test_search_joins_utterance_deltas_only_across_verified_compression(tmp_path
     db.close()
 
 
+def test_shorter_historical_utterance_is_not_receipted_as_a_substring(tmp_path):
+    from tools.voice_live import voice_live_turn_note
+
+    db = SessionDB(db_path=tmp_path / 'state.db')
+    canonical(db)
+    speak(db, 'bot', 'old', 'yes', utterance='old', timestamp=10)
+    context = note(db, content=voice_live_turn_note('user: yes, book it'), cutoff=200)
+    assert 'user: yes' in context
+    assert 'yes, book it' not in context
+    db.close()
+
+
 def test_delegated_receipt_does_not_acknowledge_boilerplate_or_task_text(tmp_path):
     from tools.voice_live import voice_live_turn_note
 

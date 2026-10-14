@@ -750,19 +750,32 @@ async def get_session_messages(
         # compression rotation, hiding the pre-compaction transcript
         # (#51058).
         from hermes_state_voice import voice_messages
-        return sid, _limit, db.get_messages(
+        messages = db.get_messages(
             sid, limit=_limit, offset=offset, latest=latest_page,
-            include_compacted=include_compacted, include_ancestors=True), voice_messages(db, sid)
+            include_compacted=include_compacted, include_ancestors=True)
+        # A full page can still be the far edge. One extra row tells us.
+        more = bool(messages) and len(messages) == _limit and db.get_messages(
+            sid, limit=1, offset=offset + _limit, latest=latest_page,
+            include_compacted=include_compacted, include_ancestors=True)
+        if latest_page:
+            include_newer = offset == 0
+            include_older = len(messages) < _limit or not more
+        else:
+            include_older = offset == 0
+            include_newer = len(messages) < _limit or not more
+        return sid, _limit, messages, voice_messages(db, sid), include_older, include_newer
 
     result = await asyncio.to_thread(_with_db, profile, _read, read_only=True)
     if result is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-    sid, _limit, messages, speech = result
+    sid, _limit, messages, speech, include_older, include_newer = result
     projected_messages = await asyncio.to_thread(
         _project_for_display, messages, home=_history_profile_home(profile),
         inline_images=inline_images)
     if speech:
-        from hermes_state_voice import interleave_voice_messages
+        from hermes_state_voice import interleave_voice_messages, speech_for_message_page
+        speech = speech_for_message_page(
+            messages, speech, include_older=include_older, include_newer=include_newer)
         projected_messages = interleave_voice_messages(projected_messages, speech)
     return {
         "session_id": sid,

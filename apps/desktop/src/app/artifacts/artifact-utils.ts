@@ -569,12 +569,15 @@ export async function loadArtifactsForSessions(
           }
         }
 
-        // Legacy backends ignore pagination and return the full transcript.
-        if (!page.pagination || page.messages.length === 0 || page.messages.length < page.pagination.limit) {
+        // `returned` counts database rows. Interleaved speech must not skip
+        // the next page or make a full database page look short.
+        const returned = page.pagination?.returned ?? page.messages.length
+
+        if (!page.pagination || returned === 0 || returned < page.pagination.limit) {
           break
         }
 
-        offset += page.messages.length
+        offset += returned
       }
 
       artifacts.push(...sessionArtifacts.values())

@@ -49,6 +49,10 @@ def _join_voice_deltas(spoken):
     return '\n'.join(f'{role}: {text}' for role, text in turns)
 
 
+def _supplied_lines(supplied):
+    return {line.strip() for line in supplied.splitlines() if line.strip()}
+
+
 def _supplied_voice_context(content):
     from tools.voice_live import VOICE_LIVE_TURN_NOTE
 
@@ -91,7 +95,9 @@ def bot_chat_voice_context(agent, current_content):
         text = row['content']
         if row['content_chars'] > len(text):
             continue
-        if text and f"{row['role']}: {text}" in supplied:
+        # Whole line only. A shorter "user: yes" must not match "user: yes, book it"
+        # and then be receipted as if this turn already carried that utterance.
+        if text and f"{row['role']}: {text}" in _supplied_lines(supplied):
             included.append(row['voice_fragment_id'])
             continue
         label = f"{datetime.fromtimestamp(row['timestamp'], UTC).isoformat()} {row['role']}: "

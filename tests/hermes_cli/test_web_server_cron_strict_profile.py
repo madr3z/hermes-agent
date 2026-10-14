@@ -56,16 +56,16 @@ def test_detail_edit_trigger_ack_and_wrong_profile_are_scoped(homes, client, mon
         assert response.status_code == 404
     assert fired == []
     detail = client.get(path, params=strict("worker")).json()
-    assert detail["strict_profile"] is True and detail["profile"] == "worker"
+    assert "strict_profile" not in detail and detail["profile"] == "worker"
     assert detail["prompt"] == "original full instructions"
     edited = client.put(path, params=strict("worker"), json={"updates": {"prompt": "changed"}})
     assert edited.status_code == 200
-    assert edited.json()["profile"] == "worker" and edited.json()["strict_profile"] is True
+    assert edited.json()["profile"] == "worker" and "strict_profile" not in edited.json()
     assert edited.json()["prompt"] == "changed"
     assert edited.json()["schedule"] == detail["schedule"]
     triggered = client.post(path + "/trigger", params=strict("worker"), json={})
     assert triggered.status_code == 200
-    assert triggered.json()["strict_profile"] is True and triggered.json()["profile"] == "worker"
+    assert "strict_profile" not in triggered.json() and triggered.json()["profile"] == "worker"
     assert fired == [("worker", job["id"], {"force": False})]
     legacy = client.get(path, params={"profile": "default"})
     assert legacy.status_code == 200 and legacy.json()["profile"] == "worker"
@@ -87,7 +87,7 @@ def test_deleted_job_history_uses_only_selected_profile_and_stamps_all_rows(home
         response = client.get(f"/api/cron/jobs/{job_id}/runs", params={**strict(profile), "limit": 1000})
         assert response.status_code == 200
         payload = response.json()
-        assert payload["strict_profile"] is True and payload["profile"] == profile
+        assert "strict_profile" not in payload and payload["profile"] == profile
         assert payload["limit"] == 100
         assert {row["source"] for row in payload["runs"]} == {"cron", "cron_output"}
         assert all(row["profile"] == profile for row in payload["runs"])
@@ -160,9 +160,23 @@ def test_trigger_keeps_existing_claim_and_paused_semantics(homes, client, monkey
     assert captured == [("worker", job["id"], outcome == "paused")]
     assert response.status_code == (409 if outcome == "claimed" else 200)
     if response.status_code == 200:
-        assert response.json()["profile"] == "worker" and response.json()["strict_profile"] is True
+        assert response.json()["profile"] == "worker" and "strict_profile" not in response.json()
         if outcome == "removed":
             assert response.json()["state"] == "completed"
+
+
+def test_pause_resume_and_delete_use_the_same_bound_profile(homes, client, monkeypatch):
+    job = create("worker", "pause in place")
+    path = f"/api/cron/jobs/{job['id']}"
+    monkeypatch.setattr(helpers, "_find_cron_job_profile", lambda _id: pytest.fail("bound pause scanned profiles"))
+    assert client.post(path + "/pause", params=strict("default")).status_code == 404
+    paused = client.post(path + "/pause", params=strict("worker"))
+    assert paused.status_code == 200 and paused.json()["profile"] == "worker"
+    assert "strict_profile" not in paused.json()
+    assert client.post(path + "/resume", params=strict("worker")).status_code == 200
+    removed = client.delete(path, params=strict("worker"))
+    assert removed.status_code == 200 and removed.json()["profile"] == "worker"
+    assert client.get(path, params=strict("worker")).status_code == 404
 
 
 def test_strict_rejects_noncanonical_id_and_invalid_schedule_without_mutation(homes, client):

@@ -695,12 +695,16 @@ export async function getAllSessionMessages(
 
     messages.push(...page.messages)
 
+    // `returned` is the database page, not the display array. Voice rows are
+    // interleaved into `messages` and must not advance the database offset.
     // Legacy backends ignore pagination and return the full transcript.
-    if (!page.pagination || page.messages.length === 0 || page.messages.length < page.pagination.limit) {
+    const returned = page.pagination?.returned ?? page.messages.length
+
+    if (!page.pagination || returned === 0 || returned < page.pagination.limit) {
       break
     }
 
-    offset += page.messages.length
+    offset += returned
   }
 
   return { session_id: resolvedSessionId, messages }

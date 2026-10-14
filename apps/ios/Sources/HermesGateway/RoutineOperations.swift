@@ -134,7 +134,7 @@ public struct RoutineRunUnconfirmed: LocalizedError {
             throw GatewayError.message("This task has an invalid route ID.")
         }
         let result = try await http("api/cron/jobs/\(jobID)" + suffix, profile, body, method, [URLQueryItem(name: "strict_profile", value: "true")] + query)
-        guard result["strict_profile"] == .bool(true), result["profile"].string == profile else {
+        guard result["profile"].string == profile else {
             throw GatewayError.message("Exact task ownership is unavailable through this gateway. Update the controller and bot runtime before using these controls.")
         }
         return result

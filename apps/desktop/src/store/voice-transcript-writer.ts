@@ -42,6 +42,24 @@ export function createVoiceTranscriptWriter(
   )
 }
 
+const TRANSCRIPT_RECOVERY_MS = 5000
+
+/** Retry a journal flush from the writer, not from the composer. */
+export function watchVoiceTranscriptRecovery(sessionId: string, onError: (error: unknown) => void): () => void {
+  const recover = () => recoverVoiceTranscripts(sessionId, onError)
+
+  recover()
+  const onOnline = () => recover()
+
+  window.addEventListener('online', onOnline)
+  const retry = window.setInterval(recover, TRANSCRIPT_RECOVERY_MS)
+
+  return () => {
+    window.clearInterval(retry)
+    window.removeEventListener('online', onOnline)
+  }
+}
+
 export function recoverVoiceTranscripts(sessionId: string, onError: (error: unknown) => void): void {
   const owner = knownOwnerForSession(sessionId)
 

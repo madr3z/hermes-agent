@@ -16,7 +16,23 @@ method = _registry.method
 _profile_scoped = _registry.profile_scoped
 
 
-SKILLS_INSTALL_NEXT_SESSION = True
+_SESSION_CONTROL = frozenset({"heartbeat", "subgoal", "loop"})
+
+
+def _direct_slash_target(base: str) -> str | None:
+    """Registry name for commands the slash worker must not run.
+
+    Aliases such as ``hb`` resolve through ``resolve_command``. The pending-input
+    set and the session-control commands share that one lookup.
+    """
+    canonical = base
+    with contextlib.suppress(Exception):
+        from hermes_cli.commands import resolve_command
+        if resolved := resolve_command(base):
+            canonical = resolved.name
+    if canonical in _SESSION_CONTROL or base in _PENDING_INPUT_COMMANDS or canonical in _PENDING_INPUT_COMMANDS:
+        return canonical
+    return None
 
 
 # ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -920,7 +936,7 @@ def _cmd_goal(rid, params, session, name, arg):
         return _ok(rid, payload)
 
 
-def _cmd_loop(rid, params, session, name, arg):
+def _cmd_session_control(rid, params, session, name, arg):
     from .session_commands import dispatch_control
     return dispatch_control(rid, session, name, arg)
 
@@ -1087,7 +1103,7 @@ def _cmd_skills(rid, params, session, name, arg):
 _SLASH_BUILTINS = {
     "queue": _cmd_queue, "q": _cmd_queue, "learn": _cmd_learn, "plan": _cmd_plan, "init": _cmd_init,
     "moa": _cmd_moa, "focus": _cmd_focus, "retry": _cmd_retry, "steer": _cmd_steer, "goal": _cmd_goal,
-    "loop": _cmd_loop, "heartbeat": _cmd_loop, "subgoal": _cmd_loop,
+    "loop": _cmd_session_control, "heartbeat": _cmd_session_control, "subgoal": _cmd_session_control,
     "undo": _cmd_undo, "snapshot": _cmd_snapshot, "snap": _cmd_snapshot,
     "compress": _cmd_compress, "compact": _cmd_compress, "initiate-setup": lambda *a: _cmd_initiate_setup(*a),
     "memory": _cmd_memory, "skills": _cmd_skills}
@@ -1134,7 +1150,9 @@ def _(rid, params: dict) -> dict:
     # Pending-input built-ins route straight to command.dispatch (some clients fail the
     # error-then-retry fallback); bundles go the same way under their resolved key.
     with _session_home_scope(session):  # a secondary-only bundle must route too (#110695)
-        target = base if base in _PENDING_INPUT_COMMANDS or base in {"heartbeat", "hb", "subgoal"} else _bundle_key_for(base)
+        target = _direct_slash_target(base)
+        if target is None:
+            target = _bundle_key_for(base)
     if target is not None:
         return _methods["command.dispatch"](rid, {"name": target.lstrip("/"), "arg": arg, "session_id": sid})
     # Recognized skills keep the 4018 gate so clients command.dispatch. A scan
