@@ -40,6 +40,9 @@ final class GatewayTests: XCTestCase {
         let vm = try main.provisionedGateway(ready)
         XCTAssertEqual(vm.baseURL.port, 9443)
         XCTAssertEqual(vm.url(path: "api/ws").path, "/api/plugins/bot-provisioning/v1/gateways/bot-1/api/ws")
+        let prefixed = try GatewayEndpoint(label: "Prefixed", baseURL: URL(string: "https://hermes.example:9443/hermes")!)
+        let mounted = try prefixed.provisionedGateway(ready)
+        XCTAssertEqual(mounted.baseURL, prefixed.url(path: "api/plugins/bot-provisioning/v1/gateways/bot-1"))
         for path in ["https://evil.example", "//evil.example/api/ws", "/api/plugins/bot-provisioning/v1/gateways/../secrets", "/api/plugins/bot-provisioning/v1/gateways/bot?token=x"] {
             XCTAssertThrowsError(try main.provisionedGateway(.object(["gateway": .object(["base_url": .string(path)])])))
         }
