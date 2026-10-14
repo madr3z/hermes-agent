@@ -105,20 +105,21 @@ def _job_profile(job_id: str, profile: Optional[str]) -> str:
     return selected
 
 
-def _strict_cron_profile(job_id: str, profile: Optional[str]) -> str:
-    """Require one explicit store and a canonical job id; never discover an owner."""
-    if not profile or not profile.strip() or profile.strip().lower() == "all":
-        raise HTTPException(status_code=400, detail="strict_profile requires one explicit profile")
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", job_id):
-        raise HTTPException(status_code=400, detail="strict_profile requires a canonical job id")
-    selected, _home = _cron_profile_home(profile)
-    return selected
+def _open_cron_scope(job_id, profile, strict_profile, worker, *args):
+    """Turn the mobile query into a scope before any helper runs.
+
+    The boolean stops here. Dashboard calls pass ``strict_profile=False`` and
+    keep discovery. Bound calls receive a ``CronProfileScope`` and cannot
+    fall back to another home.
+    """
+    from hermes_cli.cron_profile_scope import CronProfileScope
+
+    scope = CronProfileScope.bind(job_id, profile) if strict_profile else None
+    return worker(*args, scope)
 
 
-def _strict_cron_result(result: dict, profile: str, strict_profile: bool) -> dict:
-    if strict_profile:
-        return {**result, "profile": profile, "strict_profile": True}
-    return result
+def _owned(result, scope):
+    return scope.stamp(result) if scope is not None else result
 
 
 def _found(job):
@@ -170,23 +171,25 @@ def _list_cron_jobs_sync(profile: str = "all"):
     return list(by_id.values()) + unkeyed
 
 
-def _get_cron_job_sync(job_id: str, profile: Optional[str] = None, strict_profile: bool = False):
-    selected = _strict_cron_profile(job_id, profile) if strict_profile else _job_profile(job_id, profile)
+def _get_cron_job_sync(job_id: str, profile: Optional[str] = None, scope=None):
+    selected = scope.profile if scope is not None else _job_profile(job_id, profile)
     job = _found(_call_cron_for_profile(selected, "get_job", job_id))
-    return _strict_cron_result(job, selected, strict_profile)
+    return _owned(job, scope)
 
 
 _CRON_OUTPUT_FILENAME_FORMAT = "%Y-%m-%d_%H-%M-%S"
 
 
-def _cron_output_runs_dir(profile: Optional[str], job_id: str, strict_profile: bool = False) -> Path:
-    """Output docs live under the job's home — resolve it even without a hint."""
+def _cron_output_runs_dir(profile: Optional[str], job_id: str) -> Path:
+    """Output docs live under the job's home — resolve it even without a hint.
+
+    Dashboard discovery may fall back to the current home. A bound mobile
+    scope never calls this; it uses ``CronProfileScope.output_dir``.
+    """
     if profile:
         try:
             _, profile_home = _cron_profile_home(profile)
         except Exception:
-            if strict_profile:
-                raise
             profile_home = _get_hermes_home()
     else:
         profile_home = _get_hermes_home()
@@ -194,7 +197,7 @@ def _cron_output_runs_dir(profile: Optional[str], job_id: str, strict_profile: b
 
 
 @contextmanager
-def _owner_home_scope(profile: Optional[str], strict_profile: bool = False):
+def _owner_home_scope(profile: Optional[str]):
     """Keep reads in the owner's profile context for the whole run-history build.
 
     Filename stems, the execution ledger and ``hermes_time``'s configured zone all
@@ -209,8 +212,6 @@ def _owner_home_scope(profile: Optional[str], strict_profile: bool = False):
     try:
         _, profile_home = _cron_profile_home(profile)
     except Exception:
-        if strict_profile:
-            raise
         yield None
         return
     if Path(profile_home).resolve() == _get_hermes_home().resolve():
@@ -370,7 +371,7 @@ def _list_cron_output_runs(
     canonical_job_id: str,
     profile: Optional[str],
     limit: int,
-    strict_profile: bool = False,
+    scope=None,
 ) -> list[dict[str, Any]]:
     """SessionDB-less run history for jobs that never create agent sessions.
 
@@ -386,7 +387,7 @@ def _list_cron_output_runs(
     older doc when the newest run's doc is missing. Terminal attempts with no
     surviving doc get their own metadata rows.
     """
-    output_dir = _cron_output_runs_dir(profile, canonical_job_id, strict_profile)
+    output_dir = scope.output_dir(canonical_job_id) if scope is not None else _cron_output_runs_dir(profile, canonical_job_id)
     try:
         files = sorted(
             (path for path in output_dir.glob("*.md") if path.is_file()),
@@ -522,7 +523,7 @@ def cron_run_scheduler_owned(session: dict[str, Any], profile: Optional[str] = N
         return _run_owned_by(session, _live_inflight_execution(match.group(1)))
 
 
-def _list_cron_job_runs_sync(job_id: str, profile: Optional[str] = None, limit: int = 20, strict_profile: bool = False):
+def _list_cron_job_runs_sync(job_id: str, profile: Optional[str] = None, limit: int = 20, scope=None):
     """Run history for a cron job, newest first: agent sessions PLUS script-only fires.
 
     Agent runs are ordinary sessions with id ``cron_{job_id}_{timestamp}`` (see
@@ -541,7 +542,7 @@ def _list_cron_job_runs_sync(job_id: str, profile: Optional[str] = None, limit: 
     docs, execution ledger, filename timezone) run inside the owner's profile
     scope so the dashboard's own zone/store is never borrowed cross-profile.
     """
-    selected = _strict_cron_profile(job_id, profile) if strict_profile else _job_owner_profile(job_id, profile)
+    selected = scope.profile if scope is not None else _job_owner_profile(job_id, profile)
     # job_id may be a human name; resolve to the canonical id used in run-session ids.
     canonical = job_id
     job = None
@@ -555,7 +556,8 @@ def _list_cron_job_runs_sync(job_id: str, profile: Optional[str] = None, limit: 
     except (TypeError, ValueError):
         limit_n = 20
 
-    with _owner_home_scope(selected, strict_profile):
+    home = scope.home_scope() if scope is not None else _owner_home_scope(selected)
+    with home:
         db = _open_session_db_for_profile(selected, read_only=True)
         try:
             session_runs = db.list_cron_job_runs(canonical, limit=limit_n, offset=0)
@@ -571,12 +573,12 @@ def _list_cron_job_runs_sync(job_id: str, profile: Optional[str] = None, limit: 
             if selected:
                 s["profile"] = selected
 
-        doc_runs = _list_cron_output_runs(job, canonical, selected, limit_n, strict_profile)
+        doc_runs = _list_cron_output_runs(job, canonical, selected, limit_n, scope)
 
     runs = _reconcile_cron_runs(session_runs, doc_runs, limit_n)
-    if strict_profile:
-        runs = [{**run, "profile": selected} for run in runs]
-    return _strict_cron_result({"runs": runs, "limit": limit_n}, selected, strict_profile)
+    if scope is not None:
+        runs = [scope.stamp(run) for run in runs]
+    return _owned({"runs": runs, "limit": limit_n}, scope)
 
 
 def _reconcile_cron_runs(
@@ -623,8 +625,8 @@ def _doc_matches_session(doc_ts: float, session: dict[str, Any], grace_seconds: 
 _EXECUTION_FIELDS = {"prompt", "skill", "skills", "script", "no_agent"}
 
 
-def _update_cron_job_sync(job_id: str, body: CronJobUpdate, profile: Optional[str] = None, strict_profile: bool = False):
-    selected = _strict_cron_profile(job_id, profile) if strict_profile else _job_profile(job_id, profile)
+def _update_cron_job_sync(job_id: str, body: CronJobUpdate, profile: Optional[str] = None, scope=None):
+    selected = scope.profile if scope is not None else _job_profile(job_id, profile)
     try:
         profile_name, profile_home = _cron_profile_home(selected)
         existing = _found(_call_cron_for_profile(profile_name, "get_job", job_id))
@@ -641,20 +643,22 @@ def _update_cron_job_sync(job_id: str, body: CronJobUpdate, profile: Optional[st
         raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _strict_cron_result(_found(job), selected, strict_profile)
+    return _owned(_found(job), scope)
 
 
-def _pause_cron_job_sync(job_id: str, profile: Optional[str] = None):
-    return _found(_mutate_cron_for_profile(_job_profile(job_id, profile), "pause_job", job_id))
+def _pause_cron_job_sync(job_id: str, profile: Optional[str] = None, scope=None):
+    selected = scope.profile if scope is not None else _job_profile(job_id, profile)
+    return _owned(_found(_mutate_cron_for_profile(selected, "pause_job", job_id)), scope)
 
 
-def _resume_cron_job_sync(job_id: str, profile: Optional[str] = None):
-    return _found(_mutate_cron_for_profile(_job_profile(job_id, profile), "resume_job", job_id))
+def _resume_cron_job_sync(job_id: str, profile: Optional[str] = None, scope=None):
+    selected = scope.profile if scope is not None else _job_profile(job_id, profile)
+    return _owned(_found(_mutate_cron_for_profile(selected, "resume_job", job_id)), scope)
 
 
-def _trigger_cron_job_sync(job_id: str, profile: Optional[str] = None, strict_profile: bool = False):
-    selected = _strict_cron_profile(job_id, profile) if strict_profile else _job_profile(job_id, profile)
-    method = "get_job" if strict_profile else "resolve_job_ref"
+def _trigger_cron_job_sync(job_id: str, profile: Optional[str] = None, scope=None):
+    selected = scope.profile if scope is not None else _job_profile(job_id, profile)
+    method = "get_job" if scope is not None else "resolve_job_ref"
     job = _found(_call_cron_for_profile(selected, method, job_id))
     # Never expose the job as due before claiming it: the built-in ticker and
     # external/manual fire paths share one durable claim, so only one executes
@@ -664,26 +668,26 @@ def _trigger_cron_job_sync(job_id: str, profile: Optional[str] = None, strict_pr
     ran = _fire_cron_job_for_profile(selected, job["id"], force=force)
     refreshed = _call_cron_for_profile(selected, "get_job", job["id"])
     if refreshed and refreshed.get("last_run_at") != job.get("last_run_at"):
-        return _strict_cron_result(refreshed, selected, strict_profile)
+        return _owned(refreshed, scope)
     if not ran:
         raise HTTPException(status_code=409, detail="Job is already running or was claimed by another scheduler")
     if refreshed:
-        return _strict_cron_result(refreshed, selected, strict_profile)
+        return _owned(refreshed, scope)
     # A one-shot may remove itself after exhausting repeat=1: keep the response
     # shape without inventing an outcome the store no longer holds; the list
     # refresh removes the completed row.
-    return _strict_cron_result({**job, "enabled": False, "state": "completed"}, selected, strict_profile)
+    return _owned({**job, "enabled": False, "state": "completed"}, scope)
 
 
-def _delete_cron_job_sync(job_id: str, profile: Optional[str] = None):
-    selected = _job_profile(job_id, profile)
+def _delete_cron_job_sync(job_id: str, profile: Optional[str] = None, scope=None):
+    selected = scope.profile if scope is not None else _job_profile(job_id, profile)
     try:
         removed = _mutate_cron_for_profile(selected, "remove_job", job_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not removed:
         raise _job_not_found()
-    return {"ok": True}
+    return _owned({"ok": True}, scope)
 
 
 # Retry-After (seconds) on retryable cron-fire 503s: sized to clear a
@@ -699,12 +703,14 @@ async def list_cron_jobs(profile: str = "all"):
 
 @router.get("/api/cron/jobs/{job_id}")
 async def get_cron_job(job_id: str, profile: Optional[str] = None, strict_profile: bool = False):
-    return await _run_cron_dashboard_io(_get_cron_job_sync, job_id, profile, strict_profile)
+    return await _run_cron_dashboard_io(
+        _open_cron_scope, job_id, profile, strict_profile, _get_cron_job_sync, job_id, profile)
 
 
 @router.get("/api/cron/jobs/{job_id}/runs")
 async def list_cron_job_runs(job_id: str, profile: Optional[str] = None, limit: int = 20, strict_profile: bool = False):
-    return await _run_cron_dashboard_io(_list_cron_job_runs_sync, job_id, profile, limit, strict_profile)
+    return await _run_cron_dashboard_io(
+        _open_cron_scope, job_id, profile, strict_profile, _list_cron_job_runs_sync, job_id, profile, limit)
 
 
 @router.post("/api/cron/jobs")
@@ -740,27 +746,32 @@ async def get_cron_delivery_targets(profile: Optional[str] = None):
 
 @router.put("/api/cron/jobs/{job_id}")
 async def update_cron_job(job_id: str, body: CronJobUpdate, profile: Optional[str] = None, strict_profile: bool = False):
-    return await _run_cron_dashboard_io(_update_cron_job_sync, job_id, body, profile, strict_profile)
+    return await _run_cron_dashboard_io(
+        _open_cron_scope, job_id, profile, strict_profile, _update_cron_job_sync, job_id, body, profile)
 
 
 @router.post("/api/cron/jobs/{job_id}/pause")
-async def pause_cron_job(job_id: str, profile: Optional[str] = None):
-    return await _run_cron_dashboard_io(_pause_cron_job_sync, job_id, profile)
+async def pause_cron_job(job_id: str, profile: Optional[str] = None, strict_profile: bool = False):
+    return await _run_cron_dashboard_io(
+        _open_cron_scope, job_id, profile, strict_profile, _pause_cron_job_sync, job_id, profile)
 
 
 @router.post("/api/cron/jobs/{job_id}/resume")
-async def resume_cron_job(job_id: str, profile: Optional[str] = None):
-    return await _run_cron_dashboard_io(_resume_cron_job_sync, job_id, profile)
+async def resume_cron_job(job_id: str, profile: Optional[str] = None, strict_profile: bool = False):
+    return await _run_cron_dashboard_io(
+        _open_cron_scope, job_id, profile, strict_profile, _resume_cron_job_sync, job_id, profile)
 
 
 @router.post("/api/cron/jobs/{job_id}/trigger")
 async def trigger_cron_job(job_id: str, profile: Optional[str] = None, strict_profile: bool = False):
-    return await _run_cron_dashboard_io(_trigger_cron_job_sync, job_id, profile, strict_profile)
+    return await _run_cron_dashboard_io(
+        _open_cron_scope, job_id, profile, strict_profile, _trigger_cron_job_sync, job_id, profile)
 
 
 @router.delete("/api/cron/jobs/{job_id}")
-async def delete_cron_job(job_id: str, profile: Optional[str] = None):
-    return await _run_cron_dashboard_io(_delete_cron_job_sync, job_id, profile)
+async def delete_cron_job(job_id: str, profile: Optional[str] = None, strict_profile: bool = False):
+    return await _run_cron_dashboard_io(
+        _open_cron_scope, job_id, profile, strict_profile, _delete_cron_job_sync, job_id, profile)
 
 
 @router.post("/api/cron/fire")

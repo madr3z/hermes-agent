@@ -51,9 +51,9 @@ final class RoutineOperationsTests: XCTestCase {
         var writes = 0
         let old = RoutineOperationsClient(profile: "writer", jobID: "daily") { _, _, _, method, _ in
             if method != "GET" { writes += 1 }
-            return .object(["id": .string("daily"), "profile": .string("writer"), "prompt": .string("Full")])
+            return .object(["id": .string("daily"), "profile": .string("other"), "prompt": .string("Full")])
         }
-        do { _ = try await old.update(draft, original: original); XCTFail("Missing strict ack") } catch {}
+        do { _ = try await old.update(draft, original: original); XCTFail("Foreign owner") } catch {}
         XCTAssertEqual(writes, 0)
     }
     func testTriggerUncertaintyNeverRetriesAndChangedTaskNeverTriggers() async throws {
