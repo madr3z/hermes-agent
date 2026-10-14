@@ -170,12 +170,7 @@ export class LiveTranscriptWriter {
         const value = this.pending[0]
 
         try {
-          try {
-            await this.write(value)
-          } catch {
-            await this.write(value)
-          }
-
+          await this.write(value)
           this.journal?.remove(value)
           this.pending.shift()
         } catch (error) {

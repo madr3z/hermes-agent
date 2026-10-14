@@ -83,7 +83,8 @@ vi.mock('@/store/voice-prefs', () => ({
 
 vi.mock('@/store/voice-transcript-writer', () => ({
   createVoiceTranscriptWriter: vi.fn(),
-  recoverVoiceTranscripts: vi.fn()
+  recoverVoiceTranscripts: vi.fn(),
+  watchVoiceTranscriptRecovery: vi.fn(() => () => undefined)
 }))
 
 vi.mock('@/store/wake-word', () => ({
