@@ -93,6 +93,12 @@ def merge_voice_messages(db, session_id, messages):
 
 
 def interleave_voice_messages(messages, spoken):
+    """Merge speech into an already-bounded message list.
+
+    Callers that hold one page must pass only the speech for that page.
+    Leftover speech is appended because a complete transcript's trailing
+    utterances have no later message to sit under.
+    """
     speech = iter(spoken)
     pending = next(speech, None)
     result = []
@@ -105,6 +111,34 @@ def interleave_voice_messages(messages, spoken):
         result.append(pending)
     result.extend(speech)
     return result
+
+
+def speech_for_message_page(messages, spoken, *, include_older, include_newer):
+    """Speech that belongs on this database page.
+
+    The page owns utterances inside its timestamp span. Utterances older than
+    the page stay here only when the page reaches the oldest stored message.
+    Utterances newer than the page stay here only when it reaches the newest.
+    Speech that sits strictly between two pages is not copied onto both.
+    """
+    if not messages:
+        return []
+    stamps = [message.get('timestamp') for message in messages
+              if isinstance(message.get('timestamp'), (int, float))]
+    if not stamps:
+        return list(spoken) if include_older and include_newer else []
+    start, end = min(stamps), max(stamps)
+    kept = []
+    for row in spoken:
+        ts = row.get('timestamp')
+        if not isinstance(ts, (int, float)):
+            continue
+        if ts < start and not include_older:
+            continue
+        if ts > end and not include_newer:
+            continue
+        kept.append(row)
+    return kept
 
 
 def _voice_lineages(db, session_id):

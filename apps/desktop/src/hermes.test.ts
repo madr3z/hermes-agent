@@ -599,6 +599,28 @@ describe('Hermes REST helpers', () => {
     })
   })
 
+  it('advances complete transcript pages by database rows when speech is interleaved', async () => {
+    api
+      .mockResolvedValueOnce({
+        messages: [{ id: 1 }, { id: 2 }, { id: 'voice' }],
+        session_id: 'session-1',
+        pagination: { limit: 2, offset: 0, order: 'oldest', returned: 2 }
+      })
+      .mockResolvedValueOnce({
+        messages: [{ id: 3 }],
+        session_id: 'session-1',
+        pagination: { limit: 2, offset: 2, order: 'oldest', returned: 1 }
+      })
+
+    const result = await getAllSessionMessages('session-1', 'xiaoxuxu')
+
+    expect(result.messages.map(message => message.id)).toEqual([1, 2, 'voice', 3])
+    expect(api).toHaveBeenNthCalledWith(2, {
+      path: '/api/sessions/session-1/messages?profile=xiaoxuxu&limit=500&offset=2&order=oldest&include_compacted=true',
+      profile: 'xiaoxuxu'
+    })
+  })
+
   it('stops complete transcript loads before Desktop memory becomes unbounded', async () => {
     api.mockResolvedValueOnce({
       messages: [{ id: 1, content: 'large transcript page' }],
